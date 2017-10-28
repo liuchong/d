@@ -1,0 +1,8 @@
+[package]
+name = "d"
+description = "D is a simple standalone httpd"
+license = "GPL-3.0"
+version = "0.0.0"
+authors = ["Liu Chong <mail@clojure.cn>"]
+
+[dependencies]
