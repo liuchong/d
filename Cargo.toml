@@ -1,8 +1,24 @@
 [package]
 name = "d"
-description = "D is a simple standalone httpd"
-license = "GPL-3.0"
-version = "0.0.0"
-authors = ["Liu Chong <mail@clojure.cn>"]
+version = "0.0.1"
+authors = ["Liu Chong <mail@liuchong.io>"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/liuchong/d"
+homepage = "https://github.com/liuchong/d"
+documentation = "https://docs.rs/d"
+description = """
+D is a simple standalone httpd.
+"""
+keywords = ["cargo", "script", "cargo-script", "rustx", "shebang"]
 
 [dependencies]
+clap = "2.32"
+failure = "0.1"
+futures = "0.1"
+futures-fs = "0.0.5"
+hyper = "0.12"
+log = "0.4"
+mime_guess = "1.8"
+percent-encoding = "1.0"
+pretty_env_logger = "0.3"
