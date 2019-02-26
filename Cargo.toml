@@ -10,15 +10,16 @@ documentation = "https://docs.rs/d"
 description = """
 D is a simple standalone httpd.
 """
-keywords = ["cargo", "script", "cargo-script", "rustx", "shebang"]
+keywords = ["d", "httpd", "http-server", "http", "server"]
 
 [dependencies]
 clap = "2.32"
-failure = "0.1"
 futures = "0.1"
-futures-fs = "0.0.5"
+futures-fs = { git = "https://github.com/liuchong/futures-fs.git" }
 hyper = "0.12"
 log = "0.4"
 mime_guess = "1.8"
 percent-encoding = "1.0"
 pretty_env_logger = "0.3"
+regex = "1.1"
+tokio-fs = "0.1"

@@ -1,5 +1,7 @@
 use crate::list::{ls, FileInfo, LsRes};
 use crate::send::{send_404, send_500, send_file, send_string, ResponseFuture};
+use crate::utils::parse_range;
+use hyper::header::{HeaderMap, HeaderValue};
 use hyper::rt::{self, Future};
 use hyper::service::service_fn;
 use hyper::{Body, Request, Server};
@@ -71,17 +73,34 @@ impl D {
         ))
     }
 
-    fn render_file(&self, file_info: &FileInfo) -> ResponseFuture {
-        send_file(&file_info.0)
+    fn render_file(
+        &self,
+        file_info: &FileInfo,
+        req_headers: &HeaderMap<HeaderValue>,
+    ) -> ResponseFuture {
+        let range = match req_headers.get("range") {
+            Some(r) => match r.to_str() {
+                Ok(s) => parse_range(s),
+                _ => None,
+            },
+            _ => None,
+        };
+        send_file(&file_info, range)
     }
 
-    fn render(&self, rel_path: &str) -> ResponseFuture {
+    fn render(
+        &self,
+        rel_path: &str,
+        req_headers: &HeaderMap<HeaderValue>,
+    ) -> ResponseFuture {
         let file_path = self.path.to_string() + rel_path;
         let res = ls(&file_path);
 
         match res {
             Ok(LsRes::Dir(ref files)) => self.render_dir(&file_path, files),
-            Ok(LsRes::File(ref file_info)) => self.render_file(file_info),
+            Ok(LsRes::File(ref file_info)) => {
+                self.render_file(&file_info, req_headers)
+            }
             _ => send_500(),
         }
     }
@@ -95,6 +114,7 @@ pub fn start(addr: &SocketAddr, path: &str) {
             let d = d.clone();
 
             service_fn(move |req: Request<Body>| {
+                let req_headers = req.headers();
                 let dec =
                     percent_decode(req.uri().path().as_bytes()).decode_utf8();
                 let path = match dec {
@@ -110,7 +130,7 @@ pub fn start(addr: &SocketAddr, path: &str) {
                 }
 
                 info!("{}", path);
-                d.render(path)
+                d.render(path, req_headers)
             })
         })
         .map_err(|e| error!("server error: {}", e));

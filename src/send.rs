@@ -1,9 +1,12 @@
 use crate::error::Error;
-use crate::utils::get_mime_type_str;
-use futures::future::ok;
+use crate::list::FileInfo;
+use crate::utils::{get_mime_type_str, Range};
+use futures::future::{ok, Either};
 use futures::Future;
 use futures_fs::FsPool;
 use hyper::{Body, Response, StatusCode};
+use std::io::SeekFrom;
+use tokio_fs::file::File;
 
 static NOTFOUND: &[u8] = b"Not Found";
 
@@ -24,21 +27,46 @@ fn internal_server_error() -> Response<Body> {
         .unwrap() // will success
 }
 
-pub fn send_file(f: &str) -> ResponseFuture {
-    let filename = f.to_owned();
+pub fn send_file(f: &FileInfo, range: Option<Range>) -> ResponseFuture {
+    let file_name = f.0.to_owned();
+    let file_length = f.1.len();
+    let responder = move |file: File, unit: &str, start: u64| {
+        let content_type =
+            get_mime_type_str(&file_name).to_string() + ";charset=utf-8";
+        let content_range =
+            format!("{} {}-{}/{}", unit, start, file_length - 1, file_length,);
+        let content_length = file_length - start;
+        let status = if start > 0 { 206 } else { 200 };
 
-    let mime = get_mime_type_str(&filename);
+        let fspool = FsPool::default();
+        Response::builder()
+            .status(status)
+            .header("Content-Type", content_type)
+            .header("Content-Length", content_length)
+            .header("Accept-Ranges", unit.to_string())
+            .header("Content-Range", content_range)
+            .body(Body::wrap_stream(
+                fspool.read_file(file.into_std(), Default::default()),
+            ))
+            .unwrap() // will success
+    };
 
-    let fspool = FsPool::default();
-    let maybe_resp = Response::builder()
-        .status(200)
-        .header("Content-Type", mime.to_string() + ";charset=utf-8")
-        .body(Body::wrap_stream(fspool.read(filename, Default::default())));
-
-    match maybe_resp {
-        Ok(resp) => Box::new(ok(resp)),
-        _ => send_500(),
-    }
+    Box::new(
+        File::open(f.0.to_owned())
+            .and_then(move |file| match range {
+                Some(Range(ref unit, start, _)) if unit == "bytes" => {
+                    Either::A(
+                        file.seek(SeekFrom::Start(start))
+                            .and_then(move |(file, seek_start)| {
+                                Ok(responder(file, "bytes", seek_start))
+                            })
+                            .or_else(|_| Ok(internal_server_error())),
+                    )
+                }
+                _ => Either::B(ok(responder(file, "bytes", 0))),
+            })
+            .or_else(|_| Ok(not_found())),
+    )
 }
 
 pub fn send_string(s: &str) -> ResponseFuture {
