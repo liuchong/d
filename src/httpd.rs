@@ -1,5 +1,5 @@
 use crate::list::{ls, FileInfo, LsRes};
-use crate::send::{send_404, send_500, send_file, send_string, ResponseFuture};
+use crate::send::{ResponseFuture, Sender};
 use crate::utils::parse_range;
 use hyper::header::{HeaderMap, HeaderValue};
 use hyper::rt::{self, Future};
@@ -14,12 +14,14 @@ use std::sync::Arc;
 
 pub struct D {
     path: String,
+    sender: Sender,
 }
 
 impl D {
     pub fn new(path: &str) -> D {
         D {
             path: path.trim_end_matches('/').to_string(),
+            sender: Sender::new(),
         }
     }
 
@@ -51,7 +53,7 @@ impl D {
             format!("<a href={}..>..</a>", &current)
         };
 
-        send_string(&format!(
+        self.sender.send_string(&format!(
             "<!doctype html>
 <html lang=\"en\">
 <head>
@@ -85,7 +87,7 @@ impl D {
             },
             _ => None,
         };
-        send_file(&file_info, range)
+        self.sender.send_file(&file_info, range)
     }
 
     fn render(
@@ -101,7 +103,7 @@ impl D {
             Ok(LsRes::File(ref file_info)) => {
                 self.render_file(&file_info, req_headers)
             }
-            _ => send_500(),
+            _ => self.sender.send_500(),
         }
     }
 }
@@ -119,14 +121,14 @@ pub fn start(addr: &SocketAddr, path: &str) {
                     percent_decode(req.uri().path().as_bytes()).decode_utf8();
                 let path = match dec {
                     // need remove "/" at the end of directory
-                    Ok(ref p) => p.trim_end_matches("/"),
+                    Ok(ref p) => p.trim_end_matches('/'),
                     _ => {
-                        return send_404();
+                        return d.sender.send_404();
                     }
                 };
 
                 if path == "/favicon.ico" {
-                    return send_404();
+                    return d.sender.send_404();
                 }
 
                 info!("{}", path);
