@@ -10,7 +10,7 @@ D is a simple standalone httpd.
 
 ## Usage
 
-1. Install it `cargo install d`
+1. Install it `cargo install d` (or `cargo install --git https://github.com/liuchong/d` for the newest)
 
 2. Cd to somewhere and run it
 
