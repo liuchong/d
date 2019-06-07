@@ -15,7 +15,7 @@ keywords = ["d", "httpd", "http-server", "http", "server"]
 [dependencies]
 clap = "2.32"
 futures = "0.1"
-futures-fs = { git = "https://github.com/liuchong/futures-fs.git" }
+fs = "0.0.5"
 hyper = "0.12"
 log = "0.4"
 mime_guess = "1.8"

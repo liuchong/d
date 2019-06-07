@@ -1,9 +1,9 @@
 use crate::error::Error;
 use crate::list::FileInfo;
 use crate::utils::{get_mime_type_str, Range};
+use fs::FsPool;
 use futures::future::{ok, Either};
 use futures::Future;
-use futures_fs::FsPool;
 use hyper::{Body, Response, StatusCode};
 use num_cpus::get as get_num_cpus;
 use std::io::SeekFrom;
@@ -12,7 +12,7 @@ use tokio_fs::file::File;
 static NOTFOUND: &[u8] = b"Not Found";
 
 pub type ResponseFuture =
-    Box<Future<Item = Response<Body>, Error = Error> + Send>;
+    Box<dyn Future<Item = Response<Body>, Error = Error> + Send>;
 
 fn not_found() -> Response<Body> {
     Response::builder()
