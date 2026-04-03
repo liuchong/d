@@ -15,6 +15,7 @@ This document provides guidelines for AI agents working on this repository.
   - **JavaScript/TypeScript**: `prettier --write .`
   - **Zig**: `zig fmt`
   - **C/C++**: `clang-format -i`
+  - **Emacs Lisp**: `emacs --batch --eval '(indent-region (point-min) (point-max) nil)' -f save-buffer` (or use `elisp-format` if available)
 - Ensure consistent indentation (spaces preferred, matching project style)
 - Remove trailing whitespace from all lines
 - Ensure files end with exactly one newline
