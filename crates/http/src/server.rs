@@ -174,7 +174,7 @@ pub fn create_app(root: PathBuf, allow_hidden: bool) -> Router {
         .allow_methods([axum::http::Method::GET, axum::http::Method::HEAD])
         .allow_headers(tower_http::cors::Any);
 
-    let compression = CompressionLayer::new().gzip(true).deflate(true).br(true);
+    let compression = CompressionLayer::new().gzip(true).br(true);
 
     Router::new()
         .route("/{*path}", get(handle_request))

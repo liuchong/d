@@ -1,0 +1,31 @@
+[package]
+name = "http"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "HTTP server with file serving and WebSocket"
+
+[dependencies]
+kernel = { workspace = true }
+llm = { workspace = true }
+session = { workspace = true }
+memory = { workspace = true }
+agent = { workspace = true }
+tools = { workspace = true }
+security = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+hyper = { workspace = true }
+http-body-util = { workspace = true }
+tokio-util = { workspace = true }
+futures = { workspace = true }
+mime_guess = "2"
+percent-encoding = "2"
+time = { workspace = true }

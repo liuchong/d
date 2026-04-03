@@ -1,131 +1,84 @@
-use clap::Parser;
-use std::net::{SocketAddr, ToSocketAddrs};
-use std::process::exit;
-use tracing::{error, info};
+use clap::{Parser, Subcommand};
+use std::net::ToSocketAddrs;
+use tracing::info;
 
-const DEFAULT_HOST: &str = "localhost";
-const DEFAULT_PORT: u16 = 8080;
-
-#[derive(Parser, Debug)]
-#[command(
-    name = "d",
-    version,
-    about = "D is a simple standalone httpd",
-    author = "Liu Chong",
-    long_about = None
-)]
+#[derive(Parser)]
+#[command(name = "d")]
+#[command(about = "D - AI Daemon with HTTP server and CLI chat")]
+#[command(version)]
 struct Cli {
-    /// Set listening host
-    #[arg(
-        short = 'H',
-        long,
-        value_name = "HOST",
-        default_value = DEFAULT_HOST,
-        env = "D_HOST"
-    )]
-    host: String,
+    /// Log level (trace, debug, info, warn, error)
+    #[arg(short, long, default_value = "info")]
+    log_level: String,
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
 
-    /// Set listening port
-    #[arg(
-        short,
-        long,
-        value_name = "PORT",
-        default_value_t = DEFAULT_PORT,
-        env = "D_PORT"
-    )]
-    port: u16,
-
-    /// Set root directory to serve
-    #[arg(
-        short,
-        long,
-        value_name = "PATH",
-        default_value = ".",
-        env = "D_ROOT"
-    )]
-    root: String,
-
-    /// Set log level (trace, debug, info, warn, error)
-    #[arg(
-        short,
-        long,
-        value_name = "LEVEL",
-        default_value = "info",
-        env = "RUST_LOG"
-    )]
-    log: String,
-
-    /// Show hidden files (allows users to toggle visibility)
-    #[arg(long, env = "D_SHOW_HIDDEN")]
-    hidden: bool,
+#[derive(Subcommand)]
+enum Commands {
+    /// Run HTTP server mode
+    Server {
+        /// Host to bind
+        #[arg(short = 'H', long, default_value = "localhost")]
+        host: String,
+        /// Port to listen on
+        #[arg(short, long, default_value = "8080")]
+        port: u16,
+        /// Root directory to serve
+        #[arg(short = 'r', long, default_value = ".")]
+        root: String,
+    },
+    /// Run CLI chat mode
+    Chat {
+        /// Start new session
+        #[arg(short, long)]
+        new: bool,
+        /// Yolo mode (auto-approve tools)
+        #[arg(long)]
+        yolo: bool,
+    },
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-
-    // Initialize tracing subscriber
-    init_tracing(&cli.log);
-
-    // Parse socket address
-    let addr: SocketAddr = match format!("{}:{}", cli.host, cli.port)
-        .to_socket_addrs()
-    {
-        Ok(mut addrs) => match addrs.next() {
-            Some(a) => a,
-            None => {
-                error!("Failed to resolve address '{}:{}'", cli.host, cli.port);
-                exit(1);
-            }
-        },
-        Err(e) => {
-            error!(
-                "Failed to parse address '{}:{}': {}",
-                cli.host, cli.port, e
-            );
-            exit(1);
-        }
-    };
-
-    // Resolve root path
-    let root = match std::fs::canonicalize(&cli.root) {
-        Ok(p) => p.to_string_lossy().to_string(),
-        Err(e) => {
-            error!("Invalid root path '{}': {}", cli.root, e);
-            exit(1);
-        }
-    };
-
-    info!("D HTTP Server starting...");
-    info!("Configuration:");
-    info!("  Host: {}", cli.host);
-    info!("  Port: {}", cli.port);
-    info!("  Root: {}", root);
-    info!("  Log:  {}", cli.log);
-    info!(
-        "  Hidden files: {}",
-        if cli.hidden { "allowed" } else { "disabled" }
-    );
-
-    d::start(&addr, &root, cli.hidden).await;
-}
-
-fn init_tracing(level: &str) {
-    use tracing_subscriber::EnvFilter;
-    use tracing_subscriber::layer::SubscriberExt;
-    use tracing_subscriber::util::SubscriberInitExt;
-
-    let filter = EnvFilter::try_new(format!("d={}", level))
-        .or_else(|_| EnvFilter::try_new(level))
-        .unwrap_or_else(|_| EnvFilter::new("info"));
-
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::fmt::layer()
-                .with_target(false)
-                .with_timer(tracing_subscriber::fmt::time::time())
-                .compact(),
+    
+    // Initialize tracing with log level from CLI
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::new(&cli.log_level)
+                .add_directive(format!("{}={}", env!("CARGO_PKG_NAME"), cli.log_level).parse()?)
         )
-        .with(filter)
         .init();
+
+    match cli.command {
+        Some(Commands::Server { host, port, root }) => {
+            let addr = format!("{}:{}", host, port).to_socket_addrs()?.next()
+                .ok_or_else(|| anyhow::anyhow!("Cannot resolve address: {}:{}", host, port))?;
+            info!("Starting HTTP server on http://{}", addr);
+            info!("Serving directory: {}", root);
+            http::start(&addr, &root, false).await;
+        }
+        Some(Commands::Chat { new, yolo }) => {
+            info!("Starting CLI chat mode");
+            if new {
+                info!("Creating new session");
+            }
+            if yolo {
+                info!("Yolo mode enabled");
+            }
+            // TODO: Start CLI chat
+            println!("CLI chat mode - not yet implemented");
+        }
+        None => {
+            // Default: start HTTP server on localhost:8080
+            let addr = ("localhost", 8080).to_socket_addrs()?.next()
+                .ok_or_else(|| anyhow::anyhow!("Cannot resolve localhost:8080"))?;
+            info!("Starting HTTP server on http://{}", addr);
+            info!("Serving directory: .");
+            http::start(&addr, ".", false).await;
+        }
+    }
+
+    Ok(())
 }

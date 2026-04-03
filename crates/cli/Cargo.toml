@@ -1,0 +1,26 @@
+[package]
+name = "cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Command-line interface"
+
+[dependencies]
+kernel = { workspace = true }
+llm = { workspace = true }
+session = { workspace = true }
+memory = { workspace = true }
+agent = { workspace = true }
+tools = { workspace = true }
+security = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+clap = { workspace = true }
+dialoguer = { workspace = true }
+console = { workspace = true }
+dirs = { workspace = true }
+toml = { workspace = true }

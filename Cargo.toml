@@ -1,55 +1,84 @@
-[package]
-name = "d"
-version = "0.1.0"
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
+version = "0.3.0"
 authors = ["Liu Chong <mail@liuchong.io>"]
 edition = "2024"
 rust-version = "1.85"
 license = "1PL"
 repository = "https://github.com/liuchong/d"
 homepage = "https://github.com/liuchong/d"
-documentation = "https://docs.rs/d"
-description = "D is a simple standalone httpd."
-keywords = ["d", "httpd", "http-server", "http", "server"]
+description = "D - AI Daemon with HTTP server and CLI chat"
 
-[dependencies]
-# Async runtime
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "signal", "net"] }
+[workspace.dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "signal", "net", "process", "io-std", "time"] }
 tokio-util = { version = "0.7", features = ["io", "codec"] }
-
-# Web framework
-axum = "0.8"
-tower = "0.5"
-tower-http = { version = "0.6", features = ["fs", "trace", "compression-gzip", "compression-deflate", "compression-br", "cors"] }
-hyper = { version = "1", features = ["full"] }
-http-body = "1"
-http-body-util = "0.1"
-
-# CLI
-clap = { version = "4", features = ["derive", "env"] }
-
-# Logging & Tracing
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
-
-# Error handling
-thiserror = "2"
-
-# HTTP types
-http = "1"
-
-# Utilities
-mime_guess = "2"
-percent-encoding = "2"
-time = { version = "0.3", features = ["formatting"] }
-bytes = "1"
 futures = "0.3"
-infer = "0.19"
+async-trait = "0.1"
+thiserror = "2"
+anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+time = { version = "0.3", features = ["formatting"] }
+dirs = "5"
+regex = "1"
+walkdir = "2"
+mime_guess = "2"
+percent-encoding = "2"
+reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"], default-features = false }
+axum = { version = "0.8", features = ["ws"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["fs", "trace", "compression-gzip", "compression-br", "cors"] }
+hyper = { version = "1", features = ["full"] }
+http-body-util = "0.1"
+clap = { version = "4", features = ["derive", "env"] }
+dialoguer = "0.11"
+console = "0.15"
 
-[profile.release]
-opt-level = 3
-lto = true
-codegen-units = 1
-panic = "abort"
-strip = true
+# Internal
+kernel = { path = "crates/kernel" }
+llm = { path = "crates/llm" }
+session = { path = "crates/session" }
+memory = { path = "crates/memory" }
+agent = { path = "crates/agent" }
+tools = { path = "crates/tools" }
+security = { path = "crates/security" }
+http = { path = "crates/http" }
+cli = { path = "crates/cli" }
+
+[package]
+name = "d"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "D - AI Daemon with HTTP server and CLI chat"
+default-run = "d"
+
+[[bin]]
+name = "d"
+path = "src/main.rs"
+
+[dependencies]
+kernel = { workspace = true }
+llm = { workspace = true }
+session = { workspace = true }
+memory = { workspace = true }
+agent = { workspace = true }
+tools = { workspace = true }
+security = { workspace = true }
+http = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+clap = { workspace = true }
