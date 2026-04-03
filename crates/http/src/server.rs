@@ -180,16 +180,20 @@ pub fn create_app(root: PathBuf, allow_hidden: bool) -> Router {
 
     let compression = CompressionLayer::new().gzip(true).br(true);
 
-    // API routes first (higher priority)
+    // API routes
     let api_routes = crate::api::api_routes();
+    
+    // WebSocket routes
+    let ws_routes = crate::websocket::ws_routes();
 
-    // File serving routes (lower priority, catch-all)
+    // File serving routes (catch-all)
     let file_routes = Router::new()
         .route("/{*path}", get(handle_request))
         .route("/", get(handle_root));
 
     Router::new()
         .nest("/api", api_routes)
+        .merge(ws_routes)
         .merge(file_routes)
         .layer(compression)
         .layer(cors)
