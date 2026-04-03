@@ -59,16 +59,10 @@ async fn main() -> anyhow::Result<()> {
             info!("Serving directory: {}", root);
             http::start(&addr, &root, false).await;
         }
-        Some(Commands::Chat { new, yolo }) => {
+        Some(Commands::Chat { new: _, yolo: _ }) => {
             info!("Starting CLI chat mode");
-            if new {
-                info!("Creating new session");
-            }
-            if yolo {
-                info!("Yolo mode enabled");
-            }
-            // TODO: Start CLI chat
-            println!("CLI chat mode - not yet implemented");
+            let config = kernel::Config::load()?;
+            cli::chat::run_interactive(config).await?;
         }
         None => {
             // Default: start HTTP server on localhost:8080

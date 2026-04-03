@@ -361,6 +361,7 @@ dependencies = [
  "toml",
  "tools",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -441,6 +442,7 @@ dependencies = [
  "agent",
  "anyhow",
  "clap",
+ "cli",
  "http 0.3.0",
  "kernel",
  "llm",

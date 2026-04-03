@@ -78,6 +78,7 @@ agent = { workspace = true }
 tools = { workspace = true }
 security = { workspace = true }
 http = { workspace = true }
+cli = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
