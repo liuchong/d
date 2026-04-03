@@ -1,14 +1,13 @@
-use crate::utils::{
-    decode_path, encode_path, format_http_date, format_size, guess_mime_type,
-};
+use crate::utils::{decode_path, encode_path, format_http_date, format_size, guess_mime_type};
 use axum::{
-    Router,
     body::Body,
     extract::{Request, State},
-    http::{HeaderMap, Method, StatusCode, header},
+    http::{header, HeaderMap, Method, StatusCode},
     response::{Html, IntoResponse, Response},
     routing::get,
+    Json, Router,
 };
+use serde::Serialize;
 use std::net::SocketAddr;
 use std::path::{Component, Path, PathBuf};
 
@@ -23,12 +22,146 @@ pub struct ServerState {
 }
 
 /// File information for directory listing
+#[derive(Serialize)]
 struct FileEntry {
     name: String,
     path: String,
     is_dir: bool,
     size: u64,
-    modified: Option<std::time::SystemTime>,
+    modified: Option<u64>,
+    #[serde(skip)]
+    modified_time: Option<std::time::SystemTime>,
+    file_type: FileType,
+    #[serde(skip)]
+    extension: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum FileType {
+    Directory,
+    Image,
+    Video,
+    Audio,
+    Code,
+    Text,
+    Markdown,
+    Org,
+    Archive,
+    Document,
+    Executable,
+    Unknown,
+}
+
+impl FileType {
+    fn from_extension(ext: &str) -> Self {
+        match ext.to_lowercase().as_str() {
+            // Images
+            "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "svg" | "ico" | "tiff" | "tif" | "raw" | "heic" | "avif" => FileType::Image,
+            // Videos
+            "mp4" | "webm" | "mkv" | "avi" | "mov" | "wmv" | "flv" | "m4v" | "3gp" | "ogv" | "mpg" | "mpeg" | "m2v" => FileType::Video,
+            // Audio
+            "mp3" | "wav" | "ogg" | "flac" | "aac" | "m4a" | "wma" | "opus" | "aiff" | "au" => FileType::Audio,
+            // Code
+            "rs" | "js" | "ts" | "jsx" | "tsx" | "py" | "java" | "c" | "cpp" | "cc" | "cxx" | "h" | "hpp" | "go" | "rb" | "php" | "swift" | "kt" | "scala" | "r" | "m" | "mm" | "pl" | "pm" | "t" | "sh" | "bash" | "zsh" | "fish" | "ps1" | "bat" | "cmd" | "vbs" | "lua" | "elm" | "erl" | "hrl" | "ex" | "exs" | "fs" | "fsx" | "fsi" | "ml" | "mli" | "hs" | "lhs" | "clj" | "cljs" | "cljc" | "edn" | "coffee" | "litcoffee" | "cr" | "dart" | "groovy" | "gvy" | "gy" | "gsh" | "p6" | "pm6" | "pod6" | "t6" | "nim" | "nims" | "zig" | "v" | "vsh" => FileType::Code,
+            // Text
+            "txt" | "rst" | "log" | "csv" | "tsv" | "json" | "xml" | "yaml" | "yml" | "toml" | "ini" | "conf" | "cfg" | "properties" | "env" | "sql" | "graphql" | "gql" => FileType::Text,
+            // Markdown
+            "md" | "markdown" | "mkd" | "mdown" => FileType::Markdown,
+            // Org
+            "org" => FileType::Org,
+            // Archives
+            "zip" | "rar" | "7z" | "tar" | "gz" | "bz2" | "xz" | "lz" | "lzma" | "zst" | "br" | "tgz" | "tbz" | "txz" | "tlz" | "cab" | "deb" | "rpm" | "dmg" | "pkg" | "msi" | "iso" | "img" => FileType::Archive,
+            // Documents
+            "pdf" | "doc" | "docx" | "xls" | "xlsx" | "ppt" | "pptx" | "odt" | "ods" | "odp" | "rtf" | "epub" | "mobi" | "azw" | "azw3" | "tex" | "latex" => FileType::Document,
+            // Executables
+            "exe" | "dll" | "so" | "dylib" | "bin" | "app" | "elf" | "wasm" | "pyc" | "class" | "o" | "obj" | "lib" | "a" => FileType::Executable,
+            _ => FileType::Unknown,
+        }
+    }
+
+    fn icon(&self) -> &'static str {
+        match self {
+            FileType::Directory => "📁",
+            FileType::Image => "🖼️",
+            FileType::Video => "🎬",
+            FileType::Audio => "🎵",
+            FileType::Code => "📄",
+            FileType::Text => "📝",
+            FileType::Markdown => "📜",
+            FileType::Org => "📋",
+            FileType::Archive => "📦",
+            FileType::Document => "📑",
+            FileType::Executable => "⚙️",
+            FileType::Unknown => "📄",
+        }
+    }
+
+    fn color(&self) -> &'static str {
+        match self {
+            FileType::Directory => "#2196f3",
+            FileType::Image => "#e91e63",
+            FileType::Video => "#f44336",
+            FileType::Audio => "#9c27b0",
+            FileType::Code => "#4caf50",
+            FileType::Text => "#607d8b",
+            FileType::Markdown => "#03a9f4",
+            FileType::Org => "#00bcd4",
+            FileType::Archive => "#ff9800",
+            FileType::Document => "#3f51b5",
+            FileType::Executable => "#795548",
+            FileType::Unknown => "#9e9e9e",
+        }
+    }
+
+    fn is_previewable(&self) -> bool {
+        matches!(self, FileType::Image | FileType::Video | FileType::Audio | FileType::Code | FileType::Text | FileType::Markdown | FileType::Org)
+    }
+
+    fn language(&self, ext: &str) -> &'static str {
+        match ext.to_lowercase().as_str() {
+            "rs" => "rust",
+            "js" => "javascript",
+            "ts" => "typescript",
+            "jsx" => "jsx",
+            "tsx" => "tsx",
+            "py" => "python",
+            "java" => "java",
+            "c" | "h" => "c",
+            "cpp" | "cc" | "cxx" | "hpp" => "cpp",
+            "go" => "go",
+            "rb" => "ruby",
+            "php" => "php",
+            "swift" => "swift",
+            "kt" => "kotlin",
+            "scala" => "scala",
+            "r" => "r",
+            "sh" | "bash" => "bash",
+            "ps1" => "powershell",
+            "lua" => "lua",
+            "elm" => "elm",
+            "erl" | "hrl" => "erlang",
+            "ex" | "exs" => "elixir",
+            "fs" | "fsx" => "fsharp",
+            "ml" | "mli" => "ocaml",
+            "hs" | "lhs" => "haskell",
+            "clj" | "cljs" => "clojure",
+            "coffee" => "coffeescript",
+            "cr" => "crystal",
+            "dart" => "dart",
+            "groovy" => "groovy",
+            "nim" => "nim",
+            "zig" => "zig",
+            "v" => "v",
+            "sql" => "sql",
+            "json" => "json",
+            "xml" => "xml",
+            "yaml" | "yml" => "yaml",
+            "toml" => "toml",
+            "md" | "markdown" => "markdown",
+            _ => "plaintext",
+        }
+    }
 }
 
 /// Create the router with CORS and compression support
@@ -45,11 +178,15 @@ pub fn create_app(root: PathBuf) -> Router {
         .allow_headers(tower_http::cors::Any);
 
     // Compression: gzip, deflate, br (brotli)
-    let compression = CompressionLayer::new().gzip(true).deflate(true).br(true);
+    let compression = CompressionLayer::new()
+        .gzip(true)
+        .deflate(true)
+        .br(true);
 
     Router::new()
         .route("/{*path}", get(handle_request).head(handle_request))
         .route("/", get(handle_root).head(handle_root))
+        .route("/__api/files", get(api_list_files))
         .layer(compression)
         .layer(cors)
         .with_state(state)
@@ -104,7 +241,7 @@ async fn handle_root(
     handle_path("", None, is_head, &state).await
 }
 
-/// Handle any request (GET or HEAD)
+/// Handle any request
 async fn handle_request(
     State(state): State<ServerState>,
     request: Request<Body>,
@@ -115,8 +252,7 @@ async fn handle_request(
     let decoded = match decode_path(path) {
         Ok(p) => p,
         Err(_) => {
-            return (StatusCode::BAD_REQUEST, "Invalid encoding")
-                .into_response();
+            return (StatusCode::BAD_REQUEST, "Invalid encoding").into_response();
         }
     };
 
@@ -133,6 +269,17 @@ async fn handle_request(
 
     let is_head = method == Method::HEAD;
     handle_path(&decoded, range, is_head, &state).await
+}
+
+/// API endpoint to list files as JSON
+async fn api_list_files(State(state): State<ServerState>) -> impl IntoResponse {
+    match list_directory_entries("", &state.root).await {
+        Ok(entries) => Json(entries).into_response(),
+        Err(e) => {
+            error!("Failed to list files: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Failed to list files").into_response()
+        }
+    }
 }
 
 /// Handle path - either serve file or directory listing
@@ -153,7 +300,6 @@ async fn handle_path(
     match fs::metadata(&full_path).await {
         Ok(metadata) if metadata.is_dir() => {
             if is_head {
-                // HEAD request for directory: return empty body
                 (StatusCode::OK, Html("")).into_response()
             } else {
                 serve_directory(path, &full_path, state).await
@@ -165,8 +311,7 @@ async fn handle_path(
         }
         Err(e) => {
             error!("Error accessing {}: {}", full_path.display(), e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error")
-                .into_response()
+            (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response()
         }
     }
 }
@@ -179,7 +324,6 @@ fn sanitize_path(base: &Path, requested: &str) -> Option<PathBuf> {
         match component {
             Component::Normal(c) => result.push(c),
             Component::ParentDir => {
-                // Prevent escaping base directory
                 if result != *base {
                     result.pop();
                 }
@@ -189,7 +333,6 @@ fn sanitize_path(base: &Path, requested: &str) -> Option<PathBuf> {
         }
     }
 
-    // Final check: ensure the resolved path is within base
     if result.starts_with(base) {
         Some(result)
     } else {
@@ -242,25 +385,16 @@ async fn serve_file(
 
     let mut headers = HeaderMap::new();
 
-    // Set content type
     let mime = guess_mime_type(
-        path.file_name().and_then(|n| n.to_str()).unwrap_or(""),
+        path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(""),
     );
     headers.insert(header::CONTENT_TYPE, mime.parse().unwrap());
-
-    // Set accept-ranges
     headers.insert(header::ACCEPT_RANGES, "bytes".parse().unwrap());
-
-    // Set cache control (1 hour for static files)
-    headers.insert(
-        header::CACHE_CONTROL,
-        "public, max-age=3600".parse().unwrap(),
-    );
-
-    // Set ETag
+    headers.insert(header::CACHE_CONTROL, "public, max-age=3600".parse().unwrap());
     headers.insert(header::ETAG, etag.parse().unwrap());
 
-    // Set last-modified
     if let Ok(modified) = metadata.modified() {
         if let Ok(time_str) = time::OffsetDateTime::from(modified)
             .format(&time::format_description::well_known::Rfc2822)
@@ -269,7 +403,6 @@ async fn serve_file(
         }
     }
 
-    // Handle Range request
     if let Some(range) = range_header.and_then(|r| parse_range(r, file_size)) {
         let (start, end) = range;
         let content_length = end - start + 1;
@@ -285,38 +418,29 @@ async fn serve_file(
                 .unwrap(),
         );
 
-        // For HEAD request, return headers only
         if is_head {
             return (StatusCode::PARTIAL_CONTENT, headers).into_response();
         }
 
-        // Open file and seek to start position
         let file = match fs::File::open(path).await {
             Ok(f) => f,
             Err(e) => {
                 error!("Failed to open file {}: {}", path.display(), e);
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Internal Server Error",
-                )
-                    .into_response();
+                return (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response();
             }
         };
 
-        // Use tokio_util to read specific range
         let stream = ReaderStream::new(file);
         let body = Body::from_stream(stream);
 
         return (StatusCode::PARTIAL_CONTENT, headers, body).into_response();
     }
 
-    // Full file response
     headers.insert(
         header::CONTENT_LENGTH,
         file_size.to_string().parse().unwrap(),
     );
 
-    // For HEAD request, return headers only (no body)
     if is_head {
         return (StatusCode::OK, headers).into_response();
     }
@@ -325,11 +449,7 @@ async fn serve_file(
         Ok(f) => f,
         Err(e) => {
             error!("Failed to open file {}: {}", path.display(), e);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Internal Server Error",
-            )
-                .into_response();
+            return (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response();
         }
     };
 
@@ -340,23 +460,27 @@ async fn serve_file(
 }
 
 /// Serve directory listing HTML
-async fn serve_directory(
-    rel_path: &str,
-    full_path: &PathBuf,
-    _state: &ServerState,
-) -> Response {
-    let mut entries = match fs::read_dir(full_path).await {
-        Ok(entries) => entries,
+async fn serve_directory(rel_path: &str, full_path: &PathBuf, state: &ServerState) -> Response {
+    let entries = match list_directory_entries(rel_path, full_path).await {
+        Ok(e) => e,
         Err(e) => {
             warn!("Cannot read directory {}: {}", full_path.display(), e);
-            return (StatusCode::FORBIDDEN, "Permission Denied")
-                .into_response();
+            return (StatusCode::FORBIDDEN, "Permission Denied").into_response();
         }
     };
 
+    let html = generate_directory_html(rel_path, &entries, state);
+    Html(html).into_response()
+}
+
+/// List directory entries
+async fn list_directory_entries(
+    rel_path: &str,
+    full_path: &PathBuf,
+) -> std::io::Result<Vec<FileEntry>> {
+    let mut entries = fs::read_dir(full_path).await?;
     let mut files = Vec::new();
 
-    // Add parent directory link if not at root
     if !rel_path.is_empty() {
         files.push(FileEntry {
             name: "..".to_string(),
@@ -364,20 +488,36 @@ async fn serve_directory(
             is_dir: true,
             size: 0,
             modified: None,
+            modified_time: None,
+            file_type: FileType::Directory,
+            extension: "".to_string(),
         });
     }
 
-    // Read directory entries
-    while let Ok(Some(entry)) = entries.next_entry().await {
+    while let Some(entry) = entries.next_entry().await? {
         let name = entry.file_name().to_string_lossy().to_string();
         let metadata = entry.metadata().await.ok();
 
         let is_dir = metadata.as_ref().map(|m| m.is_dir()).unwrap_or(false);
         let size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
-        let modified = metadata.and_then(|m| m.modified().ok());
+        let modified_time = metadata.and_then(|m| m.modified().ok());
+        let modified = modified_time
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs());
 
-        let path =
-            format!("{}{}", encode_path(&name), if is_dir { "/" } else { "" });
+        let extension = Path::new(&name)
+            .extension()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+
+        let file_type = if is_dir {
+            FileType::Directory
+        } else {
+            FileType::from_extension(&extension)
+        };
+
+        let path = format!("{}{}", encode_path(&name), if is_dir { "/" } else { "" });
 
         files.push(FileEntry {
             name,
@@ -385,25 +525,25 @@ async fn serve_directory(
             is_dir,
             size,
             modified,
+            modified_time,
+            file_type,
+            extension,
         });
     }
 
-    // Sort: directories first, then by name
-    files.sort_by(|a, b| match (a.is_dir, b.is_dir) {
-        (true, false) => std::cmp::Ordering::Less,
-        (false, true) => std::cmp::Ordering::Greater,
-        _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+    files.sort_by(|a, b| {
+        match (a.is_dir, b.is_dir) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+        }
     });
 
-    let html = generate_directory_html(rel_path, &files);
-    Html(html).into_response()
+    Ok(files)
 }
 
-/// Generate HTML for directory listing using efficient string building
-fn generate_directory_html(
-    current_path: &str,
-    entries: &[FileEntry],
-) -> String {
+/// Generate enhanced HTML for directory listing
+fn generate_directory_html(current_path: &str, entries: &[FileEntry], _state: &ServerState) -> String {
     use std::fmt::Write;
 
     let display_path = if current_path.is_empty() {
@@ -412,93 +552,449 @@ fn generate_directory_html(
         format!("/{}/", current_path.trim_end_matches('/'))
     };
 
-    // Pre-allocate with estimated capacity
-    let mut html = String::with_capacity(4096 + entries.len() * 256);
+    let mut html = String::with_capacity(8192 + entries.len() * 512);
 
-    // HTML head
-    let _ = write!(
-        html,
-        r#"<!DOCTYPE html>
+    // Build file list JSON for JavaScript
+    let files_json = serde_json::to_string(entries).unwrap_or_default();
+
+    let _ = write!(html, r##"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Index of {}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/rust.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/yaml.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/org-mode-parser@0.1.0/dist/org-mode-parser.min.js"></script>
     <style>
-        * {{ box-sizing: border-box; }}
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
         body {{
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
             line-height: 1.6;
-            max-width: 1200px;
-            margin: 0 auto;
+            background: #0d1117;
+            color: #c9d1d9;
+            min-height: 100vh;
+        }}
+        .container {{ max-width: 1400px; margin: 0 auto; padding: 20px; }}
+        header {{
+            background: #161b22;
+            border-bottom: 1px solid #30363d;
             padding: 20px;
-            background: #f5f5f5;
+            margin: -20px -20px 20px -20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 10px;
         }}
-        h1 {{ color: #333; border-bottom: 2px solid #ddd; padding-bottom: 10px; }}
-        table {{
-            width: 100%;
-            border-collapse: collapse;
-            background: white;
-            border-radius: 8px;
+        h1 {{ color: #f0f6fc; font-size: 1.5rem; font-weight: 600; }}
+        .breadcrumb {{ color: #8b949e; font-size: 0.9rem; }}
+        .breadcrumb a {{ color: #58a6ff; text-decoration: none; }}
+        .breadcrumb a:hover {{ text-decoration: underline; }}
+        .stats {{ color: #8b949e; font-size: 0.85rem; }}
+        .main-layout {{ display: grid; grid-template-columns: 1fr 400px; gap: 20px; }}
+        @media (max-width: 1024px) {{ .main-layout {{ grid-template-columns: 1fr; }} .preview-panel {{ display: none; }} }}
+        .file-list {{
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 12px;
             overflow: hidden;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }}
-        th, td {{ padding: 12px 16px; text-align: left; border-bottom: 1px solid #eee; }}
-        th {{ background: #f8f9fa; font-weight: 600; color: #666; }}
-        tr:hover {{ background: #f8f9fa; }}
-        a {{ color: #0366d6; text-decoration: none; }}
-        a:hover {{ text-decoration: underline; }}
-        .size {{ text-align: right; white-space: nowrap; color: #666; }}
-        .time {{ white-space: nowrap; color: #666; }}
-        @media (max-width: 600px) {{
-            body {{ padding: 10px; }}
-            th, td {{ padding: 8px 12px; }}
-            .time {{ display: none; }}
+        .file-header {{
+            display: grid;
+            grid-template-columns: auto 1fr 100px 180px;
+            gap: 16px;
+            padding: 12px 20px;
+            background: #21262d;
+            border-bottom: 1px solid #30363d;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: #8b949e;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }}
+        .file-item {{
+            display: grid;
+            grid-template-columns: auto 1fr 100px 180px;
+            gap: 16px;
+            padding: 10px 20px;
+            border-bottom: 1px solid #21262d;
+            align-items: center;
+            cursor: pointer;
+            transition: background 0.15s;
+        }}
+        .file-item:hover {{ background: #1f242c; }}
+        .file-item:last-child {{ border-bottom: none; }}
+        .file-item.selected {{ background: #1c2128; border-left: 3px solid #58a6ff; padding-left: 17px; }}
+        .icon {{ font-size: 1.2rem; width: 24px; text-align: center; }}
+        .filename {{ display: flex; align-items: center; gap: 10px; }}
+        .filename a {{
+            color: #c9d1d9;
+            text-decoration: none;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }}
+        .filename a:hover {{ color: #58a6ff; }}
+        .filename .dir {{ color: #58a6ff; }}
+        .tag {{
+            font-size: 0.65rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: #30363d;
+            color: #8b949e;
+            text-transform: uppercase;
+            font-weight: 600;
+        }}
+        .size {{ text-align: right; color: #8b949e; font-family: 'SF Mono', Monaco, monospace; font-size: 0.9rem; }}
+        .time {{ color: #8b949e; font-size: 0.85rem; }}
+        .preview-panel {{
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            overflow: hidden;
+            position: sticky;
+            top: 20px;
+            height: fit-content;
+        }}
+        .preview-header {{
+            padding: 16px 20px;
+            background: #21262d;
+            border-bottom: 1px solid #30363d;
+            font-weight: 600;
+            color: #f0f6fc;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }}
+        .preview-content {{ padding: 0; max-height: 600px; overflow: auto; }}
+        .preview-placeholder {{
+            padding: 60px 20px;
+            text-align: center;
+            color: #8b949e;
+        }}
+        .preview-image {{ max-width: 100%; max-height: 500px; display: block; margin: 0 auto; }}
+        .preview-video {{ width: 100%; max-height: 400px; background: #000; }}
+        .preview-audio {{ width: 100%; padding: 20px; }}
+        .preview-code {{ margin: 0; font-size: 0.85rem; line-height: 1.5; }}
+        .preview-code pre {{ margin: 0; padding: 20px; overflow-x: auto; }}
+        .preview-markdown {{ padding: 20px; line-height: 1.8; }}
+        .preview-markdown h1, .preview-markdown h2, .preview-markdown h3 {{
+            margin-top: 24px; margin-bottom: 16px;
+            font-weight: 600; line-height: 1.25;
+        }}
+        .preview-markdown h1 {{ font-size: 2em; border-bottom: 1px solid #30363d; padding-bottom: 10px; }}
+        .preview-markdown h2 {{ font-size: 1.5em; border-bottom: 1px solid #30363d; padding-bottom: 8px; }}
+        .preview-markdown h3 {{ font-size: 1.25em; }}
+        .preview-markdown p {{ margin-bottom: 16px; }}
+        .preview-markdown code {{
+            background: #0d1117; padding: 2px 6px; border-radius: 4px;
+            font-family: 'SF Mono', Monaco, monospace; font-size: 0.9em;
+        }}
+        .preview-markdown pre {{
+            background: #0d1117; padding: 16px; border-radius: 8px;
+            overflow-x: auto; margin-bottom: 16px;
+        }}
+        .preview-markdown pre code {{ background: none; padding: 0; }}
+        .preview-markdown ul, .preview-markdown ol {{ margin-bottom: 16px; padding-left: 2em; }}
+        .preview-markdown li {{ margin-bottom: 4px; }}
+        .preview-markdown a {{ color: #58a6ff; }}
+        .preview-markdown a:hover {{ text-decoration: underline; }}
+        .preview-markdown blockquote {{
+            border-left: 4px solid #30363d; padding-left: 16px;
+            margin-left: 0; color: #8b949e;
+        }}
+        .preview-markdown table {{
+            border-collapse: collapse; margin-bottom: 16px;
+            width: 100%;
+        }}
+        .preview-markdown th, .preview-markdown td {{
+            border: 1px solid #30363d; padding: 8px 12px;
+            text-align: left;
+        }}
+        .preview-markdown th {{ background: #0d1117; font-weight: 600; }}
+        .preview-markdown img {{ max-width: 100%; border-radius: 8px; }}
+        .preview-org {{
+            padding: 20px; font-family: 'SF Mono', Monaco, monospace;
+            font-size: 0.85rem; line-height: 1.6; white-space: pre-wrap;
+            color: #c9d1d9;
+        }}
+        .file-type-badge {{
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }}
+        .empty-state {{
+            padding: 60px 20px;
+            text-align: center;
+            color: #8b949e;
+        }}
+        .empty-state-icon {{ font-size: 3rem; margin-bottom: 16px; }}
+        footer {{
+            margin-top: 40px;
+            padding: 20px;
+            text-align: center;
+            color: #484f58;
+            font-size: 0.85rem;
+            border-top: 1px solid #21262d;
+        }}
+        .filter-bar {{
+            padding: 12px 20px;
+            background: #161b22;
+            border-bottom: 1px solid #30363d;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }}
+        .filter-input {{
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 6px 12px;
+            color: #c9d1d9;
+            font-size: 0.9rem;
+            flex: 1;
+            max-width: 300px;
+        }}
+        .filter-input:focus {{ outline: none; border-color: #58a6ff; }}
+        .view-toggle {{
+            display: flex;
+            gap: 4px;
+            background: #0d1117;
+            padding: 4px;
+            border-radius: 6px;
+        }}
+        .view-btn {{
+            background: transparent;
+            border: none;
+            color: #8b949e;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }}
+        .view-btn.active {{ background: #21262d; color: #f0f6fc; }}
     </style>
 </head>
 <body>
-    <div class="header"><h1>Index of {}</h1></div>
-    <table>
-        <thead>
-            <tr><th>Name</th><th class="size">Size</th><th class="time">Modified</th></tr>
-        </thead>
-        <tbody>"#,
-        html_escape(&display_path),
-        html_escape(&display_path)
-    );
+    <div class="container">
+        <header>
+            <div>
+                <h1>📁 Index of <span class="breadcrumb">{}</span></h1>
+            </div>
+            <div class="stats">{} items</div>
+        </header>
+        
+        <div class="main-layout">
+            <div class="file-list">
+                <div class="filter-bar">
+                    <input type="text" class="filter-input" id="filterInput" placeholder="🔍 Filter files...">
+                    <div class="view-toggle">
+                        <button class="view-btn active" onclick="setView('list')">☰</button>
+                        <button class="view-btn" onclick="setView('grid')">⊞</button>
+                    </div>
+                </div>
+                <div class="file-header">
+                    <span></span>
+                    <span>Name</span>
+                    <span class="size">Size</span>
+                    <span class="time">Modified</span>
+                </div>
+                <div id="fileList">"##, html_escape(&display_path), html_escape(&display_path), entries.len());
 
     // Table rows
     for entry in entries {
-        let icon = if entry.is_dir { "📁" } else { "📄" };
         let size_display = if entry.is_dir {
-            "-"
+            "-".to_string()
         } else {
-            &format_size(entry.size)
+            format_size(entry.size)
         };
         let time_display = entry
-            .modified
+            .modified_time
             .map(format_http_date)
             .unwrap_or_else(|| "-".to_string());
-
-        let _ = write!(
-            html,
-            r#"<tr><td>{} <a href="{}">{}</a></td><td class="size">{}</td><td class="time">{}</td></tr>"#,
-            icon,
+        
+        let file_type_class = format!("{:?}", entry.file_type).to_lowercase();
+        let is_dir_class = if entry.is_dir { "dir" } else { "" };
+        let preview_attr = if entry.file_type.is_previewable() && !entry.is_dir {
+            format!(" data-preview=\"{}\"", entry.path.trim_end_matches('/'))
+        } else {
+            String::new()
+        };
+        
+        let _ = write!(html, r#"
+                <div class="file-item" data-name="{}" data-type="{}" onclick="selectFile(this, '{}')"{}>
+                    <span class="icon">{}</span>
+                    <div class="filename">
+                        <a href="{}" class="{}" onclick="event.stopPropagation()">
+                            {}
+                        </a>
+                        {}
+                    </div>
+                    <span class="size">{}</span>
+                    <span class="time">{}</span>
+                </div>"#,
+            html_escape(&entry.name.to_lowercase()),
+            file_type_class,
+            html_escape(&entry.path),
+            preview_attr,
+            entry.file_type.icon(),
             entry.path,
+            is_dir_class,
             html_escape(&entry.name),
+            if entry.is_dir { String::new() } else { format!("<span class='file-type-badge' style='background: {}; color: #fff;'>{}</span>", entry.file_type.color(), format!("{:?}", entry.file_type)) },
             size_display,
             time_display
         );
     }
 
-    // HTML footer
-    let _ = write!(
-        html,
-        r#"</tbody></table>
-    <footer style="margin-top: 20px; color: #999; font-size: 0.85em;"><p>D HTTP Server</p></footer>
+    let _ = write!(html, r##"
+                </div>
+            </div>
+            
+            <div class="preview-panel">
+                <div class="preview-header">
+                    <span id="previewTitle">Preview</span>
+                    <span id="previewType"></span>
+                </div>
+                <div class="preview-content" id="previewContent">
+                    <div class="preview-placeholder">
+                        <div style="font-size: 3rem; margin-bottom: 16px;">👆</div>
+                        <div>Select a file to preview</div>
+                        <div style="font-size: 0.85rem; margin-top: 8px; opacity: 0.7;">Images, videos, code and text files supported</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <footer>
+            <p>D HTTP Server · {} items</p>
+        </footer>
+    </div>
+    
+    <script>
+        const files = {};
+        
+        function selectFile(element, path) {{
+            document.querySelectorAll('.file-item').forEach(el => el.classList.remove('selected'));
+            element.classList.add('selected');
+            
+            const file = files.find(f => f.path === path);
+            if (!file) return;
+            
+            const previewContent = document.getElementById('previewContent');
+            const previewTitle = document.getElementById('previewTitle');
+            const previewType = document.getElementById('previewType');
+            
+            previewTitle.textContent = file.name;
+            previewType.textContent = file.is_dir ? 'Directory' : file.file_type;
+            
+            if (file.is_dir) {{
+                previewContent.innerHTML = '<div class="preview-placeholder"><div style="font-size: 3rem;">📁</div><div>Directory</div></div>';
+            }} else if (file.file_type === 'Image') {{
+                previewContent.innerHTML = `<img src="${{path}}" class="preview-image" alt="${{file.name}}" onload="this.style.opacity=1" style="opacity: 0; transition: opacity 0.3s;">`;
+            }} else if (file.file_type === 'Video') {{
+                previewContent.innerHTML = `<video class="preview-video" controls><source src="${{path}}"></video>`;
+            }} else if (file.file_type === 'Audio') {{
+                previewContent.innerHTML = `<audio class="preview-audio" controls><source src="${{path}}"></audio>`;
+            }} else if (file.file_type === 'Markdown') {{
+                fetch(path)
+                    .then(r => r.text())
+                    .then(text => {{
+                        previewContent.innerHTML = `<div class="preview-markdown">${{marked.parse(text)}}</div>`;
+                    }})
+                    .catch(() => {{
+                        previewContent.innerHTML = '<div class="preview-placeholder">Failed to load file</div>';
+                    }});
+            }} else if (file.file_type === 'Org') {{
+                fetch(path)
+                    .then(r => r.text())
+                    .then(text => {{
+                        previewContent.innerHTML = `<pre class="preview-org">${{escapeHtml(text)}}</pre>`;
+                    }})
+                    .catch(() => {{
+                        previewContent.innerHTML = '<div class="preview-placeholder">Failed to load file</div>';
+                    }});
+            }} else if (file.file_type === 'Code' || file.file_type === 'Text') {{
+                fetch(path)
+                    .then(r => r.text())
+                    .then(text => {{
+                        const lang = getLanguage(file.extension);
+                        previewContent.innerHTML = `<pre class="preview-code"><code class="language-${{lang}}">${{escapeHtml(text)}}</code></pre>`;
+                        hljs.highlightAll();
+                    }})
+                    .catch(() => {{
+                        previewContent.innerHTML = '<div class="preview-placeholder">Failed to load file</div>';
+                    }});
+            }} else {{
+                previewContent.innerHTML = '<div class="preview-placeholder"><div style="font-size: 3rem;">📄</div><div>No preview available</div></div>';
+            }}
+        }}
+        
+        function getLanguage(ext) {{
+            const map = {{
+                'rs': 'rust', 'js': 'javascript', 'ts': 'typescript', 'jsx': 'jsx', 'tsx': 'tsx',
+                'py': 'python', 'java': 'java', 'c': 'c', 'cpp': 'cpp', 'h': 'c', 'hpp': 'cpp',
+                'go': 'go', 'rb': 'ruby', 'php': 'php', 'swift': 'swift', 'kt': 'kotlin',
+                'sh': 'bash', 'bash': 'bash', 'zsh': 'bash', 'ps1': 'powershell',
+                'json': 'json', 'xml': 'xml', 'yaml': 'yaml', 'yml': 'yaml', 'toml': 'toml',
+                'md': 'markdown', 'sql': 'sql', 'lua': 'lua', 'html': 'html', 'css': 'css'
+            }};
+            return map[ext.toLowerCase()] || 'plaintext';
+        }}
+        
+        function escapeHtml(text) {{
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }}
+        
+        function setView(view) {{
+            document.querySelectorAll('.view-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            // Grid view implementation would go here
+        }}
+        
+        // Filter functionality
+        document.getElementById('filterInput').addEventListener('input', function(e) {{
+            const filter = e.target.value.toLowerCase();
+            document.querySelectorAll('.file-item').forEach(item => {{
+                const name = item.dataset.name;
+                item.style.display = name.includes(filter) ? '' : 'none';
+            }});
+        }});
+        
+        // Keyboard navigation
+        document.addEventListener('keydown', function(e) {{
+            if (e.key === 'Escape') {{
+                document.querySelectorAll('.file-item').forEach(el => el.classList.remove('selected'));
+                document.getElementById('previewContent').innerHTML = `
+                    <div class="preview-placeholder">
+                        <div style="font-size: 3rem; margin-bottom: 16px;">👆</div>
+                        <div>Select a file to preview</div>
+                    </div>
+                `;
+            }}
+        }});
+    </script>
 </body>
-</html>"#
+</html>"##, 
+        entries.len(),
+        files_json
     );
 
     html
