@@ -48,6 +48,7 @@ kernel = { path = "crates/kernel" }
 llm = { path = "crates/llm" }
 session = { path = "crates/session" }
 memory = { path = "crates/memory" }
+context = { path = "crates/context" }
 agent = { path = "crates/agent" }
 tools = { path = "crates/tools" }
 security = { path = "crates/security" }
