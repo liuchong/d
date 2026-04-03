@@ -1,37 +1,60 @@
-use mime_guess::get_mime_type_str as guess_mime_type_str;
-use regex::Regex;
+use percent_encoding::{percent_decode_str, percent_encode, AsciiSet, CONTROLS};
 use std::path::Path;
 
-#[derive(Default)]
-pub struct Range(pub String, pub u64, pub Option<u64>);
+/// Path percent encode set: https://url.spec.whatwg.org/#path-percent-encode-set
+const PATH_ENCODE_SET: &AsciiSet = &CONTROLS
+    .add(b' ')
+    .add(b'"')
+    .add(b'#')
+    .add(b'<')
+    .add(b'>')
+    .add(b'?')
+    .add(b'`')
+    .add(b'{')
+    .add(b'}');
 
-pub fn parse_range(range: &str) -> Option<Range> {
-    // Range Syntax, 3, 4 not supported for now
-    // 1. Range: <unit>=<range-start>-
-    // 2. Range: <unit>=<range-start>-<range-end>
-    // 3. Range: <unit>=<range-start>-<range-end>, <range-start>-<range-end>
-    // 4. Range: <unit>=<range-start>-<range-end>, <range-start>-<range-end>, <range-start>-<range-end>
-
-    let re = Regex::new(r"(.*)=(\d+)-(\d+)?").unwrap(); // will success
-    match re.captures(range) {
-        Some(cap) => {
-            let unit = cap.get(1).unwrap().as_str().to_string();
-            let start = cap.get(2).unwrap().as_str().parse::<u64>().unwrap();
-            let end = match cap.get(3) {
-                Some(m) => Some(m.as_str().parse::<u64>().unwrap()),
-                _ => None,
-            };
-            Some(Range(unit, start, end))
-        }
-        _ => None,
-    }
+/// Decode percent-encoded string
+pub fn decode_path(s: &str) -> Result<String, std::str::Utf8Error> {
+    percent_decode_str(s).decode_utf8().map(|s| s.to_string())
 }
 
-pub fn get_mime_type_str(filename: &str) -> &str {
-    let ext = Path::new(&filename)
+/// Percent-encode path component for URL generation
+pub fn encode_path(s: &str) -> impl std::fmt::Display + use<'_> {
+    percent_encode(s.as_bytes(), PATH_ENCODE_SET)
+}
+
+/// Guess MIME type from filename
+pub fn guess_mime_type(filename: &str) -> String {
+    let ext = Path::new(filename)
         .extension()
         .unwrap_or_default()
         .to_str()
         .unwrap_or_default();
-    guess_mime_type_str(ext).unwrap_or("application/octet-stream")
+    
+    mime_guess::from_ext(ext)
+        .first()
+        .map(|m| m.to_string())
+        .unwrap_or_else(|| "application/octet-stream".to_string())
+}
+
+/// Format file size in human readable format
+pub fn format_size(size: u64) -> String {
+    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
+    if size == 0 {
+        return "0 B".to_string();
+    }
+    let exp = (size as f64).log(1024.0).min(UNITS.len() as f64 - 1.0) as usize;
+    let size = size as f64 / 1024f64.powi(exp as i32);
+    if exp == 0 {
+        format!("{} {}", size as u64, UNITS[exp])
+    } else {
+        format!("{:.2} {}", size, UNITS[exp])
+    }
+}
+
+/// Format system time to HTTP date format
+pub fn format_http_date(modified: std::time::SystemTime) -> String {
+    let datetime: time::OffsetDateTime = modified.into();
+    datetime.format(&time::format_description::well_known::Rfc2822)
+        .unwrap_or_default()
 }

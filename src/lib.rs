@@ -1,10 +1,5 @@
-#![deny(warnings)]
+pub mod error;
+pub mod httpd;
+pub mod utils;
 
-mod error;
-mod httpd;
-mod list;
-mod send;
-mod utils;
-
-pub use crate::httpd::start;
-pub use crate::httpd::D;
+pub use httpd::start;

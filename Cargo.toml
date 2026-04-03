@@ -1,26 +1,52 @@
 [package]
 name = "d"
-version = "0.0.1"
+version = "0.1.0"
 authors = ["Liu Chong <mail@liuchong.io>"]
-edition = "2018"
+edition = "2024"
+rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/liuchong/d"
 homepage = "https://github.com/liuchong/d"
 documentation = "https://docs.rs/d"
-description = """
-D is a simple standalone httpd.
-"""
+description = "D is a simple standalone httpd."
 keywords = ["d", "httpd", "http-server", "http", "server"]
 
 [dependencies]
-clap = "2.32"
-futures = "0.1"
-fs = "0.0.5"
-hyper = "0.12"
-log = "0.4"
-mime_guess = "1.8"
-num_cpus = "1.0"
-percent-encoding = "1.0"
-pretty_env_logger = "0.3"
-regex = "1.1"
-tokio-fs = "0.1"
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io", "codec"] }
+
+# Web framework
+axum = "0.8"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["fs", "trace", "compression-gzip", "compression-deflate", "compression-br", "cors"] }
+hyper = { version = "1", features = ["full"] }
+http-body = "1"
+http-body-util = "0.1"
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+
+# Logging & Tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# Error handling
+thiserror = "2"
+
+# HTTP types
+http = "1"
+
+# Utilities
+mime_guess = "2"
+percent-encoding = "2"
+time = { version = "0.3", features = ["formatting"] }
+bytes = "1"
+futures = "0.3"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

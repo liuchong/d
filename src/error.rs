@@ -1,37 +1,28 @@
-use std::error::Error as StdError;
-use std::fmt;
+use std::io;
 
-pub type Result<T> = ::std::result::Result<T, Error>;
+pub type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
-    Io(String),
+    #[error("IO error: {0}")]
+    Io(#[from] io::Error),
+    
+    #[error("Invalid path")]
+    InvalidPath,
+    
+    #[error("Not found")]
+    NotFound,
+    
+    #[error("Permission denied")]
+    PermissionDenied,
 }
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            Error::Io(ref msg) => writeln!(f, "Io error: {}", msg),
+impl Error {
+    pub fn status_code(&self) -> http::StatusCode {
+        match self {
+            Error::NotFound => http::StatusCode::NOT_FOUND,
+            Error::PermissionDenied => http::StatusCode::FORBIDDEN,
+            _ => http::StatusCode::INTERNAL_SERVER_ERROR,
         }
-    }
-}
-
-impl StdError for Error {
-    fn description(&self) -> &str {
-        match *self {
-            Error::Io(ref msg) => msg,
-        }
-    }
-
-    fn cause(&self) -> Option<&dyn StdError> {
-        match *self {
-            Error::Io(_) => None,
-        }
-    }
-}
-
-impl From<std::io::Error> for Error {
-    fn from(err: std::io::Error) -> Error {
-        Error::Io(err.description().to_string())
     }
 }
