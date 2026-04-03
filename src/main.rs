@@ -102,7 +102,10 @@ async fn main() {
     info!("  Port: {}", cli.port);
     info!("  Root: {}", root);
     info!("  Log:  {}", cli.log);
-    info!("  Hidden files: {}", if cli.hidden { "allowed" } else { "disabled" });
+    info!(
+        "  Hidden files: {}",
+        if cli.hidden { "allowed" } else { "disabled" }
+    );
 
     d::start(&addr, &root, cli.hidden).await;
 }

@@ -1,11 +1,13 @@
-use crate::utils::{decode_path, encode_path, format_http_date, format_size, guess_mime_type};
+use crate::utils::{
+    decode_path, encode_path, format_http_date, format_size, guess_mime_type,
+};
 use axum::{
+    Router,
     body::Body,
     extract::{Query, Request, State},
-    http::{header, HeaderMap, Method, StatusCode},
+    http::{HeaderMap, Method, StatusCode, header},
     response::{Html, IntoResponse, Response},
     routing::get,
-    Router,
 };
 use serde::Deserialize;
 use std::net::SocketAddr;
@@ -52,33 +54,38 @@ enum FileType {
 impl FileType {
     fn from_extension(ext: &str) -> Self {
         match ext.to_lowercase().as_str() {
-            "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "svg" | "ico" | "tiff" | "tif"
-            | "raw" | "heic" | "avif" => FileType::Image,
-            "mp4" | "webm" | "mkv" | "avi" | "mov" | "wmv" | "flv" | "m4v" | "3gp" | "ogv"
-            | "mpg" | "mpeg" | "m2v" => FileType::Video,
-            "mp3" | "wav" | "ogg" | "flac" | "aac" | "m4a" | "wma" | "opus" | "aiff" | "au" => {
-                FileType::Audio
-            }
-            "rs" | "js" | "ts" | "jsx" | "tsx" | "py" | "java" | "c" | "cpp" | "cc" | "cxx"
-            | "h" | "hpp" | "go" | "rb" | "php" | "swift" | "kt" | "scala" | "r" | "m" | "mm"
-            | "pl" | "pm" | "t" | "sh" | "bash" | "zsh" | "fish" | "ps1" | "bat" | "cmd"
-            | "vbs" | "lua" | "elm" | "erl" | "hrl" | "ex" | "exs" | "fs" | "fsx" | "fsi"
-            | "ml" | "mli" | "hs" | "lhs" | "clj" | "cljs" | "cljc" | "edn" | "coffee"
-            | "litcoffee" | "cr" | "dart" | "groovy" | "gvy" | "gy" | "gsh" | "p6" | "pm6"
-            | "pod6" | "t6" | "nim" | "nims" | "zig" | "v" | "vsh" => FileType::Code,
-            "txt" | "rst" | "log" | "csv" | "tsv" | "json" | "xml" | "yaml" | "yml" | "toml"
-            | "ini" | "conf" | "cfg" | "properties" | "env" | "sql" | "graphql" | "gql" => {
-                FileType::Text
-            }
+            "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "svg" | "ico"
+            | "tiff" | "tif" | "raw" | "heic" | "avif" => FileType::Image,
+            "mp4" | "webm" | "mkv" | "avi" | "mov" | "wmv" | "flv" | "m4v"
+            | "3gp" | "ogv" | "mpg" | "mpeg" | "m2v" => FileType::Video,
+            "mp3" | "wav" | "ogg" | "flac" | "aac" | "m4a" | "wma" | "opus"
+            | "aiff" | "au" => FileType::Audio,
+            "rs" | "js" | "ts" | "jsx" | "tsx" | "py" | "java" | "c"
+            | "cpp" | "cc" | "cxx" | "h" | "hpp" | "go" | "rb" | "php"
+            | "swift" | "kt" | "scala" | "r" | "m" | "mm" | "pl" | "pm"
+            | "t" | "sh" | "bash" | "zsh" | "fish" | "ps1" | "bat" | "cmd"
+            | "vbs" | "lua" | "elm" | "erl" | "hrl" | "ex" | "exs" | "fs"
+            | "fsx" | "fsi" | "ml" | "mli" | "hs" | "lhs" | "clj" | "cljs"
+            | "cljc" | "edn" | "coffee" | "litcoffee" | "cr" | "dart"
+            | "groovy" | "gvy" | "gy" | "gsh" | "p6" | "pm6" | "pod6"
+            | "t6" | "nim" | "nims" | "zig" | "v" | "vsh" => FileType::Code,
+            "txt" | "rst" | "log" | "csv" | "tsv" | "json" | "xml" | "yaml"
+            | "yml" | "toml" | "ini" | "conf" | "cfg" | "properties"
+            | "env" | "sql" | "graphql" | "gql" => FileType::Text,
             "md" | "markdown" | "mkd" | "mdown" => FileType::Markdown,
             "org" => FileType::Org,
-            "zip" | "rar" | "7z" | "tar" | "gz" | "bz2" | "xz" | "lz" | "lzma" | "zst" | "br"
-            | "tgz" | "tbz" | "txz" | "tlz" | "cab" | "deb" | "rpm" | "dmg" | "pkg" | "msi"
-            | "iso" | "img" => FileType::Archive,
-            "pdf" | "doc" | "docx" | "xls" | "xlsx" | "ppt" | "pptx" | "odt" | "ods" | "odp"
-            | "rtf" | "epub" | "mobi" | "azw" | "azw3" | "tex" | "latex" => FileType::Document,
-            "exe" | "dll" | "so" | "dylib" | "bin" | "app" | "elf" | "wasm" | "pyc" | "class"
-            | "o" | "obj" | "lib" | "a" => FileType::Executable,
+            "zip" | "rar" | "7z" | "tar" | "gz" | "bz2" | "xz" | "lz"
+            | "lzma" | "zst" | "br" | "tgz" | "tbz" | "txz" | "tlz" | "cab"
+            | "deb" | "rpm" | "dmg" | "pkg" | "msi" | "iso" | "img" => {
+                FileType::Archive
+            }
+            "pdf" | "doc" | "docx" | "xls" | "xlsx" | "ppt" | "pptx"
+            | "odt" | "ods" | "odp" | "rtf" | "epub" | "mobi" | "azw"
+            | "azw3" | "tex" | "latex" => FileType::Document,
+            "exe" | "dll" | "so" | "dylib" | "bin" | "app" | "elf" | "wasm"
+            | "pyc" | "class" | "o" | "obj" | "lib" | "a" => {
+                FileType::Executable
+            }
             _ => FileType::Unknown,
         }
     }
@@ -120,7 +127,10 @@ impl FileType {
     fn is_text(&self) -> bool {
         matches!(
             self,
-            FileType::Code | FileType::Text | FileType::Markdown | FileType::Org
+            FileType::Code
+                | FileType::Text
+                | FileType::Markdown
+                | FileType::Org
         )
     }
 }
@@ -231,7 +241,8 @@ async fn handle_request(
     let decoded = match decode_path(path) {
         Ok(p) => p,
         Err(_) => {
-            return (StatusCode::BAD_REQUEST, "Invalid encoding").into_response();
+            return (StatusCode::BAD_REQUEST, "Invalid encoding")
+                .into_response();
         }
     };
 
@@ -266,7 +277,9 @@ async fn handle_view(path: &str, view: &str, state: &ServerState) -> Response {
 
     let metadata = match fs::metadata(&full_path).await {
         Ok(m) if m.is_file() => m,
-        Ok(_) => return (StatusCode::BAD_REQUEST, "Not a file").into_response(),
+        Ok(_) => {
+            return (StatusCode::BAD_REQUEST, "Not a file").into_response();
+        }
         Err(_) => return (StatusCode::NOT_FOUND, "Not Found").into_response(),
     };
 
@@ -317,7 +330,9 @@ async fn handle_path(
                 .to_string();
             let file_type = FileType::from_extension(&ext);
 
-            if file_type.is_text() || matches!(file_type, FileType::Markdown | FileType::Org) {
+            if file_type.is_text()
+                || matches!(file_type, FileType::Markdown | FileType::Org)
+            {
                 // For text files, show the file viewer page
                 serve_file_viewer(path, &full_path, &metadata, &file_type).await
             } else {
@@ -329,12 +344,17 @@ async fn handle_path(
         }
         Err(e) => {
             error!("Error accessing {}: {}", full_path.display(), e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response()
+            (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error")
+                .into_response()
         }
     }
 }
 
-async fn handle_dir(path: &str, query: DirQuery, state: &ServerState) -> Response {
+async fn handle_dir(
+    path: &str,
+    query: DirQuery,
+    state: &ServerState,
+) -> Response {
     let full_path = match sanitize_path(&state.root, path) {
         Some(p) => p,
         None => {
@@ -417,13 +437,14 @@ async fn serve_file(
     let mut headers = HeaderMap::new();
 
     let mime = guess_mime_type(
-        path.file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(""),
+        path.file_name().and_then(|n| n.to_str()).unwrap_or(""),
     );
     headers.insert(header::CONTENT_TYPE, mime.parse().unwrap());
     headers.insert(header::ACCEPT_RANGES, "bytes".parse().unwrap());
-    headers.insert(header::CACHE_CONTROL, "public, max-age=3600".parse().unwrap());
+    headers.insert(
+        header::CACHE_CONTROL,
+        "public, max-age=3600".parse().unwrap(),
+    );
     headers.insert(header::ETAG, etag.parse().unwrap());
 
     if let Ok(modified) = metadata.modified() {
@@ -457,7 +478,11 @@ async fn serve_file(
             Ok(f) => f,
             Err(e) => {
                 error!("Failed to open file {}: {}", path.display(), e);
-                return (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response();
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal Server Error",
+                )
+                    .into_response();
             }
         };
 
@@ -480,7 +505,11 @@ async fn serve_file(
         Ok(f) => f,
         Err(e) => {
             error!("Failed to open file {}: {}", path.display(), e);
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal Server Error",
+            )
+                .into_response();
         }
     };
 
@@ -490,17 +519,26 @@ async fn serve_file(
     (StatusCode::OK, headers, body).into_response()
 }
 
-async fn serve_raw_file(path: &PathBuf, metadata: &std::fs::Metadata) -> Response {
+async fn serve_raw_file(
+    path: &PathBuf,
+    metadata: &std::fs::Metadata,
+) -> Response {
     let file = match fs::File::open(path).await {
         Ok(f) => f,
         Err(e) => {
             error!("Failed to open file {}: {}", path.display(), e);
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal Server Error",
+            )
+                .into_response();
         }
     };
 
     let mut headers = HeaderMap::new();
-    let mime = guess_mime_type(path.file_name().and_then(|n| n.to_str()).unwrap_or(""));
+    let mime = guess_mime_type(
+        path.file_name().and_then(|n| n.to_str()).unwrap_or(""),
+    );
     headers.insert(header::CONTENT_TYPE, mime.parse().unwrap());
     headers.insert(
         header::CONTENT_LENGTH,
@@ -513,19 +551,29 @@ async fn serve_raw_file(path: &PathBuf, metadata: &std::fs::Metadata) -> Respons
     (StatusCode::OK, headers, body).into_response()
 }
 
-async fn serve_download(path: &PathBuf, filename: &str, metadata: &std::fs::Metadata) -> Response {
+async fn serve_download(
+    path: &PathBuf,
+    filename: &str,
+    metadata: &std::fs::Metadata,
+) -> Response {
     let file = match fs::File::open(path).await {
         Ok(f) => f,
         Err(e) => {
             error!("Failed to open file {}: {}", path.display(), e);
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal Server Error",
+            )
+                .into_response();
         }
     };
 
     let mut headers = HeaderMap::new();
     headers.insert(
         header::CONTENT_DISPOSITION,
-        format!("attachment; filename=\"{}\"", filename).parse().unwrap(),
+        format!("attachment; filename=\"{}\"", filename)
+            .parse()
+            .unwrap(),
     );
     headers.insert(
         header::CONTENT_LENGTH,
@@ -538,12 +586,17 @@ async fn serve_download(path: &PathBuf, filename: &str, metadata: &std::fs::Meta
     (StatusCode::OK, headers, body).into_response()
 }
 
-async fn serve_preview(path: &PathBuf, relative_path: &str, file_type: &FileType) -> Response {
+async fn serve_preview(
+    path: &PathBuf,
+    relative_path: &str,
+    file_type: &FileType,
+) -> Response {
     let content = match fs::read_to_string(path).await {
         Ok(c) => c,
         Err(_) => {
             // Binary file, fallback to raw
-            return serve_raw_file(path, &std::fs::metadata(path).unwrap()).await;
+            return serve_raw_file(path, &std::fs::metadata(path).unwrap())
+                .await;
         }
     };
 
@@ -902,11 +955,10 @@ fn render_org_content(content: &str) -> String {
 
     for line in content.lines() {
         let processed = if line.starts_with("* ") {
-            format!(
-                "<div class=\"org-heading\">{}</div>",
-                html_escape(line)
-            )
-        } else if line.starts_with("#+BEGIN_SRC") || line.starts_with("#+END_SRC") {
+            format!("<div class=\"org-heading\">{}</div>", html_escape(line))
+        } else if line.starts_with("#+BEGIN_SRC")
+            || line.starts_with("#+END_SRC")
+        {
             format!("<div class=\"org-source\">{}</div>", html_escape(line))
         } else if line.starts_with("#+") {
             format!(
@@ -1008,13 +1060,17 @@ async fn serve_directory(
     query: DirQuery,
     state: &ServerState,
 ) -> Response {
-    let entries = match list_directory_entries(rel_path, full_path, query.clone(), state).await {
-        Ok(e) => e,
-        Err(e) => {
-            warn!("Cannot read directory {}: {}", full_path.display(), e);
-            return (StatusCode::FORBIDDEN, "Permission Denied").into_response();
-        }
-    };
+    let entries =
+        match list_directory_entries(rel_path, full_path, query.clone(), state)
+            .await
+        {
+            Ok(e) => e,
+            Err(e) => {
+                warn!("Cannot read directory {}: {}", full_path.display(), e);
+                return (StatusCode::FORBIDDEN, "Permission Denied")
+                    .into_response();
+            }
+        };
 
     let html = generate_directory_html(rel_path, &entries, query, state);
     Html(html).into_response()
@@ -1050,7 +1106,7 @@ async fn list_directory_entries(
 
     while let Some(entry) = entries.next_entry().await? {
         let name = entry.file_name().to_string_lossy().to_string();
-        
+
         // Skip hidden files if not showing them
         if !show_hidden && name.starts_with('.') {
             continue;
@@ -1074,7 +1130,8 @@ async fn list_directory_entries(
             FileType::from_extension(&extension)
         };
 
-        let path = format!("{}{}", encode_path(&name), if is_dir { "/" } else { "" });
+        let path =
+            format!("{}{}", encode_path(&name), if is_dir { "/" } else { "" });
 
         files.push(FileEntry {
             name,
@@ -1090,21 +1147,17 @@ async fn list_directory_entries(
     // Sort based on query parameter
     match query.sort {
         SortBy::Name => {
-            files.sort_by(|a, b| {
-                match (a.is_dir, b.is_dir) {
-                    (true, false) => std::cmp::Ordering::Less,
-                    (false, true) => std::cmp::Ordering::Greater,
-                    _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
-                }
+            files.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
             });
         }
         SortBy::Size => {
-            files.sort_by(|a, b| {
-                match (a.is_dir, b.is_dir) {
-                    (true, false) => std::cmp::Ordering::Less,
-                    (false, true) => std::cmp::Ordering::Greater,
-                    _ => a.size.cmp(&b.size),
-                }
+            files.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                _ => a.size.cmp(&b.size),
             });
         }
         SortBy::Time => {
@@ -1117,27 +1170,25 @@ async fn list_directory_entries(
             });
         }
         SortBy::Type => {
-            files.sort_by(|a, b| {
-                match (a.is_dir, b.is_dir) {
-                    (true, false) => std::cmp::Ordering::Less,
-                    (false, true) => std::cmp::Ordering::Greater,
-                    _ => {
-                        let type_order = |ft: &FileType| match ft {
-                            FileType::Directory => 0,
-                            FileType::Code => 1,
-                            FileType::Text => 2,
-                            FileType::Markdown => 3,
-                            FileType::Org => 4,
-                            FileType::Image => 5,
-                            FileType::Video => 6,
-                            FileType::Audio => 7,
-                            FileType::Document => 8,
-                            FileType::Archive => 9,
-                            FileType::Executable => 10,
-                            FileType::Unknown => 11,
-                        };
-                        type_order(&a.file_type).cmp(&type_order(&b.file_type))
-                    }
+            files.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                _ => {
+                    let type_order = |ft: &FileType| match ft {
+                        FileType::Directory => 0,
+                        FileType::Code => 1,
+                        FileType::Text => 2,
+                        FileType::Markdown => 3,
+                        FileType::Org => 4,
+                        FileType::Image => 5,
+                        FileType::Video => 6,
+                        FileType::Audio => 7,
+                        FileType::Document => 8,
+                        FileType::Archive => 9,
+                        FileType::Executable => 10,
+                        FileType::Unknown => 11,
+                    };
+                    type_order(&a.file_type).cmp(&type_order(&b.file_type))
                 }
             });
         }
@@ -1153,23 +1204,28 @@ fn generate_breadcrumb(current_path: &str) -> String {
 
     let mut result = String::new();
     result.push_str("<a href=\"/\">/</a>");
-    
-    let parts: Vec<&str> = current_path.split('/').filter(|s| !s.is_empty()).collect();
+
+    let parts: Vec<&str> =
+        current_path.split('/').filter(|s| !s.is_empty()).collect();
     let mut cumulative_path = String::new();
-    
+
     for (i, part) in parts.iter().enumerate() {
         cumulative_path.push('/');
         cumulative_path.push_str(part);
-        
+
         if i == parts.len() - 1 {
             // Last part - current directory, not a link
             result.push_str(&format!("<span>{}</span>", html_escape(part)));
         } else {
             // Parent directory, make it a link
-            result.push_str(&format!("<a href=\"{}\">{}</a>/", encode_path(&cumulative_path), html_escape(part)));
+            result.push_str(&format!(
+                "<a href=\"{}\">{}</a>/",
+                encode_path(&cumulative_path),
+                html_escape(part)
+            ));
         }
     }
-    
+
     result
 }
 
@@ -1188,11 +1244,11 @@ fn generate_directory_html(
     };
 
     let breadcrumb = generate_breadcrumb(current_path);
-    
+
     // Determine current sort and hidden settings
     let current_sort = query.sort;
     let show_hidden = query.hidden.unwrap_or(true);
-    
+
     // Build sort links (preserve other query params)
     let sort_link = |sort: SortBy| {
         let sort_name = match sort {
@@ -1201,10 +1257,14 @@ fn generate_directory_html(
             SortBy::Time => "time",
             SortBy::Type => "type",
         };
-        let hidden_param = if show_hidden { "&hidden=true" } else { "&hidden=false" };
+        let hidden_param = if show_hidden {
+            "&hidden=true"
+        } else {
+            "&hidden=false"
+        };
         format!("?sort={}{}", sort_name, hidden_param)
     };
-    
+
     // Build hidden toggle link
     let hidden_toggle_link = if state.allow_hidden {
         let sort_name = match current_sort {
@@ -1355,19 +1415,39 @@ fn generate_directory_html(
         html_escape(&display_path),
         breadcrumb,
         sort_link(SortBy::Name),
-        if matches!(current_sort, SortBy::Name) { "active" } else { "" },
+        if matches!(current_sort, SortBy::Name) {
+            "active"
+        } else {
+            ""
+        },
         sort_link(SortBy::Size),
-        if matches!(current_sort, SortBy::Size) { "active" } else { "" },
+        if matches!(current_sort, SortBy::Size) {
+            "active"
+        } else {
+            ""
+        },
         sort_link(SortBy::Time),
-        if matches!(current_sort, SortBy::Time) { "active" } else { "" },
+        if matches!(current_sort, SortBy::Time) {
+            "active"
+        } else {
+            ""
+        },
         sort_link(SortBy::Type),
-        if matches!(current_sort, SortBy::Type) { "active" } else { "" }
+        if matches!(current_sort, SortBy::Type) {
+            "active"
+        } else {
+            ""
+        }
     );
 
     // Add hidden files toggle if allowed
     if state.allow_hidden {
         let hidden_btn_class = if show_hidden { "active" } else { "" };
-        let hidden_text = if show_hidden { "Hide hidden" } else { "Show hidden" };
+        let hidden_text = if show_hidden {
+            "Hide hidden"
+        } else {
+            "Show hidden"
+        };
         let _ = write!(
             html,
             r#"
@@ -1375,9 +1455,7 @@ fn generate_directory_html(
                     <span class="control-label">Hidden files:</span>
                     <a href="{}" class="btn {}">{}</a>
                 </div>"#,
-            hidden_toggle_link,
-            hidden_btn_class,
-            hidden_text
+            hidden_toggle_link, hidden_btn_class, hidden_text
         );
     } else {
         let _ = write!(
@@ -1390,7 +1468,9 @@ fn generate_directory_html(
         );
     }
 
-    let _ = write!(html, r#"
+    let _ = write!(
+        html,
+        r#"
             </div>
         </header>
         <div class="file-list">
@@ -1399,7 +1479,8 @@ fn generate_directory_html(
                 <span>Name</span>
                 <span class="size">Size</span>
                 <span class="time">Modified</span>
-            </div>"#);
+            </div>"#
+    );
 
     for entry in entries {
         let size_display = if entry.is_dir {
