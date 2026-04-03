@@ -54,6 +54,10 @@ struct Cli {
         env = "RUST_LOG"
     )]
     log: String,
+
+    /// Show hidden files (allows users to toggle visibility)
+    #[arg(long, env = "D_SHOW_HIDDEN")]
+    hidden: bool,
 }
 
 #[tokio::main]
@@ -98,8 +102,9 @@ async fn main() {
     info!("  Port: {}", cli.port);
     info!("  Root: {}", root);
     info!("  Log:  {}", cli.log);
+    info!("  Hidden files: {}", if cli.hidden { "allowed" } else { "disabled" });
 
-    d::start(&addr, &root).await;
+    d::start(&addr, &root, cli.hidden).await;
 }
 
 fn init_tracing(level: &str) {

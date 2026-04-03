@@ -19,6 +19,7 @@ use tracing::{error, info, warn};
 #[derive(Clone)]
 pub struct ServerState {
     root: PathBuf,
+    allow_hidden: bool,
 }
 
 /// File information for directory listing
@@ -129,12 +130,34 @@ struct ViewQuery {
     view: Option<String>,
 }
 
+#[derive(Deserialize, Debug, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+enum SortBy {
+    Name,
+    Size,
+    Time,
+    Type,
+}
+
+impl Default for SortBy {
+    fn default() -> Self {
+        SortBy::Name
+    }
+}
+
+#[derive(Deserialize, Clone)]
+struct DirQuery {
+    #[serde(default)]
+    sort: SortBy,
+    hidden: Option<bool>,
+}
+
 /// Create the router
-pub fn create_app(root: PathBuf) -> Router {
+pub fn create_app(root: PathBuf, allow_hidden: bool) -> Router {
     use tower_http::compression::CompressionLayer;
     use tower_http::cors::CorsLayer;
 
-    let state = ServerState { root };
+    let state = ServerState { root, allow_hidden };
 
     let cors = CorsLayer::new()
         .allow_origin(tower_http::cors::Any)
@@ -151,7 +174,7 @@ pub fn create_app(root: PathBuf) -> Router {
         .with_state(state)
 }
 
-pub async fn start(addr: &SocketAddr, root: &str) {
+pub async fn start(addr: &SocketAddr, root: &str, allow_hidden: bool) {
     let root_path = PathBuf::from(root);
 
     if !root_path.exists() {
@@ -159,7 +182,7 @@ pub async fn start(addr: &SocketAddr, root: &str) {
         return;
     }
 
-    let app = create_app(root_path);
+    let app = create_app(root_path, allow_hidden);
 
     info!("Starting server on http://{}", addr);
     info!("Serving directory: {}", root);
@@ -191,15 +214,15 @@ pub async fn start(addr: &SocketAddr, root: &str) {
 
 async fn handle_root(
     State(state): State<ServerState>,
-    Query(_query): Query<ViewQuery>,
+    Query(query): Query<DirQuery>,
 ) -> impl IntoResponse {
-    let _ = _query;
-    handle_path("", None, false, &state).await
+    handle_dir("", query, &state).await
 }
 
 async fn handle_request(
     State(state): State<ServerState>,
-    Query(query): Query<ViewQuery>,
+    Query(dir_query): Query<DirQuery>,
+    Query(view_query): Query<ViewQuery>,
     request: Request<Body>,
 ) -> impl IntoResponse {
     let method = request.method().clone();
@@ -226,11 +249,11 @@ async fn handle_request(
     let is_head = method == Method::HEAD;
 
     // Check if this is a view request for text files
-    if let Some(view) = query.view {
+    if let Some(view) = view_query.view {
         return handle_view(&decoded, &view, &state).await;
     }
 
-    handle_path(&decoded, range, is_head, &state).await
+    handle_path(&decoded, range, is_head, dir_query, &state).await
 }
 
 async fn handle_view(path: &str, view: &str, state: &ServerState) -> Response {
@@ -266,6 +289,7 @@ async fn handle_path(
     path: &str,
     range: Option<&str>,
     is_head: bool,
+    dir_query: DirQuery,
     state: &ServerState,
 ) -> Response {
     let full_path = match sanitize_path(&state.root, path) {
@@ -281,7 +305,7 @@ async fn handle_path(
             if is_head {
                 (StatusCode::OK, Html("")).into_response()
             } else {
-                serve_directory(path, &full_path, state).await
+                serve_directory(path, &full_path, dir_query, state).await
             }
         }
         Ok(metadata) => {
@@ -307,6 +331,23 @@ async fn handle_path(
             error!("Error accessing {}: {}", full_path.display(), e);
             (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response()
         }
+    }
+}
+
+async fn handle_dir(path: &str, query: DirQuery, state: &ServerState) -> Response {
+    let full_path = match sanitize_path(&state.root, path) {
+        Some(p) => p,
+        None => {
+            warn!("Path traversal attempt blocked: {}", path);
+            return (StatusCode::FORBIDDEN, "Invalid path").into_response();
+        }
+    };
+
+    match fs::metadata(&full_path).await {
+        Ok(metadata) if metadata.is_dir() => {
+            serve_directory(path, &full_path, query, state).await
+        }
+        _ => (StatusCode::NOT_FOUND, "Not Found").into_response(),
     }
 }
 
@@ -961,8 +1002,13 @@ fn get_language(ext: &str) -> &'static str {
     }
 }
 
-async fn serve_directory(rel_path: &str, full_path: &PathBuf, state: &ServerState) -> Response {
-    let entries = match list_directory_entries(rel_path, full_path, state).await {
+async fn serve_directory(
+    rel_path: &str,
+    full_path: &PathBuf,
+    query: DirQuery,
+    state: &ServerState,
+) -> Response {
+    let entries = match list_directory_entries(rel_path, full_path, query.clone(), state).await {
         Ok(e) => e,
         Err(e) => {
             warn!("Cannot read directory {}: {}", full_path.display(), e);
@@ -970,17 +1016,25 @@ async fn serve_directory(rel_path: &str, full_path: &PathBuf, state: &ServerStat
         }
     };
 
-    let html = generate_directory_html(rel_path, &entries, state);
+    let html = generate_directory_html(rel_path, &entries, query, state);
     Html(html).into_response()
 }
 
 async fn list_directory_entries(
     rel_path: &str,
     full_path: &PathBuf,
+    query: DirQuery,
     _state: &ServerState,
 ) -> std::io::Result<Vec<FileEntry>> {
     let mut entries = fs::read_dir(full_path).await?;
     let mut files = Vec::new();
+
+    // Determine if we should show hidden files
+    let show_hidden = if _state.allow_hidden {
+        query.hidden.unwrap_or(true)
+    } else {
+        false
+    };
 
     if !rel_path.is_empty() {
         files.push(FileEntry {
@@ -996,6 +1050,12 @@ async fn list_directory_entries(
 
     while let Some(entry) = entries.next_entry().await? {
         let name = entry.file_name().to_string_lossy().to_string();
+        
+        // Skip hidden files if not showing them
+        if !show_hidden && name.starts_with('.') {
+            continue;
+        }
+
         let metadata = entry.metadata().await.ok();
 
         let is_dir = metadata.as_ref().map(|m| m.is_dir()).unwrap_or(false);
@@ -1027,24 +1087,136 @@ async fn list_directory_entries(
         });
     }
 
-    files.sort_by(|a, b| {
-        match (a.is_dir, b.is_dir) {
-            (true, false) => std::cmp::Ordering::Less,
-            (false, true) => std::cmp::Ordering::Greater,
-            _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+    // Sort based on query parameter
+    match query.sort {
+        SortBy::Name => {
+            files.sort_by(|a, b| {
+                match (a.is_dir, b.is_dir) {
+                    (true, false) => std::cmp::Ordering::Less,
+                    (false, true) => std::cmp::Ordering::Greater,
+                    _ => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                }
+            });
         }
-    });
+        SortBy::Size => {
+            files.sort_by(|a, b| {
+                match (a.is_dir, b.is_dir) {
+                    (true, false) => std::cmp::Ordering::Less,
+                    (false, true) => std::cmp::Ordering::Greater,
+                    _ => a.size.cmp(&b.size),
+                }
+            });
+        }
+        SortBy::Time => {
+            files.sort_by(|a, b| {
+                match (a.is_dir, b.is_dir) {
+                    (true, false) => std::cmp::Ordering::Less,
+                    (false, true) => std::cmp::Ordering::Greater,
+                    _ => b.modified_time.cmp(&a.modified_time), // Newest first
+                }
+            });
+        }
+        SortBy::Type => {
+            files.sort_by(|a, b| {
+                match (a.is_dir, b.is_dir) {
+                    (true, false) => std::cmp::Ordering::Less,
+                    (false, true) => std::cmp::Ordering::Greater,
+                    _ => {
+                        let type_order = |ft: &FileType| match ft {
+                            FileType::Directory => 0,
+                            FileType::Code => 1,
+                            FileType::Text => 2,
+                            FileType::Markdown => 3,
+                            FileType::Org => 4,
+                            FileType::Image => 5,
+                            FileType::Video => 6,
+                            FileType::Audio => 7,
+                            FileType::Document => 8,
+                            FileType::Archive => 9,
+                            FileType::Executable => 10,
+                            FileType::Unknown => 11,
+                        };
+                        type_order(&a.file_type).cmp(&type_order(&b.file_type))
+                    }
+                }
+            });
+        }
+    }
 
     Ok(files)
 }
 
-fn generate_directory_html(current_path: &str, entries: &[FileEntry], _state: &ServerState) -> String {
+fn generate_breadcrumb(current_path: &str) -> String {
+    if current_path.is_empty() {
+        return "<a href=\"/\">/</a>".to_string();
+    }
+
+    let mut result = String::new();
+    result.push_str("<a href=\"/\">/</a>");
+    
+    let parts: Vec<&str> = current_path.split('/').filter(|s| !s.is_empty()).collect();
+    let mut cumulative_path = String::new();
+    
+    for (i, part) in parts.iter().enumerate() {
+        cumulative_path.push('/');
+        cumulative_path.push_str(part);
+        
+        if i == parts.len() - 1 {
+            // Last part - current directory, not a link
+            result.push_str(&format!("<span>{}</span>", html_escape(part)));
+        } else {
+            // Parent directory, make it a link
+            result.push_str(&format!("<a href=\"{}\">{}</a>/", encode_path(&cumulative_path), html_escape(part)));
+        }
+    }
+    
+    result
+}
+
+fn generate_directory_html(
+    current_path: &str,
+    entries: &[FileEntry],
+    query: DirQuery,
+    state: &ServerState,
+) -> String {
     use std::fmt::Write;
 
     let display_path = if current_path.is_empty() {
         "/".to_string()
     } else {
         format!("/{}/", current_path.trim_end_matches('/'))
+    };
+
+    let breadcrumb = generate_breadcrumb(current_path);
+    
+    // Determine current sort and hidden settings
+    let current_sort = query.sort;
+    let show_hidden = query.hidden.unwrap_or(true);
+    
+    // Build sort links (preserve other query params)
+    let sort_link = |sort: SortBy| {
+        let sort_name = match sort {
+            SortBy::Name => "name",
+            SortBy::Size => "size",
+            SortBy::Time => "time",
+            SortBy::Type => "type",
+        };
+        let hidden_param = if show_hidden { "&hidden=true" } else { "&hidden=false" };
+        format!("?sort={}{}", sort_name, hidden_param)
+    };
+    
+    // Build hidden toggle link
+    let hidden_toggle_link = if state.allow_hidden {
+        let sort_name = match current_sort {
+            SortBy::Name => "name",
+            SortBy::Size => "size",
+            SortBy::Time => "time",
+            SortBy::Type => "type",
+        };
+        let new_hidden = !show_hidden;
+        format!("?sort={}&hidden={}", sort_name, new_hidden)
+    } else {
+        String::new()
     };
 
     let mut html = String::with_capacity(4096 + entries.len() * 256);
@@ -1073,8 +1245,36 @@ fn generate_directory_html(current_path: &str, entries: &[FileEntry], _state: &S
             padding: 20px;
             margin: -20px -20px 20px -20px;
         }}
-        h1 {{ color: #f0f6fc; font-size: 1.5rem; font-weight: 600; }}
-        .breadcrumb {{ color: #8b949e; font-size: 0.9rem; }}
+        h1 {{ color: #f0f6fc; font-size: 1.5rem; font-weight: 600; margin-bottom: 12px; }}
+        .breadcrumb {{ color: #8b949e; font-size: 0.95rem; }}
+        .breadcrumb a {{ color: #58a6ff; text-decoration: none; }}
+        .breadcrumb a:hover {{ text-decoration: underline; }}
+        .breadcrumb span {{ color: #f0f6fc; font-weight: 500; }}
+        .controls {{
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid #30363d;
+        }}
+        .control-group {{ display: flex; align-items: center; gap: 8px; }}
+        .control-label {{ color: #8b949e; font-size: 0.85rem; }}
+        .btn-group {{ display: flex; gap: 4px; }}
+        .btn {{
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            text-decoration: none;
+            border: 1px solid #30363d;
+            background: #21262d;
+            color: #c9d1d9;
+            cursor: pointer;
+        }}
+        .btn:hover {{ background: #30363d; }}
+        .btn.active {{ background: #1f6feb; border-color: #1f6feb; color: #fff; }}
+        .btn.disabled {{ opacity: 0.5; cursor: not-allowed; }}
         .file-list {{
             background: #161b22;
             border: 1px solid #30363d;
@@ -1140,6 +1340,58 @@ fn generate_directory_html(current_path: &str, entries: &[FileEntry], _state: &S
     <div class="container">
         <header>
             <h1>📁 Index of <span class="breadcrumb">{}</span></h1>
+            <div class="breadcrumb">{}</div>
+            <div class="controls">
+                <div class="control-group">
+                    <span class="control-label">Sort by:</span>
+                    <div class="btn-group">
+                        <a href="{}" class="btn {}">Name</a>
+                        <a href="{}" class="btn {}">Size</a>
+                        <a href="{}" class="btn {}">Time</a>
+                        <a href="{}" class="btn {}">Type</a>
+                    </div>
+                </div>"##,
+        html_escape(&display_path),
+        html_escape(&display_path),
+        breadcrumb,
+        sort_link(SortBy::Name),
+        if matches!(current_sort, SortBy::Name) { "active" } else { "" },
+        sort_link(SortBy::Size),
+        if matches!(current_sort, SortBy::Size) { "active" } else { "" },
+        sort_link(SortBy::Time),
+        if matches!(current_sort, SortBy::Time) { "active" } else { "" },
+        sort_link(SortBy::Type),
+        if matches!(current_sort, SortBy::Type) { "active" } else { "" }
+    );
+
+    // Add hidden files toggle if allowed
+    if state.allow_hidden {
+        let hidden_btn_class = if show_hidden { "active" } else { "" };
+        let hidden_text = if show_hidden { "Hide hidden" } else { "Show hidden" };
+        let _ = write!(
+            html,
+            r#"
+                <div class="control-group">
+                    <span class="control-label">Hidden files:</span>
+                    <a href="{}" class="btn {}">{}</a>
+                </div>"#,
+            hidden_toggle_link,
+            hidden_btn_class,
+            hidden_text
+        );
+    } else {
+        let _ = write!(
+            html,
+            r#"
+                <div class="control-group">
+                    <span class="control-label">Hidden files:</span>
+                    <span class="btn disabled" title="Disabled by server">Disabled</span>
+                </div>"#
+        );
+    }
+
+    let _ = write!(html, r#"
+            </div>
         </header>
         <div class="file-list">
             <div class="file-header">
@@ -1147,10 +1399,7 @@ fn generate_directory_html(current_path: &str, entries: &[FileEntry], _state: &S
                 <span>Name</span>
                 <span class="size">Size</span>
                 <span class="time">Modified</span>
-            </div>"##,
-        html_escape(&display_path),
-        html_escape(&display_path)
-    );
+            </div>"#);
 
     for entry in entries {
         let size_display = if entry.is_dir {
