@@ -1,4 +1,6 @@
-use percent_encoding::{percent_decode_str, percent_encode, AsciiSet, CONTROLS};
+use percent_encoding::{
+    AsciiSet, CONTROLS, percent_decode_str, percent_encode,
+};
 use std::path::Path;
 
 /// Path percent encode set: https://url.spec.whatwg.org/#path-percent-encode-set
@@ -30,7 +32,7 @@ pub fn guess_mime_type(filename: &str) -> String {
         .unwrap_or_default()
         .to_str()
         .unwrap_or_default();
-    
+
     mime_guess::from_ext(ext)
         .first()
         .map(|m| m.to_string())
@@ -55,6 +57,7 @@ pub fn format_size(size: u64) -> String {
 /// Format system time to HTTP date format
 pub fn format_http_date(modified: std::time::SystemTime) -> String {
     let datetime: time::OffsetDateTime = modified.into();
-    datetime.format(&time::format_description::well_known::Rfc2822)
+    datetime
+        .format(&time::format_description::well_known::Rfc2822)
         .unwrap_or_default()
 }

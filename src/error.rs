@@ -6,13 +6,13 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum Error {
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
-    
+
     #[error("Invalid path")]
     InvalidPath,
-    
+
     #[error("Not found")]
     NotFound,
-    
+
     #[error("Permission denied")]
     PermissionDenied,
 }

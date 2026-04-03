@@ -13,7 +13,7 @@ keywords = ["d", "httpd", "http-server", "http", "server"]
 
 [dependencies]
 # Async runtime
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "signal", "net"] }
 tokio-util = { version = "0.7", features = ["io", "codec"] }
 
 # Web framework

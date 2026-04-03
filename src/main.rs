@@ -75,7 +75,10 @@ async fn main() {
             }
         },
         Err(e) => {
-            error!("Failed to parse address '{}:{}': {}", cli.host, cli.port, e);
+            error!(
+                "Failed to parse address '{}:{}': {}",
+                cli.host, cli.port, e
+            );
             exit(1);
         }
     };
@@ -100,9 +103,9 @@ async fn main() {
 }
 
 fn init_tracing(level: &str) {
+    use tracing_subscriber::EnvFilter;
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
-    use tracing_subscriber::EnvFilter;
 
     let filter = EnvFilter::try_new(format!("d={}", level))
         .or_else(|_| EnvFilter::try_new(level))
