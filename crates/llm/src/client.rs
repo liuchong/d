@@ -2,10 +2,41 @@ use kernel::config::Config;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 
+/// Coding Agent User-Agents for kimi-for-coding API
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CodingAgent {
+    KimiCli,
+    ClaudeCode,
+    RooCode,
+    KiloCode,
+    Cursor,
+    GitHubCopilot,
+}
+
+impl CodingAgent {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CodingAgent::KimiCli => "Kimi-CLI/1.0",
+            CodingAgent::ClaudeCode => "Claude-Code/0.1",
+            CodingAgent::RooCode => "Roo-Code/1.0",
+            CodingAgent::KiloCode => "Kilo-Code/1.0",
+            CodingAgent::Cursor => "Cursor/1.0",
+            CodingAgent::GitHubCopilot => "GitHub-Copilot/1.0",
+        }
+    }
+}
+
+impl Default for CodingAgent {
+    fn default() -> Self {
+        CodingAgent::ClaudeCode
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct AiClient {
     config: Config,
     client: reqwest::Client,
+    user_agent: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,7 +71,43 @@ impl AiClient {
             .build()
             .map_err(|e| AiError::Config(e.to_string()))?;
         
-        Ok(Self { config, client })
+        // Auto-detect if we need a special User-Agent
+        let user_agent = Self::detect_user_agent(&config);
+        
+        Ok(Self { config, client, user_agent })
+    }
+
+    pub fn with_user_agent(mut self, agent: CodingAgent) -> Self {
+        self.user_agent = Some(agent.as_str().to_string());
+        self
+    }
+
+    /// Detect if we need a special User-Agent based on config
+    fn detect_user_agent(config: &Config) -> Option<String> {
+        let base_url = &config.ai.base_url;
+        
+        // Check if using kimi-for-coding API
+        if base_url.contains("kimi.com/coding") || base_url.contains("kimi-for-coding") {
+            tracing::info!("Detected kimi-for-coding API, using Coding Agent User-Agent");
+            return Some(CodingAgent::ClaudeCode.as_str().to_string());
+        }
+        
+        None
+    }
+
+    fn build_request(&self, url: &str) -> reqwest::RequestBuilder {
+        let mut req = self.client
+            .post(url)
+            .header("Authorization", format!("Bearer {}", self.config.ai.api_key))
+            .header("Content-Type", "application/json");
+        
+        // Add User-Agent if needed
+        if let Some(ref ua) = self.user_agent {
+            req = req.header("User-Agent", ua);
+            tracing::debug!("Using User-Agent: {}", ua);
+        }
+        
+        req
     }
 
     pub async fn chat(&self, messages: Vec<ChatMessage>) -> Result<String, AiError> {
@@ -55,10 +122,8 @@ impl AiClient {
             "max_tokens": self.config.ai.max_tokens,
         });
 
-        let response = self.client
-            .post(&format!("{}/chat/completions", self.config.ai.base_url))
-            .header("Authorization", format!("Bearer {}", self.config.ai.api_key))
-            .header("Content-Type", "application/json")
+        let response = self
+            .build_request(&format!("{}/chat/completions", self.config.ai.base_url))
             .json(&body)
             .send()
             .await
@@ -97,10 +162,8 @@ impl AiClient {
             "stream": true,
         });
 
-        let response = self.client
-            .post(&format!("{}/chat/completions", self.config.ai.base_url))
-            .header("Authorization", format!("Bearer {}", self.config.ai.api_key))
-            .header("Content-Type", "application/json")
+        let response = self
+            .build_request(&format!("{}/chat/completions", self.config.ai.base_url))
             .json(&body)
             .send()
             .await
@@ -140,5 +203,52 @@ impl AiClient {
         });
 
         Ok(stream)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_coding_agent_user_agent() {
+        assert_eq!(CodingAgent::ClaudeCode.as_str(), "Claude-Code/0.1");
+        assert_eq!(CodingAgent::KimiCli.as_str(), "Kimi-CLI/1.0");
+        assert_eq!(CodingAgent::RooCode.as_str(), "Roo-Code/1.0");
+    }
+
+    #[test]
+    fn test_detect_user_agent_for_coding_api() {
+        let config = Config {
+            ai: kernel::AiConfig {
+                api_key: "test".to_string(),
+                base_url: "https://api.kimi.com/coding/v1".to_string(),
+                model: "kimi-for-coding".to_string(),
+                temperature: 0.7,
+                max_tokens: 8192,
+            },
+            server: kernel::ServerConfig::default(),
+        };
+        
+        let ua = AiClient::detect_user_agent(&config);
+        assert!(ua.is_some());
+        assert_eq!(ua.unwrap(), "Claude-Code/0.1");
+    }
+
+    #[test]
+    fn test_no_user_agent_for_standard_api() {
+        let config = Config {
+            ai: kernel::AiConfig {
+                api_key: "test".to_string(),
+                base_url: "https://api.moonshot.cn/v1".to_string(),
+                model: "kimi-k2-5".to_string(),
+                temperature: 0.7,
+                max_tokens: 32768,
+            },
+            server: kernel::ServerConfig::default(),
+        };
+        
+        let ua = AiClient::detect_user_agent(&config);
+        assert!(ua.is_none());
     }
 }
