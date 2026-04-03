@@ -99,12 +99,16 @@ impl AiClient {
         let mut req = self.client
             .post(url)
             .header("Authorization", format!("Bearer {}", self.config.ai.api_key))
-            .header("Content-Type", "application/json");
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json");
         
-        // Add User-Agent if needed
+        // Add User-Agent if needed (for Coding APIs)
         if let Some(ref ua) = self.user_agent {
             req = req.header("User-Agent", ua);
-            tracing::debug!("Using User-Agent: {}", ua);
+            tracing::info!("Using Coding Agent User-Agent: {}", ua);
+        } else {
+            // Default User-Agent for standard APIs
+            req = req.header("User-Agent", format!("D-Chat/{} (AI Daemon)", env!("CARGO_PKG_VERSION")));
         }
         
         req
