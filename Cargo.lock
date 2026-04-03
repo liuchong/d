@@ -796,6 +796,7 @@ dependencies = [
  "agent",
  "anyhow",
  "axum",
+ "chrono",
  "futures",
  "http-body-util",
  "hyper",
@@ -816,6 +817,7 @@ dependencies = [
  "tower",
  "tower-http",
  "tracing",
+ "uuid",
 ]
 
 [[package]]

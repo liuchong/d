@@ -171,14 +171,26 @@ pub fn create_app(root: PathBuf, allow_hidden: bool) -> Router {
 
     let cors = CorsLayer::new()
         .allow_origin(tower_http::cors::Any)
-        .allow_methods([axum::http::Method::GET, axum::http::Method::HEAD])
+        .allow_methods([
+            axum::http::Method::GET,
+            axum::http::Method::HEAD,
+            axum::http::Method::POST,
+        ])
         .allow_headers(tower_http::cors::Any);
 
     let compression = CompressionLayer::new().gzip(true).br(true);
 
-    Router::new()
+    // API routes first (higher priority)
+    let api_routes = crate::api::api_routes();
+
+    // File serving routes (lower priority, catch-all)
+    let file_routes = Router::new()
         .route("/{*path}", get(handle_request))
-        .route("/", get(handle_root))
+        .route("/", get(handle_root));
+
+    Router::new()
+        .nest("/api", api_routes)
+        .merge(file_routes)
         .layer(compression)
         .layer(cors)
         .with_state(state)
