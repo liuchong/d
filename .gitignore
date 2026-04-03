@@ -9,3 +9,8 @@ tmp
 .#*
 .DS_Store
 nohup.out
+
+# Configuration files with secrets
+/config.toml
+*.key
+.env
