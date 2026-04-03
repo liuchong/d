@@ -13,7 +13,7 @@ homepage = "https://github.com/liuchong/d"
 description = "D - AI Daemon with HTTP server and CLI chat"
 
 [workspace.dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "signal", "net", "process", "io-std", "time"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "signal", "net", "process", "io-std", "time", "sync"] }
 tokio-util = { version = "0.7", features = ["io", "codec"] }
 futures = "0.3"
 async-trait = "0.1"

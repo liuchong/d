@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tracing::{info, warn};
 
-/// Main configuration struct (nested format for ~/.config/d/config.toml)
+/// Main configuration struct (nested format for XDG config)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub ai: AiConfig,
@@ -18,54 +18,169 @@ impl Default for Config {
     }
 }
 
+/// Configuration file names to search for
+const CONFIG_NAMES: &[&str] = &["config.toml", ".d.toml", ".d/config.toml"];
+
 impl Config {
-    /// Load configuration with chat.zig compatibility
+    /// Load configuration with multi-level search
     /// 
-    /// Priority:
-    /// 1. Current directory config.toml (chat.zig compatible)
-    /// 2. ~/.config/d/config.toml (legacy nested format)
-    /// 3. Default values
+    /// Search order (highest to lowest priority):
+    /// 1. Current directory and ancestors (project-specific)
+    /// 2. XDG_CONFIG_HOME/d/ (user-specific)
+    /// 3. ~/.config/d/ (fallback XDG)
+    /// 4. ~/.d/ (legacy home config)
+    /// 5. /etc/d/ (system-wide)
+    /// 6. Default values
     pub fn load() -> anyhow::Result<Self> {
-        // First, try current directory config.toml (chat.zig compatible)
-        let local_config = PathBuf::from("config.toml");
-        if local_config.exists() {
-            info!("Loading config from {}", local_config.display());
-            let content = std::fs::read_to_string(&local_config)?;
-            
-            // Try flat format first (chat.zig compatible)
-            if let Ok(flat_config) = toml::from_str::<FlatConfig>(&content) {
-                info!("Loaded flat config format (chat.zig compatible)");
-                return Ok(flat_config.into());
-            }
-            
-            // Try nested format
-            if let Ok(config) = toml::from_str::<Config>(&content) {
-                info!("Loaded nested config format");
+        // Search paths in priority order
+        let search_paths = Self::collect_search_paths();
+        
+        for path in &search_paths {
+            if let Some(config) = Self::try_load_from(path) {
                 return Ok(config);
             }
-            
-            warn!("Failed to parse config.toml, trying legacy location");
         }
         
-        // Second, try legacy ~/.config/d/config.toml
+        // No config found, create default in XDG location
+        info!("No config found, creating default");
+        let default_config = Config::default();
+        default_config.save_default()?;
+        Ok(default_config)
+    }
+    
+    /// Collect all config search paths in priority order
+    fn collect_search_paths() -> Vec<PathBuf> {
+        let mut paths = Vec::new();
+        
+        // 1. Current directory and ancestors
+        if let Ok(cwd) = std::env::current_dir() {
+            let mut current = cwd.clone();
+            loop {
+                for name in CONFIG_NAMES {
+                    paths.push(current.join(name));
+                }
+                
+                // Stop at home directory or root
+                if let Some(home) = dirs::home_dir() {
+                    if current == home {
+                        break;
+                    }
+                }
+                if !current.pop() {
+                    break;
+                }
+            }
+        }
+        
+        // 2. XDG_CONFIG_HOME/d/
+        if let Some(xdg_config) = dirs::config_dir() {
+            for name in CONFIG_NAMES {
+                paths.push(xdg_config.join("d").join(name));
+            }
+        }
+        
+        // 3. ~/.d/ (legacy)
+        if let Some(home) = dirs::home_dir() {
+            for name in CONFIG_NAMES {
+                paths.push(home.join(".d").join(name));
+            }
+        }
+        
+        // 4. /etc/d/ (system-wide, Unix only)
+        #[cfg(unix)]
+        for name in CONFIG_NAMES {
+            paths.push(PathBuf::from("/etc/d").join(name));
+        }
+        
+        paths
+    }
+    
+    /// Try to load config from a specific path
+    fn try_load_from(path: &Path) -> Option<Config> {
+        if !path.exists() {
+            return None;
+        }
+        
+        info!("Trying config: {}", path.display());
+        
+        let content = match std::fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(e) => {
+                warn!("Failed to read {}: {}", path.display(), e);
+                return None;
+            }
+        };
+        
+        // Try flat format first (chat.zig compatible)
+        if let Ok(flat_config) = toml::from_str::<FlatConfig>(&content) {
+            info!("Loaded flat config from: {}", path.display());
+            return Some(flat_config.into());
+        }
+        
+        // Try nested format
+        if let Ok(config) = toml::from_str::<Config>(&content) {
+            info!("Loaded nested config from: {}", path.display());
+            return Some(config);
+        }
+        
+        warn!("Failed to parse config: {}", path.display());
+        None
+    }
+    
+    /// Save default config to XDG location
+    fn save_default(&self) -> anyhow::Result<()> {
         let config_dir = dirs::config_dir()
             .ok_or_else(|| anyhow::anyhow!("Cannot find config directory"))?
             .join("d");
+        
         let config_file = config_dir.join("config.toml");
         
-        if config_file.exists() {
-            info!("Loading config from {}", config_file.display());
-            let content = std::fs::read_to_string(&config_file)?;
-            let config: Config = toml::from_str(&content)?;
-            return Ok(config);
-        }
-        
-        // Create default config in legacy location
-        info!("Creating default config at {}", config_file.display());
-        let config = Config::default();
         std::fs::create_dir_all(&config_dir)?;
-        std::fs::write(&config_file, toml::to_string_pretty(&config)?)?;
-        Ok(config)
+        
+        // Create template with comments
+        let template = r#"# D - AI Daemon Configuration
+# 
+# Place this file in one of these locations (priority order):
+# 1. ./config.toml  (current directory)
+# 2. ~/.config/d/config.toml  (XDG config)
+# 3. ~/.d/config.toml  (legacy)
+# 4. /etc/d/config.toml  (system-wide)
+#
+# Get your API key from: https://platform.moonshot.cn/
+
+[ai]
+api_key = ""
+base_url = "https://api.moonshot.cn/v1"
+model = "kimi-k2-5"
+temperature = 0.7
+max_tokens = 32768
+
+[server]
+host = "localhost"
+port = 8080
+root = "."
+"#;
+        
+        std::fs::write(&config_file, template)?;
+        info!("Created default config at: {}", config_file.display());
+        Ok(())
+    }
+    
+    /// Get the config file path that was loaded (for debugging)
+    pub fn loaded_path() -> Option<PathBuf> {
+        let search_paths = Self::collect_search_paths();
+        for path in &search_paths {
+            if path.exists() {
+                // Verify it's parseable
+                if let Ok(content) = std::fs::read_to_string(path) {
+                    if toml::from_str::<FlatConfig>(&content).is_ok() 
+                        || toml::from_str::<Config>(&content).is_ok() {
+                        return Some(path.clone());
+                    }
+                }
+            }
+        }
+        None
     }
 }
 
@@ -87,6 +202,8 @@ struct FlatConfig {
     host: Option<String>,
     #[serde(default)]
     port: Option<u16>,
+    #[serde(default)]
+    root: Option<PathBuf>,
 }
 
 fn default_base_url() -> String {
@@ -118,7 +235,7 @@ impl From<FlatConfig> for Config {
             server: ServerConfig {
                 host: flat.host.unwrap_or_else(|| "localhost".to_string()),
                 port: flat.port.unwrap_or(8080),
-                root: PathBuf::from("."),
+                root: flat.root.unwrap_or_else(|| PathBuf::from(".")),
             },
         }
     }
@@ -176,6 +293,7 @@ mod tests {
             max_tokens: 1000,
             host: Some("0.0.0.0".to_string()),
             port: Some(3000),
+            root: Some(PathBuf::from("/tmp")),
         };
         
         let config: Config = flat.into();
@@ -187,6 +305,7 @@ mod tests {
         assert_eq!(config.ai.max_tokens, 1000);
         assert_eq!(config.server.host, "0.0.0.0");
         assert_eq!(config.server.port, 3000);
+        assert_eq!(config.server.root, PathBuf::from("/tmp"));
     }
 
     #[test]
@@ -217,5 +336,22 @@ max_tokens = 8192
         assert_eq!(flat.model, "kimi-k2-5");
         assert_eq!(flat.temperature, 0.7);
         assert_eq!(flat.max_tokens, 32768);
+    }
+    
+    #[test]
+    fn test_search_paths_collected() {
+        let paths = Config::collect_search_paths();
+        // Should have multiple paths from different locations
+        assert!(!paths.is_empty());
+        
+        // Should include config.toml variants
+        let has_config_toml = paths.iter().any(|p| {
+            p.to_string_lossy().ends_with("config.toml")
+        });
+        assert!(has_config_toml);
+        
+        // May include XDG path (depending on environment)
+        // Just verify we have reasonable number of paths
+        assert!(paths.len() >= 3);
     }
 }

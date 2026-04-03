@@ -10,7 +10,22 @@ tmp
 .DS_Store
 nohup.out
 
-# Configuration files with secrets
+# Configuration files with secrets (local/project-specific)
+# These are searched in priority order, local ones should be ignored
 /config.toml
-*.key
+.d.toml
+.d/
+
+# Environment files
 .env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
