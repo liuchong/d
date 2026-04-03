@@ -1,13 +1,13 @@
 use crate::utils::{decode_path, encode_path, format_http_date, format_size, guess_mime_type};
 use axum::{
     body::Body,
-    extract::{Request, State},
+    extract::{Query, Request, State},
     http::{header, HeaderMap, Method, StatusCode},
     response::{Html, IntoResponse, Response},
     routing::get,
-    Json, Router,
+    Router,
 };
-use serde::Serialize;
+use serde::Deserialize;
 use std::net::SocketAddr;
 use std::path::{Component, Path, PathBuf};
 
@@ -22,22 +22,17 @@ pub struct ServerState {
 }
 
 /// File information for directory listing
-#[derive(Serialize)]
 struct FileEntry {
     name: String,
     path: String,
     is_dir: bool,
     size: u64,
-    modified: Option<u64>,
-    #[serde(skip)]
     modified_time: Option<std::time::SystemTime>,
     file_type: FileType,
-    #[serde(skip)]
     extension: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, Clone)]
 enum FileType {
     Directory,
     Image,
@@ -56,26 +51,33 @@ enum FileType {
 impl FileType {
     fn from_extension(ext: &str) -> Self {
         match ext.to_lowercase().as_str() {
-            // Images
-            "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "svg" | "ico" | "tiff" | "tif" | "raw" | "heic" | "avif" => FileType::Image,
-            // Videos
-            "mp4" | "webm" | "mkv" | "avi" | "mov" | "wmv" | "flv" | "m4v" | "3gp" | "ogv" | "mpg" | "mpeg" | "m2v" => FileType::Video,
-            // Audio
-            "mp3" | "wav" | "ogg" | "flac" | "aac" | "m4a" | "wma" | "opus" | "aiff" | "au" => FileType::Audio,
-            // Code
-            "rs" | "js" | "ts" | "jsx" | "tsx" | "py" | "java" | "c" | "cpp" | "cc" | "cxx" | "h" | "hpp" | "go" | "rb" | "php" | "swift" | "kt" | "scala" | "r" | "m" | "mm" | "pl" | "pm" | "t" | "sh" | "bash" | "zsh" | "fish" | "ps1" | "bat" | "cmd" | "vbs" | "lua" | "elm" | "erl" | "hrl" | "ex" | "exs" | "fs" | "fsx" | "fsi" | "ml" | "mli" | "hs" | "lhs" | "clj" | "cljs" | "cljc" | "edn" | "coffee" | "litcoffee" | "cr" | "dart" | "groovy" | "gvy" | "gy" | "gsh" | "p6" | "pm6" | "pod6" | "t6" | "nim" | "nims" | "zig" | "v" | "vsh" => FileType::Code,
-            // Text
-            "txt" | "rst" | "log" | "csv" | "tsv" | "json" | "xml" | "yaml" | "yml" | "toml" | "ini" | "conf" | "cfg" | "properties" | "env" | "sql" | "graphql" | "gql" => FileType::Text,
-            // Markdown
+            "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp" | "svg" | "ico" | "tiff" | "tif"
+            | "raw" | "heic" | "avif" => FileType::Image,
+            "mp4" | "webm" | "mkv" | "avi" | "mov" | "wmv" | "flv" | "m4v" | "3gp" | "ogv"
+            | "mpg" | "mpeg" | "m2v" => FileType::Video,
+            "mp3" | "wav" | "ogg" | "flac" | "aac" | "m4a" | "wma" | "opus" | "aiff" | "au" => {
+                FileType::Audio
+            }
+            "rs" | "js" | "ts" | "jsx" | "tsx" | "py" | "java" | "c" | "cpp" | "cc" | "cxx"
+            | "h" | "hpp" | "go" | "rb" | "php" | "swift" | "kt" | "scala" | "r" | "m" | "mm"
+            | "pl" | "pm" | "t" | "sh" | "bash" | "zsh" | "fish" | "ps1" | "bat" | "cmd"
+            | "vbs" | "lua" | "elm" | "erl" | "hrl" | "ex" | "exs" | "fs" | "fsx" | "fsi"
+            | "ml" | "mli" | "hs" | "lhs" | "clj" | "cljs" | "cljc" | "edn" | "coffee"
+            | "litcoffee" | "cr" | "dart" | "groovy" | "gvy" | "gy" | "gsh" | "p6" | "pm6"
+            | "pod6" | "t6" | "nim" | "nims" | "zig" | "v" | "vsh" => FileType::Code,
+            "txt" | "rst" | "log" | "csv" | "tsv" | "json" | "xml" | "yaml" | "yml" | "toml"
+            | "ini" | "conf" | "cfg" | "properties" | "env" | "sql" | "graphql" | "gql" => {
+                FileType::Text
+            }
             "md" | "markdown" | "mkd" | "mdown" => FileType::Markdown,
-            // Org
             "org" => FileType::Org,
-            // Archives
-            "zip" | "rar" | "7z" | "tar" | "gz" | "bz2" | "xz" | "lz" | "lzma" | "zst" | "br" | "tgz" | "tbz" | "txz" | "tlz" | "cab" | "deb" | "rpm" | "dmg" | "pkg" | "msi" | "iso" | "img" => FileType::Archive,
-            // Documents
-            "pdf" | "doc" | "docx" | "xls" | "xlsx" | "ppt" | "pptx" | "odt" | "ods" | "odp" | "rtf" | "epub" | "mobi" | "azw" | "azw3" | "tex" | "latex" => FileType::Document,
-            // Executables
-            "exe" | "dll" | "so" | "dylib" | "bin" | "app" | "elf" | "wasm" | "pyc" | "class" | "o" | "obj" | "lib" | "a" => FileType::Executable,
+            "zip" | "rar" | "7z" | "tar" | "gz" | "bz2" | "xz" | "lz" | "lzma" | "zst" | "br"
+            | "tgz" | "tbz" | "txz" | "tlz" | "cab" | "deb" | "rpm" | "dmg" | "pkg" | "msi"
+            | "iso" | "img" => FileType::Archive,
+            "pdf" | "doc" | "docx" | "xls" | "xlsx" | "ppt" | "pptx" | "odt" | "ods" | "odp"
+            | "rtf" | "epub" | "mobi" | "azw" | "azw3" | "tex" | "latex" => FileType::Document,
+            "exe" | "dll" | "so" | "dylib" | "bin" | "app" | "elf" | "wasm" | "pyc" | "class"
+            | "o" | "obj" | "lib" | "a" => FileType::Executable,
             _ => FileType::Unknown,
         }
     }
@@ -114,85 +116,41 @@ impl FileType {
         }
     }
 
-    fn is_previewable(&self) -> bool {
-        matches!(self, FileType::Image | FileType::Video | FileType::Audio | FileType::Code | FileType::Text | FileType::Markdown | FileType::Org)
-    }
-
-    fn language(&self, ext: &str) -> &'static str {
-        match ext.to_lowercase().as_str() {
-            "rs" => "rust",
-            "js" => "javascript",
-            "ts" => "typescript",
-            "jsx" => "jsx",
-            "tsx" => "tsx",
-            "py" => "python",
-            "java" => "java",
-            "c" | "h" => "c",
-            "cpp" | "cc" | "cxx" | "hpp" => "cpp",
-            "go" => "go",
-            "rb" => "ruby",
-            "php" => "php",
-            "swift" => "swift",
-            "kt" => "kotlin",
-            "scala" => "scala",
-            "r" => "r",
-            "sh" | "bash" => "bash",
-            "ps1" => "powershell",
-            "lua" => "lua",
-            "elm" => "elm",
-            "erl" | "hrl" => "erlang",
-            "ex" | "exs" => "elixir",
-            "fs" | "fsx" => "fsharp",
-            "ml" | "mli" => "ocaml",
-            "hs" | "lhs" => "haskell",
-            "clj" | "cljs" => "clojure",
-            "coffee" => "coffeescript",
-            "cr" => "crystal",
-            "dart" => "dart",
-            "groovy" => "groovy",
-            "nim" => "nim",
-            "zig" => "zig",
-            "v" => "v",
-            "sql" => "sql",
-            "json" => "json",
-            "xml" => "xml",
-            "yaml" | "yml" => "yaml",
-            "toml" => "toml",
-            "md" | "markdown" => "markdown",
-            _ => "plaintext",
-        }
+    fn is_text(&self) -> bool {
+        matches!(
+            self,
+            FileType::Code | FileType::Text | FileType::Markdown | FileType::Org
+        )
     }
 }
 
-/// Create the router with CORS and compression support
+#[derive(Deserialize)]
+struct ViewQuery {
+    view: Option<String>,
+}
+
+/// Create the router
 pub fn create_app(root: PathBuf) -> Router {
     use tower_http::compression::CompressionLayer;
     use tower_http::cors::CorsLayer;
 
     let state = ServerState { root };
 
-    // CORS: Allow all origins for a simple file server
     let cors = CorsLayer::new()
         .allow_origin(tower_http::cors::Any)
         .allow_methods([axum::http::Method::GET, axum::http::Method::HEAD])
         .allow_headers(tower_http::cors::Any);
 
-    // Compression: gzip, deflate, br (brotli)
-    let compression = CompressionLayer::new()
-        .gzip(true)
-        .deflate(true)
-        .br(true);
+    let compression = CompressionLayer::new().gzip(true).deflate(true).br(true);
 
     Router::new()
-        .route("/{*path}", get(handle_request).head(handle_request))
-        .route("/", get(handle_root).head(handle_root))
-        .route("/__api/files", get(api_list_files))
+        .route("/{*path}", get(handle_request))
+        .route("/", get(handle_root))
         .layer(compression)
         .layer(cors)
         .with_state(state)
 }
 
-/// Start the HTTP server with graceful shutdown
 pub async fn start(addr: &SocketAddr, root: &str) {
     let root_path = PathBuf::from(root);
 
@@ -217,7 +175,6 @@ pub async fn start(addr: &SocketAddr, root: &str) {
 
     let serve = axum::serve(listener, app);
 
-    // Graceful shutdown
     let shutdown = async {
         match tokio::signal::ctrl_c().await {
             Ok(()) => info!("Received shutdown signal"),
@@ -232,18 +189,17 @@ pub async fn start(addr: &SocketAddr, root: &str) {
     info!("Server stopped");
 }
 
-/// Handle root path
 async fn handle_root(
     State(state): State<ServerState>,
-    request: Request<Body>,
+    Query(_query): Query<ViewQuery>,
 ) -> impl IntoResponse {
-    let is_head = request.method() == Method::HEAD;
-    handle_path("", None, is_head, &state).await
+    let _ = _query;
+    handle_path("", None, false, &state).await
 }
 
-/// Handle any request
 async fn handle_request(
     State(state): State<ServerState>,
+    Query(query): Query<ViewQuery>,
     request: Request<Body>,
 ) -> impl IntoResponse {
     let method = request.method().clone();
@@ -268,21 +224,44 @@ async fn handle_request(
         .and_then(|v| v.to_str().ok());
 
     let is_head = method == Method::HEAD;
+
+    // Check if this is a view request for text files
+    if let Some(view) = query.view {
+        return handle_view(&decoded, &view, &state).await;
+    }
+
     handle_path(&decoded, range, is_head, &state).await
 }
 
-/// API endpoint to list files as JSON
-async fn api_list_files(State(state): State<ServerState>) -> impl IntoResponse {
-    match list_directory_entries("", &state.root).await {
-        Ok(entries) => Json(entries).into_response(),
-        Err(e) => {
-            error!("Failed to list files: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "Failed to list files").into_response()
+async fn handle_view(path: &str, view: &str, state: &ServerState) -> Response {
+    let full_path = match sanitize_path(&state.root, path) {
+        Some(p) => p,
+        None => {
+            return (StatusCode::FORBIDDEN, "Invalid path").into_response();
         }
+    };
+
+    let metadata = match fs::metadata(&full_path).await {
+        Ok(m) if m.is_file() => m,
+        Ok(_) => return (StatusCode::BAD_REQUEST, "Not a file").into_response(),
+        Err(_) => return (StatusCode::NOT_FOUND, "Not Found").into_response(),
+    };
+
+    let ext = Path::new(path)
+        .extension()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+    let file_type = FileType::from_extension(&ext);
+
+    match view.as_ref() {
+        "raw" => serve_raw_file(&full_path, &metadata).await,
+        "preview" => serve_preview(&full_path, path, &file_type).await,
+        "download" => serve_download(&full_path, path, &metadata).await,
+        _ => (StatusCode::BAD_REQUEST, "Invalid view").into_response(),
     }
 }
 
-/// Handle path - either serve file or directory listing
 async fn handle_path(
     path: &str,
     range: Option<&str>,
@@ -305,7 +284,22 @@ async fn handle_path(
                 serve_directory(path, &full_path, state).await
             }
         }
-        Ok(metadata) => serve_file(&full_path, &metadata, range, is_head).await,
+        Ok(metadata) => {
+            // Check if it's a text file that should be shown with options
+            let ext = Path::new(path)
+                .extension()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            let file_type = FileType::from_extension(&ext);
+
+            if file_type.is_text() || matches!(file_type, FileType::Markdown | FileType::Org) {
+                // For text files, show the file viewer page
+                serve_file_viewer(path, &full_path, &metadata, &file_type).await
+            } else {
+                serve_file(&full_path, &metadata, range, is_head).await
+            }
+        }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             (StatusCode::NOT_FOUND, "Not Found").into_response()
         }
@@ -316,7 +310,6 @@ async fn handle_path(
     }
 }
 
-/// Sanitize path to prevent directory traversal attacks
 fn sanitize_path(base: &Path, requested: &str) -> Option<PathBuf> {
     let mut result = base.to_path_buf();
 
@@ -340,7 +333,6 @@ fn sanitize_path(base: &Path, requested: &str) -> Option<PathBuf> {
     }
 }
 
-/// Parse Range header
 fn parse_range(range: &str, file_size: u64) -> Option<(u64, u64)> {
     let range = range.strip_prefix("bytes=")?;
     let parts: Vec<&str> = range.split('-').collect();
@@ -362,7 +354,6 @@ fn parse_range(range: &str, file_size: u64) -> Option<(u64, u64)> {
     Some((start, end))
 }
 
-/// Generate ETag from metadata
 fn generate_etag(metadata: &std::fs::Metadata) -> String {
     let modified = metadata
         .modified()
@@ -373,7 +364,6 @@ fn generate_etag(metadata: &std::fs::Metadata) -> String {
     format!("\"{:x}-{:x}\"", modified, metadata.len())
 }
 
-/// Serve a file with proper streaming, range support and caching
 async fn serve_file(
     path: &PathBuf,
     metadata: &std::fs::Metadata,
@@ -459,9 +449,520 @@ async fn serve_file(
     (StatusCode::OK, headers, body).into_response()
 }
 
-/// Serve directory listing HTML
+async fn serve_raw_file(path: &PathBuf, metadata: &std::fs::Metadata) -> Response {
+    let file = match fs::File::open(path).await {
+        Ok(f) => f,
+        Err(e) => {
+            error!("Failed to open file {}: {}", path.display(), e);
+            return (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response();
+        }
+    };
+
+    let mut headers = HeaderMap::new();
+    let mime = guess_mime_type(path.file_name().and_then(|n| n.to_str()).unwrap_or(""));
+    headers.insert(header::CONTENT_TYPE, mime.parse().unwrap());
+    headers.insert(
+        header::CONTENT_LENGTH,
+        metadata.len().to_string().parse().unwrap(),
+    );
+
+    let stream = ReaderStream::new(file);
+    let body = Body::from_stream(stream);
+
+    (StatusCode::OK, headers, body).into_response()
+}
+
+async fn serve_download(path: &PathBuf, filename: &str, metadata: &std::fs::Metadata) -> Response {
+    let file = match fs::File::open(path).await {
+        Ok(f) => f,
+        Err(e) => {
+            error!("Failed to open file {}: {}", path.display(), e);
+            return (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response();
+        }
+    };
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_DISPOSITION,
+        format!("attachment; filename=\"{}\"", filename).parse().unwrap(),
+    );
+    headers.insert(
+        header::CONTENT_LENGTH,
+        metadata.len().to_string().parse().unwrap(),
+    );
+
+    let stream = ReaderStream::new(file);
+    let body = Body::from_stream(stream);
+
+    (StatusCode::OK, headers, body).into_response()
+}
+
+async fn serve_preview(path: &PathBuf, relative_path: &str, file_type: &FileType) -> Response {
+    let content = match fs::read_to_string(path).await {
+        Ok(c) => c,
+        Err(_) => {
+            // Binary file, fallback to raw
+            return serve_raw_file(path, &std::fs::metadata(path).unwrap()).await;
+        }
+    };
+
+    let html = match file_type {
+        FileType::Markdown => render_markdown(relative_path, &content),
+        FileType::Org => render_org(relative_path, &content),
+        FileType::Code => render_code(relative_path, &content, file_type),
+        FileType::Text => render_text(relative_path, &content),
+        _ => render_text(relative_path, &content),
+    };
+
+    Html(html).into_response()
+}
+
+async fn serve_file_viewer(
+    relative_path: &str,
+    full_path: &PathBuf,
+    metadata: &std::fs::Metadata,
+    file_type: &FileType,
+) -> Response {
+    let content = match fs::read_to_string(full_path).await {
+        Ok(c) => c,
+        Err(_) => {
+            // Binary file, serve directly
+            return serve_file(full_path, metadata, None, false).await;
+        }
+    };
+
+    let file_name = Path::new(relative_path)
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy();
+
+    let size = format_size(metadata.len());
+    let modified = metadata
+        .modified()
+        .ok()
+        .map(format_http_date)
+        .unwrap_or_default();
+
+    let file_type_name = format!("{:?}", file_type);
+    let file_type_icon = file_type.icon();
+    let file_type_color = file_type.color();
+
+    // Determine default preview content
+    let preview_content = match file_type {
+        FileType::Markdown => render_markdown_content(&content),
+        FileType::Org => render_org_content(&content),
+        FileType::Code => render_code_content(&content, full_path),
+        FileType::Text => render_text_content(&content),
+        _ => html_escape(&content),
+    };
+
+    let html = format!(
+        r##"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/rust.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/yaml.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.6;
+            background: #0d1117;
+            color: #c9d1d9;
+            min-height: 100vh;
+        }}
+        .header {{
+            background: #161b22;
+            border-bottom: 1px solid #30363d;
+            padding: 16px 24px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }}
+        .file-info {{
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }}
+        .file-icon {{ font-size: 2rem; }}
+        .file-details {{ flex: 1; }}
+        .file-name {{
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #f0f6fc;
+            word-break: break-all;
+        }}
+        .file-meta {{
+            font-size: 0.85rem;
+            color: #8b949e;
+            margin-top: 4px;
+        }}
+        .file-type-badge {{
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            background: {};
+            color: #fff;
+        }}
+        .actions {{
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }}
+        .btn {{
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            text-decoration: none;
+            cursor: pointer;
+            border: 1px solid #30363d;
+            background: #21262d;
+            color: #c9d1d9;
+            transition: all 0.2s;
+        }}
+        .btn:hover {{
+            background: #30363d;
+            border-color: #8b949e;
+        }}
+        .btn.active {{
+            background: #1f6feb;
+            border-color: #1f6feb;
+            color: #fff;
+        }}
+        .btn-secondary {{
+            background: transparent;
+        }}
+        .content {{
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px;
+        }}
+        .preview-container {{
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            overflow: hidden;
+        }}
+        .preview-header {{
+            background: #21262d;
+            padding: 12px 16px;
+            font-size: 0.85rem;
+            color: #8b949e;
+            border-bottom: 1px solid #30363d;
+        }}
+        .preview-content {{
+            padding: 24px;
+            overflow-x: auto;
+        }}
+        /* Markdown styles */
+        .markdown-body {{
+            line-height: 1.8;
+        }}
+        .markdown-body h1, .markdown-body h2, .markdown-body h3,
+        .markdown-body h4, .markdown-body h5, .markdown-body h6 {{
+            margin-top: 24px;
+            margin-bottom: 16px;
+            font-weight: 600;
+            line-height: 1.25;
+            color: #f0f6fc;
+        }}
+        .markdown-body h1 {{ font-size: 2em; border-bottom: 1px solid #30363d; padding-bottom: 10px; }}
+        .markdown-body h2 {{ font-size: 1.5em; border-bottom: 1px solid #30363d; padding-bottom: 8px; }}
+        .markdown-body p {{ margin-bottom: 16px; }}
+        .markdown-body code {{
+            background: #0d1117;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 0.9em;
+        }}
+        .markdown-body pre {{
+            background: #0d1117;
+            padding: 16px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin-bottom: 16px;
+        }}
+        .markdown-body pre code {{ background: none; padding: 0; }}
+        .markdown-body ul, .markdown-body ol {{
+            margin-bottom: 16px;
+            padding-left: 2em;
+        }}
+        .markdown-body li {{ margin-bottom: 4px; }}
+        .markdown-body a {{ color: #58a6ff; }}
+        .markdown-body a:hover {{ text-decoration: underline; }}
+        .markdown-body blockquote {{
+            border-left: 4px solid #30363d;
+            padding-left: 16px;
+            margin-left: 0;
+            color: #8b949e;
+        }}
+        .markdown-body table {{
+            border-collapse: collapse;
+            margin-bottom: 16px;
+            width: 100%;
+        }}
+        .markdown-body th, .markdown-body td {{
+            border: 1px solid #30363d;
+            padding: 8px 12px;
+            text-align: left;
+        }}
+        .markdown-body th {{ background: #0d1117; font-weight: 600; }}
+        .markdown-body img {{ max-width: 100%; border-radius: 8px; }}
+        /* Code styles */
+        .code-block {{
+            margin: 0;
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }}
+        .code-block pre {{
+            margin: 0;
+            padding: 20px;
+            overflow-x: auto;
+        }}
+        /* Org mode styles */
+        .org-body {{
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 0.9rem;
+            line-height: 1.8;
+            white-space: pre-wrap;
+        }}
+        .org-body .org-heading {{
+            color: #7ee787;
+            font-weight: 600;
+        }}
+        .org-body .org-todo {{ color: #ffa198; font-weight: 600; }}
+        .org-body .org-done {{ color: #7ee787; }}
+        .org-body .org-tag {{ color: #79c0ff; }}
+        .org-body .org-source {{
+            background: #0d1117;
+            padding: 16px;
+            border-radius: 8px;
+            margin: 8px 0;
+        }}
+        .back-link {{
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: #58a6ff;
+            text-decoration: none;
+            margin-bottom: 16px;
+            font-size: 0.9rem;
+        }}
+        .back-link:hover {{ text-decoration: underline; }}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <a href="./" class="back-link">← Back to directory</a>
+        <div class="file-info">
+            <span class="file-icon">{}</span>
+            <div class="file-details">
+                <div class="file-name">{}</div>
+                <div class="file-meta">{} · {}</div>
+            </div>
+            <span class="file-type-badge">{}</span>
+        </div>
+        <div class="actions">
+            <button class="btn active" onclick="showTab('preview')">📄 Preview</button>
+            <button class="btn btn-secondary" onclick="showTab('raw')">📝 Raw</button>
+            <a href="?view=download" class="btn btn-secondary">⬇️ Download</a>
+        </div>
+    </div>
+
+    <div class="content">
+        <div id="preview-tab" class="preview-container">
+            <div class="preview-header">Preview</div>
+            <div class="preview-content">
+                {}
+            </div>
+        </div>
+
+        <div id="raw-tab" class="preview-container" style="display: none;">
+            <div class="preview-header">Raw</div>
+            <div class="preview-content">
+                <pre class="code-block"><code id="raw-content">{}</code></pre>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showTab(tab) {{
+            document.getElementById('preview-tab').style.display = tab === 'preview' ? 'block' : 'none';
+            document.getElementById('raw-tab').style.display = tab === 'raw' ? 'block' : 'none';
+            document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+        }}
+
+        // Highlight code blocks
+        document.querySelectorAll('pre code').forEach((block) => {{
+            hljs.highlightElement(block);
+        }});
+    </script>
+</body>
+</html>"##,
+        html_escape(&file_name),
+        file_type_color,
+        file_type_icon,
+        html_escape(&file_name),
+        size,
+        modified,
+        file_type_name,
+        preview_content,
+        html_escape(&content)
+    );
+
+    Html(html).into_response()
+}
+
+fn render_markdown(_path: &str, content: &str) -> String {
+    render_markdown_content(content)
+}
+
+fn render_markdown_content(content: &str) -> String {
+    let escaped = html_escape(content);
+    format!(
+        r#"<div class="markdown-body" id="markdown-content">{}</div>
+<script>
+    document.getElementById('markdown-content').innerHTML = marked.parse(`{}`);
+</script>"#,
+        escaped.replace('`', "\\`"),
+        escaped.replace('`', "\\`").replace('$', "\\$")
+    )
+}
+
+fn render_org(_path: &str, content: &str) -> String {
+    render_org_content(content)
+}
+
+fn render_org_content(content: &str) -> String {
+    let mut html = String::new();
+    html.push_str("<div class=\"org-body\">");
+
+    for line in content.lines() {
+        let processed = if line.starts_with("* ") {
+            format!(
+                "<div class=\"org-heading\">{}</div>",
+                html_escape(line)
+            )
+        } else if line.starts_with("#+BEGIN_SRC") || line.starts_with("#+END_SRC") {
+            format!("<div class=\"org-source\">{}</div>", html_escape(line))
+        } else if line.starts_with("#+") {
+            format!(
+                "<div style=\"color: #8b949e;\">{}</div>",
+                html_escape(line)
+            )
+        } else if line.contains("TODO") {
+            line.replace("TODO", "<span class=\"org-todo\">TODO</span>")
+                .replace("DONE", "<span class=\"org-done\">DONE</span>")
+        } else {
+            html_escape(line)
+        };
+        html.push_str(&processed);
+        html.push('\n');
+    }
+
+    html.push_str("</div>");
+    html
+}
+
+fn render_code(_path: &str, content: &str, _file_type: &FileType) -> String {
+    render_code_content(content, &std::path::PathBuf::from(_path))
+}
+
+fn render_code_content(content: &str, path: &Path) -> String {
+    let ext = path.extension().unwrap_or_default().to_string_lossy();
+    let lang = get_language(&ext);
+
+    format!(
+        r#"<pre class="code-block"><code class="language-{}">{}</code></pre>
+<script>hljs.highlightAll();</script>"#,
+        lang,
+        html_escape(content)
+    )
+}
+
+fn render_text(_path: &str, content: &str) -> String {
+    render_text_content(content)
+}
+
+fn render_text_content(content: &str) -> String {
+    format!(
+        "<pre class=\"code-block\"><code>{}</code></pre>",
+        html_escape(content)
+    )
+}
+
+fn get_language(ext: &str) -> &'static str {
+    match ext.to_lowercase().as_str() {
+        "rs" => "rust",
+        "js" => "javascript",
+        "ts" => "typescript",
+        "jsx" => "jsx",
+        "tsx" => "tsx",
+        "py" => "python",
+        "java" => "java",
+        "c" => "c",
+        "cpp" | "cc" | "cxx" | "hpp" => "cpp",
+        "h" => "c",
+        "go" => "go",
+        "rb" => "ruby",
+        "php" => "php",
+        "swift" => "swift",
+        "kt" => "kotlin",
+        "scala" => "scala",
+        "r" => "r",
+        "sh" | "bash" | "zsh" => "bash",
+        "ps1" => "powershell",
+        "lua" => "lua",
+        "elm" => "elm",
+        "erl" | "hrl" => "erlang",
+        "ex" | "exs" => "elixir",
+        "fs" | "fsx" => "fsharp",
+        "ml" | "mli" => "ocaml",
+        "hs" | "lhs" => "haskell",
+        "clj" | "cljs" => "clojure",
+        "coffee" => "coffeescript",
+        "cr" => "crystal",
+        "dart" => "dart",
+        "groovy" => "groovy",
+        "nim" => "nim",
+        "zig" => "zig",
+        "v" => "v",
+        "sql" => "sql",
+        "json" => "json",
+        "xml" => "xml",
+        "yaml" | "yml" => "yaml",
+        "toml" => "toml",
+        "md" | "markdown" => "markdown",
+        "html" | "htm" => "html",
+        "css" => "css",
+        _ => "plaintext",
+    }
+}
+
 async fn serve_directory(rel_path: &str, full_path: &PathBuf, state: &ServerState) -> Response {
-    let entries = match list_directory_entries(rel_path, full_path).await {
+    let entries = match list_directory_entries(rel_path, full_path, state).await {
         Ok(e) => e,
         Err(e) => {
             warn!("Cannot read directory {}: {}", full_path.display(), e);
@@ -473,10 +974,10 @@ async fn serve_directory(rel_path: &str, full_path: &PathBuf, state: &ServerStat
     Html(html).into_response()
 }
 
-/// List directory entries
 async fn list_directory_entries(
     rel_path: &str,
     full_path: &PathBuf,
+    _state: &ServerState,
 ) -> std::io::Result<Vec<FileEntry>> {
     let mut entries = fs::read_dir(full_path).await?;
     let mut files = Vec::new();
@@ -487,7 +988,6 @@ async fn list_directory_entries(
             path: "../".to_string(),
             is_dir: true,
             size: 0,
-            modified: None,
             modified_time: None,
             file_type: FileType::Directory,
             extension: "".to_string(),
@@ -501,9 +1001,6 @@ async fn list_directory_entries(
         let is_dir = metadata.as_ref().map(|m| m.is_dir()).unwrap_or(false);
         let size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
         let modified_time = metadata.and_then(|m| m.modified().ok());
-        let modified = modified_time
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_secs());
 
         let extension = Path::new(&name)
             .extension()
@@ -524,7 +1021,6 @@ async fn list_directory_entries(
             path,
             is_dir,
             size,
-            modified,
             modified_time,
             file_type,
             extension,
@@ -542,7 +1038,6 @@ async fn list_directory_entries(
     Ok(files)
 }
 
-/// Generate enhanced HTML for directory listing
 fn generate_directory_html(current_path: &str, entries: &[FileEntry], _state: &ServerState) -> String {
     use std::fmt::Write;
 
@@ -552,28 +1047,16 @@ fn generate_directory_html(current_path: &str, entries: &[FileEntry], _state: &S
         format!("/{}/", current_path.trim_end_matches('/'))
     };
 
-    let mut html = String::with_capacity(8192 + entries.len() * 512);
+    let mut html = String::with_capacity(4096 + entries.len() * 256);
 
-    // Build file list JSON for JavaScript
-    let files_json = serde_json::to_string(entries).unwrap_or_default();
-
-    let _ = write!(html, r##"<!DOCTYPE html>
+    let _ = write!(
+        html,
+        r##"<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Index of {}</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/rust.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/javascript.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/yaml.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/org-mode-parser@0.1.0/dist/org-mode-parser.min.js"></script>
     <style>
         * {{ box-sizing: border-box; margin: 0; padding: 0; }}
         body {{
@@ -583,25 +1066,15 @@ fn generate_directory_html(current_path: &str, entries: &[FileEntry], _state: &S
             color: #c9d1d9;
             min-height: 100vh;
         }}
-        .container {{ max-width: 1400px; margin: 0 auto; padding: 20px; }}
+        .container {{ max-width: 1200px; margin: 0 auto; padding: 20px; }}
         header {{
             background: #161b22;
             border-bottom: 1px solid #30363d;
             padding: 20px;
             margin: -20px -20px 20px -20px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            flex-wrap: wrap;
-            gap: 10px;
         }}
         h1 {{ color: #f0f6fc; font-size: 1.5rem; font-weight: 600; }}
         .breadcrumb {{ color: #8b949e; font-size: 0.9rem; }}
-        .breadcrumb a {{ color: #58a6ff; text-decoration: none; }}
-        .breadcrumb a:hover {{ text-decoration: underline; }}
-        .stats {{ color: #8b949e; font-size: 0.85rem; }}
-        .main-layout {{ display: grid; grid-template-columns: 1fr 400px; gap: 20px; }}
-        @media (max-width: 1024px) {{ .main-layout {{ grid-template-columns: 1fr; }} .preview-panel {{ display: none; }} }}
         .file-list {{
             background: #161b22;
             border: 1px solid #30363d;
@@ -628,12 +1101,9 @@ fn generate_directory_html(current_path: &str, entries: &[FileEntry], _state: &S
             padding: 10px 20px;
             border-bottom: 1px solid #21262d;
             align-items: center;
-            cursor: pointer;
-            transition: background 0.15s;
         }}
         .file-item:hover {{ background: #1f242c; }}
         .file-item:last-child {{ border-bottom: none; }}
-        .file-item.selected {{ background: #1c2128; border-left: 3px solid #58a6ff; padding-left: 17px; }}
         .icon {{ font-size: 1.2rem; width: 24px; text-align: center; }}
         .filename {{ display: flex; align-items: center; gap: 10px; }}
         .filename a {{
@@ -646,7 +1116,7 @@ fn generate_directory_html(current_path: &str, entries: &[FileEntry], _state: &S
         }}
         .filename a:hover {{ color: #58a6ff; }}
         .filename .dir {{ color: #58a6ff; }}
-        .tag {{
+        .file-type-badge {{
             font-size: 0.65rem;
             padding: 2px 6px;
             border-radius: 4px;
@@ -655,168 +1125,33 @@ fn generate_directory_html(current_path: &str, entries: &[FileEntry], _state: &S
             text-transform: uppercase;
             font-weight: 600;
         }}
-        .size {{ text-align: right; color: #8b949e; font-family: 'SF Mono', Monaco, monospace; font-size: 0.9rem; }}
+        .size {{ text-align: right; color: #8b949e; font-family: monospace; font-size: 0.9rem; }}
         .time {{ color: #8b949e; font-size: 0.85rem; }}
-        .preview-panel {{
-            background: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 12px;
-            overflow: hidden;
-            position: sticky;
-            top: 20px;
-            height: fit-content;
-        }}
-        .preview-header {{
-            padding: 16px 20px;
-            background: #21262d;
-            border-bottom: 1px solid #30363d;
-            font-weight: 600;
-            color: #f0f6fc;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }}
-        .preview-content {{ padding: 0; max-height: 600px; overflow: auto; }}
-        .preview-placeholder {{
-            padding: 60px 20px;
-            text-align: center;
-            color: #8b949e;
-        }}
-        .preview-image {{ max-width: 100%; max-height: 500px; display: block; margin: 0 auto; }}
-        .preview-video {{ width: 100%; max-height: 400px; background: #000; }}
-        .preview-audio {{ width: 100%; padding: 20px; }}
-        .preview-code {{ margin: 0; font-size: 0.85rem; line-height: 1.5; }}
-        .preview-code pre {{ margin: 0; padding: 20px; overflow-x: auto; }}
-        .preview-markdown {{ padding: 20px; line-height: 1.8; }}
-        .preview-markdown h1, .preview-markdown h2, .preview-markdown h3 {{
-            margin-top: 24px; margin-bottom: 16px;
-            font-weight: 600; line-height: 1.25;
-        }}
-        .preview-markdown h1 {{ font-size: 2em; border-bottom: 1px solid #30363d; padding-bottom: 10px; }}
-        .preview-markdown h2 {{ font-size: 1.5em; border-bottom: 1px solid #30363d; padding-bottom: 8px; }}
-        .preview-markdown h3 {{ font-size: 1.25em; }}
-        .preview-markdown p {{ margin-bottom: 16px; }}
-        .preview-markdown code {{
-            background: #0d1117; padding: 2px 6px; border-radius: 4px;
-            font-family: 'SF Mono', Monaco, monospace; font-size: 0.9em;
-        }}
-        .preview-markdown pre {{
-            background: #0d1117; padding: 16px; border-radius: 8px;
-            overflow-x: auto; margin-bottom: 16px;
-        }}
-        .preview-markdown pre code {{ background: none; padding: 0; }}
-        .preview-markdown ul, .preview-markdown ol {{ margin-bottom: 16px; padding-left: 2em; }}
-        .preview-markdown li {{ margin-bottom: 4px; }}
-        .preview-markdown a {{ color: #58a6ff; }}
-        .preview-markdown a:hover {{ text-decoration: underline; }}
-        .preview-markdown blockquote {{
-            border-left: 4px solid #30363d; padding-left: 16px;
-            margin-left: 0; color: #8b949e;
-        }}
-        .preview-markdown table {{
-            border-collapse: collapse; margin-bottom: 16px;
-            width: 100%;
-        }}
-        .preview-markdown th, .preview-markdown td {{
-            border: 1px solid #30363d; padding: 8px 12px;
-            text-align: left;
-        }}
-        .preview-markdown th {{ background: #0d1117; font-weight: 600; }}
-        .preview-markdown img {{ max-width: 100%; border-radius: 8px; }}
-        .preview-org {{
-            padding: 20px; font-family: 'SF Mono', Monaco, monospace;
-            font-size: 0.85rem; line-height: 1.6; white-space: pre-wrap;
-            color: #c9d1d9;
-        }}
-        .file-type-badge {{
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 0.7rem;
-            font-weight: 600;
-            text-transform: uppercase;
-        }}
-        .empty-state {{
-            padding: 60px 20px;
-            text-align: center;
-            color: #8b949e;
-        }}
-        .empty-state-icon {{ font-size: 3rem; margin-bottom: 16px; }}
         footer {{
             margin-top: 40px;
             padding: 20px;
             text-align: center;
             color: #484f58;
             font-size: 0.85rem;
-            border-top: 1px solid #21262d;
         }}
-        .filter-bar {{
-            padding: 12px 20px;
-            background: #161b22;
-            border-bottom: 1px solid #30363d;
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        }}
-        .filter-input {{
-            background: #0d1117;
-            border: 1px solid #30363d;
-            border-radius: 6px;
-            padding: 6px 12px;
-            color: #c9d1d9;
-            font-size: 0.9rem;
-            flex: 1;
-            max-width: 300px;
-        }}
-        .filter-input:focus {{ outline: none; border-color: #58a6ff; }}
-        .view-toggle {{
-            display: flex;
-            gap: 4px;
-            background: #0d1117;
-            padding: 4px;
-            border-radius: 6px;
-        }}
-        .view-btn {{
-            background: transparent;
-            border: none;
-            color: #8b949e;
-            padding: 4px 8px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 0.85rem;
-        }}
-        .view-btn.active {{ background: #21262d; color: #f0f6fc; }}
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <div>
-                <h1>📁 Index of <span class="breadcrumb">{}</span></h1>
-            </div>
-            <div class="stats">{} items</div>
+            <h1>📁 Index of <span class="breadcrumb">{}</span></h1>
         </header>
-        
-        <div class="main-layout">
-            <div class="file-list">
-                <div class="filter-bar">
-                    <input type="text" class="filter-input" id="filterInput" placeholder="🔍 Filter files...">
-                    <div class="view-toggle">
-                        <button class="view-btn active" onclick="setView('list')">☰</button>
-                        <button class="view-btn" onclick="setView('grid')">⊞</button>
-                    </div>
-                </div>
-                <div class="file-header">
-                    <span></span>
-                    <span>Name</span>
-                    <span class="size">Size</span>
-                    <span class="time">Modified</span>
-                </div>
-                <div id="fileList">"##, html_escape(&display_path), html_escape(&display_path), entries.len());
+        <div class="file-list">
+            <div class="file-header">
+                <span></span>
+                <span>Name</span>
+                <span class="size">Size</span>
+                <span class="time">Modified</span>
+            </div>"##,
+        html_escape(&display_path),
+        html_escape(&display_path)
+    );
 
-    // Table rows
     for entry in entries {
         let size_display = if entry.is_dir {
             "-".to_string()
@@ -827,180 +1162,57 @@ fn generate_directory_html(current_path: &str, entries: &[FileEntry], _state: &S
             .modified_time
             .map(format_http_date)
             .unwrap_or_else(|| "-".to_string());
-        
-        let file_type_class = format!("{:?}", entry.file_type).to_lowercase();
+
         let is_dir_class = if entry.is_dir { "dir" } else { "" };
-        let preview_attr = if entry.file_type.is_previewable() && !entry.is_dir {
-            format!(" data-preview=\"{}\"", entry.path.trim_end_matches('/'))
-        } else {
-            String::new()
-        };
-        
-        let _ = write!(html, r#"
-                <div class="file-item" data-name="{}" data-type="{}" onclick="selectFile(this, '{}')"{}>
-                    <span class="icon">{}</span>
-                    <div class="filename">
-                        <a href="{}" class="{}" onclick="event.stopPropagation()">
-                            {}
-                        </a>
+
+        let _ = write!(
+            html,
+            r#"
+            <div class="file-item">
+                <span class="icon">{}</span>
+                <div class="filename">
+                    <a href="{}" class="{}">
                         {}
-                    </div>
-                    <span class="size">{}</span>
-                    <span class="time">{}</span>
-                </div>"#,
-            html_escape(&entry.name.to_lowercase()),
-            file_type_class,
-            html_escape(&entry.path),
-            preview_attr,
+                        {}
+                    </a>
+                </div>
+                <span class="size">{}</span>
+                <span class="time">{}</span>
+            </div>"#,
             entry.file_type.icon(),
             entry.path,
             is_dir_class,
             html_escape(&entry.name),
-            if entry.is_dir { String::new() } else { format!("<span class='file-type-badge' style='background: {}; color: #fff;'>{}</span>", entry.file_type.color(), format!("{:?}", entry.file_type)) },
+            if entry.is_dir {
+                String::new()
+            } else {
+                format!(
+                    "<span class='file-type-badge' style='background: {}; color: #fff;'>{}</span>",
+                    entry.file_type.color(),
+                    format!("{:?}", entry.file_type)
+                )
+            },
             size_display,
             time_display
         );
     }
 
-    let _ = write!(html, r##"
-                </div>
-            </div>
-            
-            <div class="preview-panel">
-                <div class="preview-header">
-                    <span id="previewTitle">Preview</span>
-                    <span id="previewType"></span>
-                </div>
-                <div class="preview-content" id="previewContent">
-                    <div class="preview-placeholder">
-                        <div style="font-size: 3rem; margin-bottom: 16px;">👆</div>
-                        <div>Select a file to preview</div>
-                        <div style="font-size: 0.85rem; margin-top: 8px; opacity: 0.7;">Images, videos, code and text files supported</div>
-                    </div>
-                </div>
-            </div>
+    let _ = write!(
+        html,
+        r#"
         </div>
-        
         <footer>
             <p>D HTTP Server · {} items</p>
         </footer>
     </div>
-    
-    <script>
-        const files = {};
-        
-        function selectFile(element, path) {{
-            document.querySelectorAll('.file-item').forEach(el => el.classList.remove('selected'));
-            element.classList.add('selected');
-            
-            const file = files.find(f => f.path === path);
-            if (!file) return;
-            
-            const previewContent = document.getElementById('previewContent');
-            const previewTitle = document.getElementById('previewTitle');
-            const previewType = document.getElementById('previewType');
-            
-            previewTitle.textContent = file.name;
-            previewType.textContent = file.is_dir ? 'Directory' : file.file_type;
-            
-            if (file.is_dir) {{
-                previewContent.innerHTML = '<div class="preview-placeholder"><div style="font-size: 3rem;">📁</div><div>Directory</div></div>';
-            }} else if (file.file_type === 'Image') {{
-                previewContent.innerHTML = `<img src="${{path}}" class="preview-image" alt="${{file.name}}" onload="this.style.opacity=1" style="opacity: 0; transition: opacity 0.3s;">`;
-            }} else if (file.file_type === 'Video') {{
-                previewContent.innerHTML = `<video class="preview-video" controls><source src="${{path}}"></video>`;
-            }} else if (file.file_type === 'Audio') {{
-                previewContent.innerHTML = `<audio class="preview-audio" controls><source src="${{path}}"></audio>`;
-            }} else if (file.file_type === 'Markdown') {{
-                fetch(path)
-                    .then(r => r.text())
-                    .then(text => {{
-                        previewContent.innerHTML = `<div class="preview-markdown">${{marked.parse(text)}}</div>`;
-                    }})
-                    .catch(() => {{
-                        previewContent.innerHTML = '<div class="preview-placeholder">Failed to load file</div>';
-                    }});
-            }} else if (file.file_type === 'Org') {{
-                fetch(path)
-                    .then(r => r.text())
-                    .then(text => {{
-                        previewContent.innerHTML = `<pre class="preview-org">${{escapeHtml(text)}}</pre>`;
-                    }})
-                    .catch(() => {{
-                        previewContent.innerHTML = '<div class="preview-placeholder">Failed to load file</div>';
-                    }});
-            }} else if (file.file_type === 'Code' || file.file_type === 'Text') {{
-                fetch(path)
-                    .then(r => r.text())
-                    .then(text => {{
-                        const lang = getLanguage(file.extension);
-                        previewContent.innerHTML = `<pre class="preview-code"><code class="language-${{lang}}">${{escapeHtml(text)}}</code></pre>`;
-                        hljs.highlightAll();
-                    }})
-                    .catch(() => {{
-                        previewContent.innerHTML = '<div class="preview-placeholder">Failed to load file</div>';
-                    }});
-            }} else {{
-                previewContent.innerHTML = '<div class="preview-placeholder"><div style="font-size: 3rem;">📄</div><div>No preview available</div></div>';
-            }}
-        }}
-        
-        function getLanguage(ext) {{
-            const map = {{
-                'rs': 'rust', 'js': 'javascript', 'ts': 'typescript', 'jsx': 'jsx', 'tsx': 'tsx',
-                'py': 'python', 'java': 'java', 'c': 'c', 'cpp': 'cpp', 'h': 'c', 'hpp': 'cpp',
-                'go': 'go', 'rb': 'ruby', 'php': 'php', 'swift': 'swift', 'kt': 'kotlin',
-                'sh': 'bash', 'bash': 'bash', 'zsh': 'bash', 'ps1': 'powershell',
-                'json': 'json', 'xml': 'xml', 'yaml': 'yaml', 'yml': 'yaml', 'toml': 'toml',
-                'md': 'markdown', 'sql': 'sql', 'lua': 'lua', 'html': 'html', 'css': 'css'
-            }};
-            return map[ext.toLowerCase()] || 'plaintext';
-        }}
-        
-        function escapeHtml(text) {{
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }}
-        
-        function setView(view) {{
-            document.querySelectorAll('.view-btn').forEach(btn => btn.classList.remove('active'));
-            event.target.classList.add('active');
-            // Grid view implementation would go here
-        }}
-        
-        // Filter functionality
-        document.getElementById('filterInput').addEventListener('input', function(e) {{
-            const filter = e.target.value.toLowerCase();
-            document.querySelectorAll('.file-item').forEach(item => {{
-                const name = item.dataset.name;
-                item.style.display = name.includes(filter) ? '' : 'none';
-            }});
-        }});
-        
-        // Keyboard navigation
-        document.addEventListener('keydown', function(e) {{
-            if (e.key === 'Escape') {{
-                document.querySelectorAll('.file-item').forEach(el => el.classList.remove('selected'));
-                document.getElementById('previewContent').innerHTML = `
-                    <div class="preview-placeholder">
-                        <div style="font-size: 3rem; margin-bottom: 16px;">👆</div>
-                        <div>Select a file to preview</div>
-                    </div>
-                `;
-            }}
-        }});
-    </script>
 </body>
-</html>"##, 
-        entries.len(),
-        files_json
+</html>"#,
+        entries.len()
     );
 
     html
 }
 
-/// Escape HTML special characters
 fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
