@@ -3,10 +3,12 @@
 //! Provides safe execution of various tools like file operations,
 //! shell commands, and search functionality.
 
+pub mod fetch;
 pub mod fs;
 pub mod grep;
 pub mod shell;
 pub mod str_replace;
+pub mod web;
 
 use serde_json::Value;
 use std::collections::HashMap;
@@ -129,6 +131,10 @@ pub fn default_registry() -> ToolRegistry {
     
     // Register str_replace tool
     registry.register(Arc::new(str_replace::StrReplaceTool));
+    
+    // Register web tools
+    registry.register(Arc::new(web::WebSearchTool));
+    registry.register(Arc::new(fetch::FetchUrlTool));
     
     registry
 }
