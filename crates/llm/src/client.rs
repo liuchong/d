@@ -40,7 +40,7 @@ impl Default for CodingAgent {
 
 #[derive(Debug, Clone)]
 pub struct AiClient {
-    config: Config,
+    pub config: Config,
     client: reqwest::Client,
     user_agent: Option<String>,
 }
@@ -186,11 +186,30 @@ impl AiClient {
     }
 }
 
+/// Token usage information
+#[derive(Debug, Clone, Default)]
+pub struct TokenUsage {
+    pub prompt_tokens: u32,
+    pub completion_tokens: u32,
+    pub total_tokens: u32,
+}
+
+impl TokenUsage {
+    pub fn new(prompt: u32, completion: u32) -> Self {
+        Self {
+            prompt_tokens: prompt,
+            completion_tokens: completion,
+            total_tokens: prompt + completion,
+        }
+    }
+}
+
 /// Chat response with optional tool calls
 #[derive(Debug, Clone)]
 pub struct ChatResponse {
     pub content: Option<String>,
     pub tool_calls: Vec<ToolCall>,
+    pub usage: Option<TokenUsage>,
 }
 
 impl ChatResponse {
@@ -198,11 +217,17 @@ impl ChatResponse {
         Self {
             content: Some(content.into()),
             tool_calls: Vec::new(),
+            usage: None,
         }
     }
 
     pub fn with_tool_calls(mut self, tool_calls: Vec<ToolCall>) -> Self {
         self.tool_calls = tool_calls;
+        self
+    }
+
+    pub fn with_usage(mut self, usage: TokenUsage) -> Self {
+        self.usage = Some(usage);
         self
     }
 
@@ -284,7 +309,16 @@ impl AiClient {
             }
         }
 
-        Ok(ChatResponse { content, tool_calls })
+        // Extract token usage if available
+        let usage = json["usage"].as_object().map(|u| {
+            TokenUsage {
+                prompt_tokens: u["prompt_tokens"].as_u64().unwrap_or(0) as u32,
+                completion_tokens: u["completion_tokens"].as_u64().unwrap_or(0) as u32,
+                total_tokens: u["total_tokens"].as_u64().unwrap_or(0) as u32,
+            }
+        });
+
+        Ok(ChatResponse { content, tool_calls, usage })
     }
 
     pub async fn chat_stream(

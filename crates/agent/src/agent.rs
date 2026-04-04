@@ -1,3 +1,4 @@
+use crate::cost::CostTracker;
 use crate::plan::{PlanMode, is_tool_allowed_in_plan_mode};
 use llm::{AiClient, ChatResponse, Message, Tool, ToolCall, ToolResult};
 use session::SessionManager;
@@ -16,6 +17,7 @@ pub struct Agent {
     pub approval: Arc<ApprovalSystem>,
     pub tools: Vec<Tool>,
     pub plan_mode: PlanMode,
+    pub cost_tracker: Arc<std::sync::Mutex<CostTracker>>,
     max_iterations: usize,
     yolo_mode: bool,
 }
@@ -33,6 +35,7 @@ impl Agent {
             approval,
             tools: Vec::new(),
             plan_mode: PlanMode::new(),
+            cost_tracker: Arc::new(std::sync::Mutex::new(CostTracker::new())),
             max_iterations: 10,
             yolo_mode: false,
         }
@@ -73,6 +76,31 @@ impl Agent {
 
     pub fn is_plan_mode_enabled(&self) -> bool {
         self.plan_mode.is_enabled()
+    }
+
+    /// Get cost summary
+    pub fn cost_summary(&self) -> String {
+        if let Ok(tracker) = self.cost_tracker.lock() {
+            tracker.summary()
+        } else {
+            "Cost tracking unavailable".to_string()
+        }
+    }
+
+    /// Get detailed cost report
+    pub fn cost_report(&self) -> String {
+        if let Ok(tracker) = self.cost_tracker.lock() {
+            tracker.detailed_report()
+        } else {
+            "Cost tracking unavailable".to_string()
+        }
+    }
+
+    /// Reset cost tracker
+    pub fn reset_costs(&self) {
+        if let Ok(mut tracker) = self.cost_tracker.lock() {
+            tracker.clear();
+        }
     }
 
     /// Convert internal Message to LLM ChatMessage format
@@ -130,6 +158,17 @@ impl Agent {
         // Call LLM with tools
         let response = self.client.chat_with_tools(chat_messages, &self.tools).await
             .map_err(|e| anyhow::anyhow!("{}", e))?;
+        
+        // Record token usage if available
+        if let Some(usage) = &response.usage {
+            if let Ok(mut tracker) = self.cost_tracker.lock() {
+                tracker.record(
+                    &self.client.config.ai.model,
+                    usage.clone(),
+                    format!("Chat message (session: {})", session_id)
+                );
+            }
+        }
         
         // Handle tool calls if present
         let final_response = if response.has_tool_calls() {

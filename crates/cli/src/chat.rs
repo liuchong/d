@@ -144,6 +144,7 @@ impl ChatSession {
   /help      - Show this help message
   /tools     - List available tools
   /plan      - Toggle plan mode (read-only){}
+  /cost      - Show cost report
   /clear     - Clear current session
   /sessions  - List saved sessions
   /load <id> - Load a session
@@ -212,6 +213,11 @@ pub async fn run_interactive(config: Config) -> anyhow::Result<()> {
                     } else {
                         println!("✅ Plan mode disabled.");
                     }
+                    continue;
+                }
+
+                if input == "/cost" {
+                    println!("{}", session.agent.cost_report());
                     continue;
                 }
 

@@ -7,6 +7,6 @@ mod message_test;
 #[cfg(test)]
 mod tool_test;
 
-pub use client::{AiClient, ChatResponse, CodingAgent};
+pub use client::{AiClient, ChatResponse, CodingAgent, TokenUsage};
 pub use message::{Message, MessageRole};
 pub use tool::{Tool, ToolCall, ToolResult};
