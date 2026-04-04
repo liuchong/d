@@ -225,6 +225,28 @@ impl Agent {
                 self.approval.check(&approval_request)
             };
             
+            // Security check
+            let security_findings = security::checker::check_tool_call(
+                &tool_call.function.name,
+                &tool_call.function.arguments
+            );
+            
+            // Log security findings
+            if !security_findings.is_empty() {
+                let report = security::checker::format_findings(&security_findings);
+                tracing::warn!("{}", report);
+                
+                // If there are critical findings, block execution
+                if security_findings.iter().any(|f| f.level == security::checker::SecurityLevel::Critical) {
+                    current_messages.push(Message::tool_result(
+                        &tool_call.id,
+                        &tool_call.function.name,
+                        "BLOCKED: Critical security issue detected. Command contains dangerous patterns."
+                    ));
+                    continue;
+                }
+            }
+            
             // Check plan mode - block non-read-only tools
             let result = if self.plan_mode.is_enabled() && !is_tool_allowed_in_plan_mode(&tool_call.function.name) {
                 ToolResult::new(

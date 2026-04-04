@@ -4,6 +4,7 @@
 
 pub mod approval;
 pub mod audit;
+pub mod checker;
 pub mod policy;
 
 pub use approval::{ApprovalSystem, ApprovalRequest, ApprovalDecision};
