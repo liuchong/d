@@ -49,9 +49,9 @@ pub fn api_routes() -> Router<ServerState> {
     Router::new()
         .route("/api/chat", post(chat_handler))
         .route("/api/sessions", get(list_sessions))
-        .route("/api/sessions/:id", get(get_session))
-        .route("/api/sessions/:id", post(create_session))
-        .route("/api/sessions/:id/clear", post(clear_session))
+        .route("/api/sessions/{id}", get(get_session))
+        .route("/api/sessions/{id}", post(create_session))
+        .route("/api/sessions/{id}/clear", post(clear_session))
         .route("/api/health", get(health_check))
 }
 

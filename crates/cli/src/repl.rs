@@ -17,12 +17,19 @@ impl Repl {
     }
 
     /// Read a line from stdin with basic history support
+    /// Returns None on EOF (Ctrl+D) or empty input
     pub fn read_line(&mut self, prompt: &str) -> io::Result<Option<String>> {
         print!("{}", prompt);
         io::stdout().flush()?;
 
         let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
+        let bytes_read = io::stdin().read_line(&mut input)?;
+
+        // EOF (Ctrl+D) - return None to signal exit
+        if bytes_read == 0 {
+            println!(); // New line for clean exit
+            return Ok(None);
+        }
 
         let input = input.trim().to_string();
         

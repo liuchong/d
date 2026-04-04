@@ -2,12 +2,12 @@
 
 use agent::Agent;
 use kernel::Config;
-use llm::{AiClient, Message};
+use llm::AiClient;
 use security::ApprovalSystem;
 use session::SessionManager;
 use std::sync::Arc;
 use tools::{default_registry, ToolContext};
-use tracing::{info, warn};
+use tracing::{debug, warn};
 
 /// Chat session manager
 pub struct ChatSession {
@@ -49,12 +49,20 @@ impl ChatSession {
     /// Enable yolo mode (auto-approve dangerous operations)
     pub fn with_yolo(mut self) -> Self {
         self.tool_context.allow_dangerous = true;
+        // Also enable yolo mode in agent
+        self.agent = Agent::new(
+            self.agent.client.clone(),
+            self.agent.session_manager.clone(),
+            self.agent.approval.clone(),
+        )
+        .with_tools(self.agent.tools.clone())
+        .with_yolo(true);
         self
     }
 
     /// Run a single message and get response
     pub async fn send_message(&self, content: &str) -> anyhow::Result<String> {
-        info!("User: {}", content);
+        debug!("User: {}", content);
         
         // Check for special commands
         if let Some(response) = self.handle_command(content).await {
@@ -63,7 +71,7 @@ impl ChatSession {
 
         // Normal chat
         let response = self.agent.chat(&self.session_id, content).await?;
-        info!("Assistant: {}", response);
+        debug!("Assistant: {}", response);
         
         Ok(response)
     }
@@ -128,6 +136,8 @@ impl ChatSession {
   /sessions  - List saved sessions
   /load <id> - Load a session
   /quit      - Exit chat
+  /exit      - Exit chat
+  Ctrl+D     - Exit chat
 
 Type your message normally to chat with the AI."#.to_string()
     }
@@ -192,7 +202,11 @@ pub async fn run_interactive(config: Config) -> anyhow::Result<()> {
                     }
                 }
             }
-            None => continue,
+            None => {
+                // EOF (Ctrl+D) - exit gracefully
+                println!("Goodbye!");
+                break;
+            }
         }
     }
 

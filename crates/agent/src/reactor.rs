@@ -64,6 +64,10 @@ impl ReActLoop {
                 llm::client::ChatMessage {
                     role: format!("{:?}", m.role).to_lowercase(),
                     content: m.content.clone(),
+                    reasoning_content: None,
+                    tool_calls: None,
+                    tool_call_id: None,
+                    name: None,
                 }
             }).collect();
             let response = self.client.chat(chat_messages).await.map_err(|e| anyhow::anyhow!("{}", e))?;

@@ -6,6 +6,6 @@ pub mod approval;
 pub mod audit;
 pub mod policy;
 
-pub use approval::ApprovalSystem;
+pub use approval::{ApprovalSystem, ApprovalRequest, ApprovalDecision};
 pub use audit::AuditLog;
 pub use policy::Policy;

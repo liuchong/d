@@ -43,11 +43,26 @@ enum Commands {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     
-    // Initialize tracing with log level from CLI
+    // Check if we're in chat mode (for quiet logging)
+    let is_chat_mode = matches!(cli.command, Some(Commands::Chat { .. }));
+    
+    // Initialize tracing with appropriate log level
+    let log_level = if is_chat_mode {
+        // In chat mode, only show warnings and errors on console
+        // unless user explicitly set a different level
+        if cli.log_level == "info" {
+            "warn".to_string()
+        } else {
+            cli.log_level.clone()
+        }
+    } else {
+        cli.log_level.clone()
+    };
+    
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::new(&cli.log_level)
-                .add_directive(format!("{}={}", env!("CARGO_PKG_NAME"), cli.log_level).parse()?)
+            tracing_subscriber::EnvFilter::new(&log_level)
+                .add_directive(format!("{}={}", env!("CARGO_PKG_NAME"), log_level).parse()?)
         )
         .init();
 
@@ -60,7 +75,8 @@ async fn main() -> anyhow::Result<()> {
             http::start(&addr, &root, false).await;
         }
         Some(Commands::Chat { new: _, yolo: _ }) => {
-            info!("Starting CLI chat mode");
+            // Don't use info! here as it won't show in chat mode
+            // The CLI will print its own startup message
             let config = kernel::Config::load()?;
             cli::chat::run_interactive(config).await?;
         }

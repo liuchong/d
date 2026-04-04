@@ -2,6 +2,8 @@ use kernel::config::Config;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 
+use crate::tool::{Tool, ToolCall};
+
 /// Coding Agent User-Agents for kimi-for-coding API
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CodingAgent {
@@ -14,14 +16,18 @@ pub enum CodingAgent {
 }
 
 impl CodingAgent {
+    /// Get the User-Agent string for this coding agent
+    /// Format must match what kimi-for-coding API expects (lowercase with patch version)
     pub fn as_str(&self) -> &'static str {
         match self {
-            CodingAgent::KimiCli => "Kimi-CLI/1.0",
-            CodingAgent::ClaudeCode => "Claude-Code/0.1",
-            CodingAgent::RooCode => "Roo-Code/1.0",
-            CodingAgent::KiloCode => "Kilo-Code/1.0",
-            CodingAgent::Cursor => "Cursor/1.0",
-            CodingAgent::GitHubCopilot => "GitHub-Copilot/1.0",
+            // Kimi-for-coding API requires lowercase format with patch version
+            // Reference: https://www.kimi.com/code/docs/more/third-party-agents.html
+            CodingAgent::KimiCli => "kimi-cli/1.0.0",
+            CodingAgent::ClaudeCode => "claude-code/0.1.0",
+            CodingAgent::RooCode => "roo-code/1.0.0",
+            CodingAgent::KiloCode => "kilo-code/1.0.0",
+            CodingAgent::Cursor => "cursor/1.0.0",
+            CodingAgent::GitHubCopilot => "github-copilot/1.0.0",
         }
     }
 }
@@ -43,6 +49,71 @@ pub struct AiClient {
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "reasoning_content")]
+    pub reasoning_content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+impl ChatMessage {
+    pub fn system(content: impl Into<String>) -> Self {
+        Self {
+            role: "system".to_string(),
+            content: content.into(),
+            reasoning_content: None,
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+        }
+    }
+
+    pub fn user(content: impl Into<String>) -> Self {
+        Self {
+            role: "user".to_string(),
+            content: content.into(),
+            reasoning_content: None,
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+        }
+    }
+
+    pub fn assistant(content: impl Into<String>) -> Self {
+        Self {
+            role: "assistant".to_string(),
+            content: content.into(),
+            reasoning_content: None,
+            tool_calls: None,
+            tool_call_id: None,
+            name: None,
+        }
+    }
+
+    pub fn tool(tool_call_id: impl Into<String>, content: impl Into<String>) -> Self {
+        Self {
+            role: "tool".to_string(),
+            content: content.into(),
+            reasoning_content: None,
+            tool_calls: None,
+            tool_call_id: Some(tool_call_id.into()),
+            name: None,
+        }
+    }
+
+    pub fn with_tool_calls(mut self, calls: Vec<serde_json::Value>) -> Self {
+        self.tool_calls = Some(calls);
+        self
+    }
+
+    pub fn with_reasoning(mut self, reasoning: impl Into<String>) -> Self {
+        self.reasoning_content = Some(reasoning.into());
+        self
+    }
 }
 
 #[derive(Debug)]
@@ -113,18 +184,64 @@ impl AiClient {
         
         req
     }
+}
 
+/// Chat response with optional tool calls
+#[derive(Debug, Clone)]
+pub struct ChatResponse {
+    pub content: Option<String>,
+    pub tool_calls: Vec<ToolCall>,
+}
+
+impl ChatResponse {
+    pub fn new(content: impl Into<String>) -> Self {
+        Self {
+            content: Some(content.into()),
+            tool_calls: Vec::new(),
+        }
+    }
+
+    pub fn with_tool_calls(mut self, tool_calls: Vec<ToolCall>) -> Self {
+        self.tool_calls = tool_calls;
+        self
+    }
+
+    pub fn has_tool_calls(&self) -> bool {
+        !self.tool_calls.is_empty()
+    }
+}
+
+impl AiClient {
+    /// Simple chat without tools (legacy API)
     pub async fn chat(&self, messages: Vec<ChatMessage>) -> Result<String, AiError> {
+        let response = self.chat_with_tools(messages, &[]).await?;
+        Ok(response.content.unwrap_or_default())
+    }
+
+    /// Chat with tool support
+    pub async fn chat_with_tools(
+        &self,
+        messages: Vec<ChatMessage>,
+        tools: &[Tool],
+    ) -> Result<ChatResponse, AiError> {
         if self.config.ai.api_key.is_empty() {
             return Err(AiError::Config("API key not configured".to_string()));
         }
 
-        let body = serde_json::json!({
+        let mut body = serde_json::json!({
             "model": self.config.ai.model,
             "messages": messages,
             "temperature": self.config.ai.temperature,
             "max_tokens": self.config.ai.max_tokens,
         });
+        
+        tracing::debug!("Request body: {}", serde_json::to_string_pretty(&body).unwrap_or_default());
+
+        // Add tools if provided
+        if !tools.is_empty() {
+            body["tools"] = serde_json::to_value(tools).map_err(|e| AiError::Config(e.to_string()))?;
+            body["tool_choice"] = "auto".into();
+        }
 
         let response = self
             .build_request(&format!("{}/chat/completions", self.config.ai.base_url))
@@ -144,10 +261,30 @@ impl AiClient {
             .await
             .map_err(|e| AiError::Parse(e.to_string()))?;
 
-        json["choices"][0]["message"]["content"]
-            .as_str()
-            .map(|s| s.to_string())
-            .ok_or_else(|| AiError::Parse("Invalid response format".to_string()))
+        let message = &json["choices"][0]["message"];
+        
+        // Extract content
+        let content = message["content"].as_str().map(|s| s.to_string());
+        
+        // Extract tool calls
+        let mut tool_calls = Vec::new();
+        if let Some(calls) = message["tool_calls"].as_array() {
+            for call in calls {
+                if let Some(id) = call["id"].as_str() {
+                    if let Some(function) = call["function"].as_object() {
+                        let name = function["name"].as_str().unwrap_or("").to_string();
+                        let arguments = function["arguments"].as_str().unwrap_or("{}").to_string();
+                        tool_calls.push(ToolCall {
+                            id: id.to_string(),
+                            call_type: "function".to_string(),
+                            function: crate::tool::FunctionCall { name, arguments },
+                        });
+                    }
+                }
+            }
+        }
+
+        Ok(ChatResponse { content, tool_calls })
     }
 
     pub async fn chat_stream(
@@ -216,9 +353,10 @@ mod tests {
 
     #[test]
     fn test_coding_agent_user_agent() {
-        assert_eq!(CodingAgent::ClaudeCode.as_str(), "Claude-Code/0.1");
-        assert_eq!(CodingAgent::KimiCli.as_str(), "Kimi-CLI/1.0");
-        assert_eq!(CodingAgent::RooCode.as_str(), "Roo-Code/1.0");
+        // User-Agent format must be lowercase with patch version for kimi-for-coding API
+        assert_eq!(CodingAgent::ClaudeCode.as_str(), "claude-code/0.1.0");
+        assert_eq!(CodingAgent::KimiCli.as_str(), "kimi-cli/1.0.0");
+        assert_eq!(CodingAgent::RooCode.as_str(), "roo-code/1.0.0");
     }
 
     #[test]
@@ -236,7 +374,7 @@ mod tests {
         
         let ua = AiClient::detect_user_agent(&config);
         assert!(ua.is_some());
-        assert_eq!(ua.unwrap(), "Claude-Code/0.1");
+        assert_eq!(ua.unwrap(), "claude-code/0.1.0");
     }
 
     #[test]

@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
     use super::super::*;
+    use crate::tool::FunctionCall;
 
     #[test]
     fn test_tool_creation() {
