@@ -6,6 +6,7 @@
 pub mod fs;
 pub mod grep;
 pub mod shell;
+pub mod str_replace;
 
 use serde_json::Value;
 use std::collections::HashMap;
@@ -125,6 +126,9 @@ pub fn default_registry() -> ToolRegistry {
     
     // Register shell tool
     registry.register(Arc::new(shell::ShellTool));
+    
+    // Register str_replace tool
+    registry.register(Arc::new(str_replace::StrReplaceTool));
     
     registry
 }
