@@ -1,3 +1,4 @@
+use crate::plan::{PlanMode, is_tool_allowed_in_plan_mode};
 use llm::{AiClient, ChatResponse, Message, Tool, ToolCall, ToolResult};
 use session::SessionManager;
 use memory::MemoryStore;
@@ -14,6 +15,7 @@ pub struct Agent {
     pub memory: Option<Arc<dyn MemoryStore>>,
     pub approval: Arc<ApprovalSystem>,
     pub tools: Vec<Tool>,
+    pub plan_mode: PlanMode,
     max_iterations: usize,
     yolo_mode: bool,
 }
@@ -30,6 +32,7 @@ impl Agent {
             memory: None,
             approval,
             tools: Vec::new(),
+            plan_mode: PlanMode::new(),
             max_iterations: 10,
             yolo_mode: false,
         }
@@ -53,6 +56,23 @@ impl Agent {
     pub fn with_yolo(mut self, enabled: bool) -> Self {
         self.yolo_mode = enabled;
         self
+    }
+
+    pub fn with_plan_mode(mut self, enabled: bool) -> Self {
+        if enabled {
+            self.plan_mode.enable();
+        } else {
+            self.plan_mode.disable();
+        }
+        self
+    }
+
+    pub fn toggle_plan_mode(&mut self) {
+        self.plan_mode.toggle();
+    }
+
+    pub fn is_plan_mode_enabled(&self) -> bool {
+        self.plan_mode.is_enabled()
     }
 
     /// Convert internal Message to LLM ChatMessage format
@@ -166,16 +186,26 @@ impl Agent {
                 self.approval.check(&approval_request)
             };
             
-            let result = match decision {
-                ApprovalDecision::Approve => {
-                    self.execute_tool(tool_call).await
-                }
-                ApprovalDecision::Deny => {
-                    ToolResult::new(&tool_call.id, &tool_call.function.name, "Tool execution rejected by policy")
-                }
-                ApprovalDecision::Ask => {
-                    // For now, auto-approve in Ask state (TODO: prompt user)
-                    self.execute_tool(tool_call).await
+            // Check plan mode - block non-read-only tools
+            let result = if self.plan_mode.is_enabled() && !is_tool_allowed_in_plan_mode(&tool_call.function.name) {
+                ToolResult::new(
+                    &tool_call.id,
+                    &tool_call.function.name,
+                    format!("Tool '{}' is not allowed in plan mode. Only read-only operations are permitted.", 
+                        tool_call.function.name)
+                )
+            } else {
+                match decision {
+                    ApprovalDecision::Approve => {
+                        self.execute_tool(tool_call).await
+                    }
+                    ApprovalDecision::Deny => {
+                        ToolResult::new(&tool_call.id, &tool_call.function.name, "Tool execution rejected by policy")
+                    }
+                    ApprovalDecision::Ask => {
+                        // For now, auto-approve in Ask state (TODO: prompt user)
+                        self.execute_tool(tool_call).await
+                    }
                 }
             };
             

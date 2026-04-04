@@ -60,6 +60,12 @@ impl ChatSession {
         self
     }
 
+    /// Toggle plan mode
+    pub fn toggle_plan_mode(&mut self) -> bool {
+        self.agent.toggle_plan_mode();
+        self.agent.is_plan_mode_enabled()
+    }
+
     /// Run a single message and get response
     pub async fn send_message(&self, content: &str) -> anyhow::Result<String> {
         debug!("User: {}", content);
@@ -129,9 +135,15 @@ impl ChatSession {
 
     /// Help message
     fn help_message(&self) -> String {
-        r#"Available commands:
+        let plan_mode_status = if self.agent.is_plan_mode_enabled() {
+            " (enabled)"
+        } else {
+            ""
+        };
+        format!(r#"Available commands:
   /help      - Show this help message
   /tools     - List available tools
+  /plan      - Toggle plan mode (read-only){}
   /clear     - Clear current session
   /sessions  - List saved sessions
   /load <id> - Load a session
@@ -139,7 +151,7 @@ impl ChatSession {
   /exit      - Exit chat
   Ctrl+D     - Exit chat
 
-Type your message normally to chat with the AI."#.to_string()
+Type your message normally to chat with the AI."#, plan_mode_status)
     }
 
     /// List available tools
@@ -181,7 +193,7 @@ pub async fn run_interactive(config: Config) -> anyhow::Result<()> {
     println!("🤖 D AI Chat");
     println!("Type /help for available commands\n");
 
-    let session = ChatSession::new(config)?;
+    let mut session = ChatSession::new(config)?;
     let mut repl = crate::repl::Repl::new();
 
     loop {
@@ -190,6 +202,17 @@ pub async fn run_interactive(config: Config) -> anyhow::Result<()> {
                 if input == "/quit" || input == "/exit" {
                     println!("Goodbye!");
                     break;
+                }
+
+                // Handle commands that need mutable access
+                if input == "/plan" {
+                    let enabled = session.toggle_plan_mode();
+                    if enabled {
+                        println!("📋 Plan mode enabled. Only read-only tools will be executed.");
+                    } else {
+                        println!("✅ Plan mode disabled.");
+                    }
+                    continue;
                 }
 
                 match session.send_message(&input).await {
