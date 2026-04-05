@@ -4,6 +4,7 @@
 //! and integration with memory/session layers.
 
 pub mod agent;
+pub mod correction;
 pub mod cost;
 pub mod plan;
 pub mod planner;
