@@ -9,6 +9,7 @@ pub mod cost;
 pub mod plan;
 pub mod planner;
 pub mod reactor;
+pub mod workflow;
 
 pub use agent::Agent;
 pub use plan::{PlanMode, is_tool_allowed_in_plan_mode};
