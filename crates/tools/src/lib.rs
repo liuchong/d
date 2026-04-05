@@ -5,6 +5,7 @@
 
 pub mod fetch;
 pub mod fs;
+pub mod git;
 pub mod grep;
 pub mod shell;
 pub mod str_replace;
@@ -135,6 +136,9 @@ pub fn default_registry() -> ToolRegistry {
     // Register web tools
     registry.register(Arc::new(web::WebSearchTool));
     registry.register(Arc::new(fetch::FetchUrlTool));
+    
+    // Register git tool
+    registry.register(Arc::new(git::GitTool));
     
     registry
 }
