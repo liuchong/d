@@ -25,3 +25,4 @@ console = { workspace = true }
 dirs = { workspace = true }
 toml = { workspace = true }
 uuid = { workspace = true }
+atty = "0.2"

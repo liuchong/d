@@ -1,5 +1,6 @@
 //! Interactive chat session
 
+use crate::ui::{self, Color, Styled};
 use agent::Agent;
 use kernel::Config;
 use llm::AiClient;
@@ -191,17 +192,17 @@ Type your message normally to chat with the AI."#, plan_mode_status)
 
 /// Run interactive chat
 pub async fn run_interactive(config: Config) -> anyhow::Result<()> {
-    println!("🤖 D AI Chat");
-    println!("Type /help for available commands\n");
+    println!("{}", ui::Styled::new("🤖 D AI Chat").fg(Color::BrightCyan).bold());
+    println!("{}", ui::Styled::new("Type /help for available commands\n").fg(Color::BrightBlack));
 
     let mut session = ChatSession::new(config)?;
     let mut repl = crate::repl::Repl::new();
 
     loop {
-        match repl.read_line("You: ")? {
+        match repl.read_line(format!("{}", ui::Styled::new("You: ").fg(Color::BrightBlue).bold()))? {
             Some(input) => {
                 if input == "/quit" || input == "/exit" {
-                    println!("Goodbye!");
+                    println!("{}", ui::green("Goodbye!"));
                     break;
                 }
 
@@ -209,25 +210,31 @@ pub async fn run_interactive(config: Config) -> anyhow::Result<()> {
                 if input == "/plan" {
                     let enabled = session.toggle_plan_mode();
                     if enabled {
-                        println!("📋 Plan mode enabled. Only read-only tools will be executed.");
+                        println!("{}", ui::yellow("📋 Plan mode enabled. Only read-only tools will be executed."));
                     } else {
-                        println!("✅ Plan mode disabled.");
+                        println!("{}", ui::green("✅ Plan mode disabled."));
                     }
                     continue;
                 }
 
                 if input == "/cost" {
-                    println!("{}", session.agent.cost_report());
+                    println!("{}", ui::cyan(&session.agent.cost_report()));
                     continue;
                 }
 
                 match session.send_message(&input).await {
                     Ok(response) => {
-                        println!("AI: {}\n", response);
+                        println!("{}: {}\n", 
+                            ui::Styled::new("AI").fg(Color::BrightGreen).bold(),
+                            response
+                        );
                     }
                     Err(e) => {
                         warn!("Error: {}", e);
-                        println!("Error: {}\n", e);
+                        println!("{}: {}\n", 
+                            ui::Styled::new("Error").fg(Color::Red).bold(),
+                            e
+                        );
                     }
                 }
             }

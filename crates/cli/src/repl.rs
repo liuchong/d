@@ -1,5 +1,6 @@
 //! Read-Eval-Print Loop for interactive chat
 
+use crate::ui::{self, Color, Styled};
 use std::io::{self, Write};
 
 /// REPL for interactive chat
@@ -18,7 +19,7 @@ impl Repl {
 
     /// Read a line from stdin with basic history support
     /// Returns None on EOF (Ctrl+D) or empty input
-    pub fn read_line(&mut self, prompt: &str) -> io::Result<Option<String>> {
+    pub fn read_line(&mut self, prompt: impl std::fmt::Display) -> io::Result<Option<String>> {
         print!("{}", prompt);
         io::stdout().flush()?;
 
