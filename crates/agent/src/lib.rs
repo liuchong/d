@@ -4,11 +4,18 @@
 //! and integration with memory/session layers.
 
 pub mod agent;
+pub mod bgtask;
 pub mod correction;
 pub mod cost;
+pub mod game;
+pub mod lsp;
+pub mod pattern;
+pub mod personality;
 pub mod plan;
 pub mod planner;
 pub mod reactor;
+pub mod skills;
+pub mod thinking;
 pub mod workflow;
 
 pub use agent::Agent;

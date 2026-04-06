@@ -55,7 +55,7 @@ mod tests {
     fn test_session_manager_get_or_create() {
         let manager = SessionManager::new().unwrap();
         
-        let session1 = manager.get_or_create("my-session");
+        let mut session1 = manager.get_or_create("my-session");
         session1.add_message(Message::user("Hello"));
         
         // Save and reload

@@ -26,8 +26,16 @@ mod tests {
 
     #[test]
     fn test_message_with_tool_calls() {
+        let tool_call = serde_json::json!({
+            "id": "1",
+            "type": "function",
+            "function": {
+                "name": "test_tool",
+                "arguments": "{}"
+            }
+        });
         let msg = Message::assistant("Let me help")
-            .with_tool_calls(vec![serde_json::json!({"id": "1"})]);
+            .with_tool_calls(vec![tool_call]);
         assert!(msg.tool_calls.is_some());
         assert_eq!(msg.tool_calls.unwrap().len(), 1);
     }
