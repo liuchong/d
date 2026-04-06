@@ -5,15 +5,15 @@ use agent::Agent;
 use kernel::Config;
 use llm::AiClient;
 use security::ApprovalSystem;
-use session::SessionManager;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tools::{default_registry, ToolContext};
 use tracing::{debug, warn};
 
 /// Chat session manager
 pub struct ChatSession {
     agent: Agent,
-    session_manager: Arc<SessionManager>,
+    session_manager: Arc<RwLock<session::SessionStore>>,
     session_id: String,
     tool_context: ToolContext,
 }
@@ -22,7 +22,10 @@ impl ChatSession {
     /// Create a new chat session
     pub fn new(config: Config) -> anyhow::Result<Self> {
         let client = AiClient::new(config.clone())?;
-        let session_manager = Arc::new(SessionManager::new()?);
+        let session_store = tokio::runtime::Handle::current().block_on(async {
+            session::SessionStore::new().await
+        })?;
+        let session_manager = Arc::new(tokio::sync::RwLock::new(session_store));
         let approval = Arc::new(ApprovalSystem::default());
         
         let tool_registry = default_registry();
@@ -270,7 +273,7 @@ Type your message normally to chat with the AI."#, plan_mode_status)
         } else {
             let mut output = String::from("Saved sessions:\n");
             for session in sessions {
-                output.push_str(&format!("  {} - {}\n", session.id, session.title));
+                output.push_str(&format!("  {} - {}\n", session.id, session.name));
             }
             output
         }
