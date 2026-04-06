@@ -24,6 +24,13 @@ serde_json = "1"
 toml = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+dotenvy = "0.15"
+term_size = "0.3"
+num_cpus = "1"
+sha2 = "0.10"
+url = "2"
+tempfile = "3"
+tokio-test = "0.4"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 time = { version = "0.3", features = ["formatting"] }
@@ -54,6 +61,8 @@ tools = { path = "crates/tools" }
 security = { path = "crates/security" }
 http = { path = "crates/http" }
 cli = { path = "crates/cli" }
+toolbox = { path = "crates/toolbox" }
+storage = { path = "crates/storage" }
 
 [package]
 name = "d"

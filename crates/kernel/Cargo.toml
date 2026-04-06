@@ -18,4 +18,9 @@ uuid = { workspace = true }
 chrono = { workspace = true }
 async-trait = { workspace = true }
 dirs = { workspace = true }
+walkdir = { workspace = true }
+reqwest = { workspace = true }
+term_size = { workspace = true }
+num_cpus = { workspace = true }
+dotenvy = { workspace = true }
 libc = "0.2"
