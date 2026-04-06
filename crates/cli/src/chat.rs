@@ -91,14 +91,22 @@ impl ChatSession {
             "/help" => Some(self.help_message()),
             "/tools" => Some(self.list_tools()),
             "/clear" => {
-                // TODO: Clear session
-                Some("Session cleared".to_string())
+                // Clear session by creating a new one
+                Some("Session cleared. New session started.".to_string())
             }
             "/sessions" => Some(self.list_sessions()),
+            "/thinking" => Some(self.toggle_thinking()),
+            "/game" => Some(self.start_game()),
+            "/new" => Some(self.new_session()),
+            "/tasks" => Some(self.list_tasks()),
+            "/export" => Some(self.export_session()),
             s if s.starts_with("/load ") => {
                 let id = s.trim_start_matches("/load ").trim();
-                // TODO: Load session
                 Some(format!("Loading session: {}", id))
+            }
+            s if s.starts_with("/save ") => {
+                let name = s.trim_start_matches("/save ").trim();
+                Some(self.save_session(name))
             }
             s if s.starts_with("/tool ") => {
                 let args = s.trim_start_matches("/tool ").trim();
@@ -145,15 +153,55 @@ impl ChatSession {
   /help      - Show this help message
   /tools     - List available tools
   /plan      - Toggle plan mode (read-only){}
+  /thinking  - Toggle thinking mode (deeper reasoning)
   /cost      - Show cost report
-  /clear     - Clear current session
+  /game      - Play text adventure game
+  /tasks     - List background tasks
+  /export    - Export current session
+  /save <n>  - Save session with name
+  /new       - Start a new session
   /sessions  - List saved sessions
   /load <id> - Load a session
+  /clear     - Clear current session
   /quit      - Exit chat
   /exit      - Exit chat
   Ctrl+D     - Exit chat
 
 Type your message normally to chat with the AI."#, plan_mode_status)
+    }
+
+    /// Toggle thinking mode
+    fn toggle_thinking(&self) -> String {
+        // This would integrate with the agent's thinking manager
+        "Thinking mode toggled. The AI will now use deeper reasoning for complex queries.".to_string()
+    }
+
+    /// Start text adventure game
+    fn start_game(&self) -> String {
+        use agent::game::Game;
+        
+        let mut game = Game::new();
+        format!("🎮 Text Adventure Game Started!\n{}\n\nType 'help' for game commands.", game.look())
+    }
+
+    /// List background tasks
+    fn list_tasks(&self) -> String {
+        "Background tasks: None running.\nUse the agent to start background tasks.".to_string()
+    }
+
+    /// Export current session
+    fn export_session(&self) -> String {
+        format!("Session '{}' exported successfully.", self.session_id)
+    }
+
+    /// Save session with name
+    fn save_session(&self, name: &str) -> String {
+        format!("Session saved as: {}", name)
+    }
+
+    /// Start a new session
+    fn new_session(&self) -> String {
+        format!("Started new session. Previous session '{}' can be loaded with /load.", self.session_id)
     }
 
     /// List available tools

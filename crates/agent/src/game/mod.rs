@@ -296,7 +296,7 @@ impl Game {
     }
 
     /// Look around current room
-    fn look(&self) -> String {
+    pub fn look(&self) -> String {
         let room = self.rooms.get(&self.player.current_room).unwrap();
         
         let mut output = format!("\n{}\n{}", room.name, "=".repeat(room.name.len()));
