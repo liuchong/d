@@ -13,6 +13,7 @@ pub mod pattern;
 pub mod personality;
 pub mod plan;
 pub mod planner;
+pub mod plugin;
 pub mod reactor;
 pub mod skills;
 pub mod thinking;
