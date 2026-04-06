@@ -3,6 +3,7 @@
 //! Provides safe execution of various tools like file operations,
 //! shell commands, and search functionality.
 
+pub mod ask_user;
 pub mod fetch;
 pub mod fs;
 pub mod git;
@@ -139,6 +140,9 @@ pub fn default_registry() -> ToolRegistry {
     
     // Register git tool
     registry.register(Arc::new(git::GitTool));
+    
+    // Register ask_user tool
+    registry.register(Arc::new(ask_user::AskUserTool));
     
     registry
 }
