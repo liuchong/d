@@ -9,3 +9,6 @@ pub use session::{
     Session, SessionInfo, SessionMessage, SessionSearch,
 };
 pub use store::{SessionStore, StoreStats};
+
+// Backwards compatibility alias
+pub type SessionManager = SessionStore;

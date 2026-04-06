@@ -300,7 +300,29 @@ impl SessionStore {
         }).await
     }
 
-    /// Save session to disk
+    /// Save session to disk (by session object)
+    pub async fn save_session(&self, session: &Session) -> anyhow::Result<()> {
+        let id = &session.id;
+        let file_path = self.storage_dir.join(format!("{}.json", id));
+        let temp_path = file_path.with_extension("tmp");
+
+        // Serialize
+        let json = serde_json::to_string_pretty(session)?;
+
+        // Write to temp file first
+        let mut file = fs::File::create(&temp_path).await?;
+        file.write_all(json.as_bytes()).await?;
+        file.flush().await?;
+        drop(file);
+
+        // Atomic rename
+        fs::rename(&temp_path, &file_path).await?;
+
+        debug!("Saved session: {}", &id[..8]);
+        Ok(())
+    }
+
+    /// Save session to disk (by id)
     pub async fn save(&self, id: &str) -> anyhow::Result<()> {
         let session = self.sessions.get(id)
             .ok_or_else(|| anyhow::anyhow!("Session not found: {}", id))?;

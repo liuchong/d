@@ -227,6 +227,24 @@ impl Session {
         self.last_accessed = self.updated_at;
     }
 
+    /// Add message from llm::Message
+    pub fn add_llm_message(&mut self, message: &llm::Message) {
+        let session_msg = SessionMessage {
+            role: match message.role {
+                llm::MessageRole::System => "system".to_string(),
+                llm::MessageRole::User => "user".to_string(),
+                llm::MessageRole::Assistant => "assistant".to_string(),
+                llm::MessageRole::Tool => "tool".to_string(),
+            },
+            content: message.content.clone(),
+            reasoning_content: message.reasoning_content.clone(),
+            timestamp: Utc::now(),
+            model: None,
+            tokens: None,
+        };
+        self.add_message(session_msg);
+    }
+
     /// Add user message
     pub fn add_user_message(&mut self, content: impl Into<String>) {
         self.add_message(SessionMessage::user(content));

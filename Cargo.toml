@@ -29,6 +29,7 @@ term_size = "0.3"
 num_cpus = "1"
 sha2 = "0.10"
 url = "2"
+atty = "0.2"
 tempfile = "3"
 tokio-test = "0.4"
 uuid = { version = "1", features = ["v4"] }
