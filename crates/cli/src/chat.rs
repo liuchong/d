@@ -97,7 +97,7 @@ impl ChatSession {
                 // Clear session by creating a new one
                 Some("Session cleared. New session started.".to_string())
             }
-            "/sessions" => Some(self.list_sessions()),
+            "/sessions" => Some(self.list_sessions().await),
             "/thinking" => Some(self.toggle_thinking()),
             "/game" => Some(self.start_game()),
             "/new" => Some(self.new_session()),
@@ -266,8 +266,8 @@ Type your message normally to chat with the AI."#, plan_mode_status)
     }
 
     /// List saved sessions
-    fn list_sessions(&self) -> String {
-        let sessions = self.session_manager.list();
+    async fn list_sessions(&self) -> String {
+        let sessions = self.session_manager.read().await.list();
         if sessions.is_empty() {
             "No saved sessions".to_string()
         } else {
