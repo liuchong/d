@@ -121,7 +121,32 @@
 - Capability-based permissions
 - Isolated contexts
 
+### Logging System
+- File-based logging
+- Automatic log rotation (size-based)
+- Log level management
+- Console and file dual output
+- Configurable retention
+
 ## CLI Features
+
+| Command | Description |
+|---------|-------------|
+| /help | Show available commands |
+| /tools | List available tools |
+| /plan | Toggle plan mode |
+| /thinking | Toggle thinking mode |
+| /cost | Show cost report |
+| /game | Start text adventure game |
+| /tasks | List background tasks |
+| /export | Export current session |
+| /save <n> | Save session with name |
+| /new | Start a new session |
+| /sessions | List saved sessions |
+| /load <id> | Load a session |
+| /clear | Clear current session |
+| /quit, /exit | Exit chat |
+| Ctrl+D | Exit chat |
 
 - Interactive REPL
 - Color support
@@ -131,6 +156,13 @@
 
 ## Development
 
-- **Tests**: 184+ tests
+- **Tests**: 185+ tests
 - **Coverage**: Core functionality covered
 - **Documentation**: Inline docs for public APIs
+
+## Architecture
+
+- **Modular design**: 13 workspace crates
+- **Async/await**: Full async throughout
+- **Type safety**: Strong Rust type system
+- **Error handling**: Comprehensive error types
