@@ -98,6 +98,11 @@ impl ChatSession {
             "/thinking" => Some(self.toggle_thinking()),
             "/game" => Some(self.start_game()),
             "/new" => Some(self.new_session()),
+            "/cmdlet" => Some(self.list_cmdlets()),
+            s if s.starts_with("/run ") => {
+                let args = s.trim_start_matches("/run ").trim();
+                Some(self.run_cmdlet(args).await)
+            }
             "/tasks" => Some(self.list_tasks()),
             "/export" => Some(self.export_session()),
             s if s.starts_with("/load ") => {
@@ -160,6 +165,8 @@ impl ChatSession {
   /export    - Export current session
   /save <n>  - Save session with name
   /new       - Start a new session
+  /cmdlet    - List available cmdlets
+  /run <cmd> - Run a cmdlet
   /sessions  - List saved sessions
   /load <id> - Load a session
   /clear     - Clear current session
@@ -202,6 +209,43 @@ Type your message normally to chat with the AI."#, plan_mode_status)
     /// Start a new session
     fn new_session(&self) -> String {
         format!("Started new session. Previous session '{}' can be loaded with /load.", self.session_id)
+    }
+
+    /// List available cmdlets
+    fn list_cmdlets(&self) -> String {
+        use crate::cmdlet::{CmdletRegistry, builtin_cmdlets};
+        
+        let mut registry = CmdletRegistry::default();
+        for cmdlet in builtin_cmdlets() {
+            registry.register(cmdlet);
+        }
+        
+        let runner = crate::cmdlet::CmdletRunner::new(registry);
+        runner.list()
+    }
+
+    /// Run a cmdlet
+    async fn run_cmdlet(&self, args: &str) -> String {
+        use crate::cmdlet::{CmdletRegistry, builtin_cmdlets};
+        
+        let mut registry = CmdletRegistry::default();
+        for cmdlet in builtin_cmdlets() {
+            registry.register(cmdlet);
+        }
+        
+        let parts: Vec<&str> = args.split_whitespace().collect();
+        if parts.is_empty() {
+            return "Usage: /run <cmdlet-name> [args...]".to_string();
+        }
+        
+        let name = parts[0];
+        let cmd_args = parts[1..].iter().map(|s| s.to_string()).collect();
+        
+        let runner = crate::cmdlet::CmdletRunner::new(registry);
+        match runner.run(name, cmd_args).await {
+            Ok(results) => format!("Cmdlet '{}' executed:\n{}", name, results.join("\n")),
+            Err(e) => format!("Error running cmdlet: {}", e),
+        }
     }
 
     /// List available tools

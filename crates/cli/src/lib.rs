@@ -3,6 +3,7 @@
 //! Provides interactive chat with tool execution capabilities.
 
 pub mod chat;
+pub mod cmdlet;
 pub mod repl;
 pub mod ui;
 
