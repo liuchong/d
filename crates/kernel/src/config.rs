@@ -111,7 +111,7 @@ impl Config {
             }
         };
         
-        // Try flat format first (chat.zig compatible)
+        // Try flat format first (legacy compatible)
         if let Ok(flat_config) = toml::from_str::<FlatConfig>(&content) {
             info!("Loaded flat config from: {}", path.display());
             return Some(flat_config.into());
@@ -184,7 +184,7 @@ root = "."
     }
 }
 
-/// Flat configuration format (chat.zig compatible)
+/// Flat configuration format (legacy compatible)
 #[derive(Debug, Clone, Deserialize)]
 struct FlatConfig {
     api_key: String,
