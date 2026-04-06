@@ -121,6 +121,13 @@
 - Capability-based permissions
 - Isolated contexts
 
+### Cmdlet System
+- Named command sequences
+- Parameter substitution (${param})
+- Built-in cmdlets (status, clean, test-all, fmt-check)
+- TOML-based cmdlet definitions
+- CLI integration (/cmdlet, /run)
+
 ### Logging System
 - File-based logging
 - Automatic log rotation (size-based)
@@ -144,6 +151,8 @@
 | /new | Start a new session |
 | /sessions | List saved sessions |
 | /load <id> | Load a session |
+| /cmdlet | List available cmdlets |
+| /run <cmd> | Run a cmdlet |
 | /clear | Clear current session |
 | /quit, /exit | Exit chat |
 | Ctrl+D | Exit chat |
@@ -156,7 +165,7 @@
 
 ## Development
 
-- **Tests**: 185+ tests
+- **Tests**: 195+ tests
 - **Coverage**: Core functionality covered
 - **Documentation**: Inline docs for public APIs
 
