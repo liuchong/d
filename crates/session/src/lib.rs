@@ -1,8 +1,11 @@
+//! Session management with persistence
+//!
+//! Provides session storage, indexing, and search capabilities.
+
 pub mod session;
-pub mod export;
+pub mod store;
 
-#[cfg(test)]
-mod session_test;
-
-pub use session::{Session, SessionManager};
-pub use export::{SessionExporter, SessionImporter, ExportFormat, SessionExport};
+pub use session::{
+    Session, SessionInfo, SessionMessage, SessionSearch,
+};
+pub use store::{SessionStore, StoreStats};
