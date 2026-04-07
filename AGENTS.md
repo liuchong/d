@@ -22,11 +22,27 @@ This document provides guidelines for AI agents working on this repository.
 
 ### 2. Testing
 
-Maintain appropriate tests for your changes:
+Maintain appropriate tests for your changes following the test hierarchy:
 
-- **Unit Tests**: Test individual functions/modules in isolation
-- **Integration Tests**: Verify components work together
-- **End-to-End Tests**: Test complete workflows (if applicable)
+```
+tests/
+├── unit/            # Unit tests: test business functions, methods, classes
+│                   # No external dependencies, run independently
+├── integration/     # Integration tests: verify module/service/component collaboration
+│                   # Involves databases, caches, models, internal APIs
+├── e2e/             # End-to-end tests: simulate real user complete workflows
+│                   # Full system black-box testing, focus on usability
+└── spike/           # Spike tests: verify external services, third-party APIs
+                    # Infrastructure, language features, technical feasibility
+                    # No business logic
+```
+
+**Test Categories:**
+
+- **Unit Tests**: Test individual functions/modules in isolation, no external dependencies
+- **Integration Tests**: Verify components work together, may use real dependencies
+- **End-to-End Tests**: Test complete user workflows, full system testing
+- **Spike Tests**: Verify external services, APIs, infrastructure feasibility
 
 Run the test suite before committing:
 ```bash
@@ -56,7 +72,7 @@ Respect the existing project structure:
 ```
 .
 ├── src/           # Source code
-├── tests/         # Test files
+├── tests/         # Test files (see Testing section for hierarchy)
 ├── docs/          # Documentation
 ├── examples/      # Example code
 └── AGENTS.md      # This file
