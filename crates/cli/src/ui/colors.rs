@@ -257,7 +257,121 @@ pub fn colorize_code(code: &str, lang: &str) -> String {
 
 fn highlight_rust(code: &str) -> String {
     // Very basic Rust highlighting
-    let keywords = ["fn", "let", "mut", "pub", "use", "mod", "struct", "impl", "if", "else", "return"];
+    let keywords = ["fn", "let", "mut", "pub", "use", "mod", "struct", "impl", "if", "else", "return", "match", "async", "await"];
+    let types = ["String", "Vec", "Option", "Result", "i32", "u64", "bool", "char"];
+    let mut result = code.to_string();
+    
+    for kw in &keywords {
+        let colored = format!("{}\x1b[0m", Styled::new(kw).fg(Color::BrightMagenta));
+        result = result.replace(&format!(" {} ", kw), &format!(" {} ", colored));
+    }
+    
+    for ty in &types {
+        let colored = format!("{}\x1b[0m", Styled::new(ty).fg(Color::BrightYellow));
+        result = result.replace(&format!(" {} ", ty), &format!(" {} ", colored));
+    }
+    
+    result
+}
+
+/// Format assistant response with code highlighting
+pub fn format_response(response: &str) -> String {
+    let mut result = String::new();
+    let mut in_code_block = false;
+    let mut code_buffer = String::new();
+    let mut code_lang = String::new();
+    
+    for line in response.lines() {
+        if line.starts_with("```") {
+            if in_code_block {
+                // End code block - highlight and add
+                result.push_str(&highlight_code_block(&code_buffer, &code_lang));
+                result.push('\n');
+                code_buffer.clear();
+                code_lang.clear();
+                in_code_block = false;
+            } else {
+                // Start code block
+                in_code_block = true;
+                code_lang = line[3..].trim().to_string();
+                result.push_str(&format!("{}\n", Styled::new("─".repeat(60).as_str()).dim()));
+            }
+            continue;
+        }
+        
+        if in_code_block {
+            code_buffer.push_str(line);
+            code_buffer.push('\n');
+        } else {
+            // Inline code highlighting
+            let highlighted = highlight_inline_code(line);
+            result.push_str(&highlighted);
+            result.push('\n');
+        }
+    }
+    
+    // Handle unclosed code block
+    if in_code_block && !code_buffer.is_empty() {
+        result.push_str(&highlight_code_block(&code_buffer, &code_lang));
+    }
+    
+    result
+}
+
+/// Highlight inline code (between backticks)
+fn highlight_inline_code(line: &str) -> String {
+    let mut result = String::new();
+    let mut chars = line.chars().peekable();
+    let mut in_code = false;
+    let mut code_buf = String::new();
+    
+    while let Some(ch) = chars.next() {
+        if ch == '`' {
+            if in_code {
+                // End inline code
+                result.push_str(&format!("{}", Styled::new(&code_buf).fg(Color::BrightYellow)));
+                code_buf.clear();
+                in_code = false;
+            } else {
+                // Start inline code
+                result.push_str(&code_buf); // flush any text before
+                code_buf.clear();
+                in_code = true;
+            }
+        } else if in_code {
+            code_buf.push(ch);
+        } else {
+            result.push(ch);
+        }
+    }
+    
+    // Handle unclosed inline code
+    if in_code {
+        result.push('`');
+        result.push_str(&code_buf);
+    } else {
+        result.push_str(&code_buf);
+    }
+    
+    result
+}
+
+/// Highlight code block
+fn highlight_code_block(code: &str, lang: &str) -> String {
+    let highlighted = match lang {
+        "rust" | "rs" => highlight_rust(code),
+        "python" | "py" => highlight_python(code),
+        "javascript" | "js" => highlight_javascript(code),
+        "bash" | "sh" | "shell" => highlight_shell(code),
+        "diff" | "patch" => highlight_diff(code),
+        _ => code.to_string(),
+    };
+    
+    format!("{}", Styled::new(&highlighted).fg(Color::White))
+}
+
+fn highlight_python(code: &str) -> String {
+    let keywords = ["def", "class", "import", "from", "return", "if", "else", "for", "while", "try", "except"];
     let mut result = code.to_string();
     
     for kw in &keywords {
@@ -266,6 +380,50 @@ fn highlight_rust(code: &str) -> String {
     }
     
     result
+}
+
+fn highlight_javascript(code: &str) -> String {
+    let keywords = ["function", "const", "let", "var", "return", "if", "else", "for", "while", "async", "await"];
+    let mut result = code.to_string();
+    
+    for kw in &keywords {
+        let colored = format!("{}\x1b[0m", Styled::new(kw).fg(Color::BrightMagenta));
+        result = result.replace(&format!(" {} ", kw), &format!(" {} ", colored));
+    }
+    
+    result
+}
+
+fn highlight_shell(code: &str) -> String {
+    code.lines()
+        .map(|line| {
+            if line.starts_with('#') {
+                format!("{}", Styled::new(line).dim())
+            } else if line.starts_with('$') {
+                format!("{}{}", green("$"), &line[1..])
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn highlight_diff(code: &str) -> String {
+    code.lines()
+        .map(|line| {
+            if line.starts_with('+') && !line.starts_with("+++") {
+                format!("{}", green(line))
+            } else if line.starts_with('-') && !line.starts_with("---") {
+                format!("{}", red(line))
+            } else if line.starts_with("@@") {
+                format!("{}", cyan(line))
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[cfg(test)]
