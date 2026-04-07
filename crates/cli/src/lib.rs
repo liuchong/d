@@ -4,6 +4,7 @@
 
 pub mod chat;
 pub mod cmdlet;
+pub mod completion;
 pub mod input;
 pub mod repl;
 pub mod ui;

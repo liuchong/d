@@ -106,6 +106,63 @@ impl Completion {
     }
 }
 
+/// Fuzzy matcher for completions
+pub struct FuzzyMatcher;
+
+impl FuzzyMatcher {
+    /// Calculate fuzzy match score
+    pub fn score(query: &str, target: &str) -> f32 {
+        let query_lower = query.to_lowercase();
+        let target_lower = target.to_lowercase();
+        
+        // Exact match
+        if target_lower == query_lower {
+            return 100.0;
+        }
+        
+        // Starts with
+        if target_lower.starts_with(&query_lower) {
+            return 90.0 - (target.len() - query.len()) as f32 * 0.5;
+        }
+        
+        // Contains
+        if target_lower.contains(&query_lower) {
+            return 70.0 - target_lower.find(&query_lower).unwrap_or(0) as f32 * 2.0;
+        }
+        
+        // Fuzzy match (character by character)
+        let mut query_chars = query_lower.chars().peekable();
+        let mut score = 0.0;
+        let mut last_match_idx = 0;
+        
+        for (idx, target_char) in target_lower.chars().enumerate() {
+            if let Some(&query_char) = query_chars.peek() {
+                if target_char == query_char {
+                    score += 10.0;
+                    if idx == last_match_idx || idx == last_match_idx + 1 {
+                        score += 5.0; // Consecutive bonus
+                    }
+                    last_match_idx = idx;
+                    query_chars.next();
+                }
+            }
+        }
+        
+        // Bonus for shorter matches
+        if query_chars.peek().is_none() {
+            score -= target.len() as f32 * 0.1;
+            score
+        } else {
+            0.0 // Didn't match all characters
+        }
+    }
+    
+    /// Check if matches threshold
+    pub fn matches(query: &str, target: &str, threshold: f32) -> bool {
+        Self::score(query, target) >= threshold
+    }
+}
+
 /// Smart completer
 pub struct SmartCompleter {
     /// Slash commands
@@ -182,29 +239,51 @@ impl SmartCompleter {
         }
     }
 
-    /// Complete slash commands
+    /// Complete slash commands with fuzzy matching
     fn complete_slash_command(&self, input: &str, _ctx: &CompletionContext) -> Vec<Completion> {
         let prefix = input.to_lowercase();
         
-        self.slash_commands
+        let mut matches: Vec<_> = self.slash_commands
             .iter()
-            .filter(|(cmd, _)| cmd.starts_with(&prefix))
-            .map(|(cmd, desc)| {
-                Completion::new(cmd.clone(), CompletionKind::Command)
-                    .with_description(desc.clone())
+            .filter_map(|(cmd, desc)| {
+                let score = FuzzyMatcher::score(&prefix, cmd);
+                if score > 30.0 {
+                    Some((score, cmd.clone(), desc.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        
+        // Sort by score descending
+        matches.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+        
+        matches.into_iter()
+            .map(|(_, cmd, desc)| {
+                Completion::new(cmd, CompletionKind::Command)
+                    .with_description(desc)
             })
             .collect()
     }
 
-    /// Complete tool names
+    /// Complete tool names with fuzzy matching
     fn complete_tool(&self, input: &str, _ctx: &CompletionContext) -> Vec<Completion> {
         let prefix = input.to_lowercase();
         
-        self.tool_completions
+        let mut matches: Vec<_> = self.tool_completions
             .iter()
-            .filter(|c| c.text.starts_with(&prefix))
-            .cloned()
-            .collect()
+            .filter_map(|c| {
+                let score = FuzzyMatcher::score(&prefix, &c.text);
+                if score > 30.0 {
+                    Some((score, c.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        
+        matches.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+        matches.into_iter().map(|(_, c)| c).collect()
     }
 
     /// Complete general input
@@ -268,15 +347,15 @@ impl FileCompleter {
         use std::path::Path;
 
         let path = Path::new(input);
-        let (dir_part, file_prefix) = if input.ends_with('/') {
-            (path, "")
+        let (dir_part, prefix_string): (&Path, String) = if input.ends_with('/') {
+            (path, String::new())
         } else {
             match (path.parent(), path.file_name()) {
                 (Some(dir), Some(name)) => {
                     let prefix = name.to_string_lossy().to_string();
-                    (dir, prefix.as_str())
+                    (dir, prefix)
                 }
-                _ => (Path::new("."), input),
+                _ => (Path::new("."), input.to_string()),
             }
         };
 
@@ -285,6 +364,7 @@ impl FileCompleter {
         if let Ok(entries) = std::fs::read_dir(dir_part) {
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().to_string();
+                let file_prefix = prefix_string.as_str();
                 
                 if name.starts_with(file_prefix) || file_prefix.is_empty() {
                     let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
@@ -373,6 +453,43 @@ impl CompletionFormatter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_fuzzy_matcher_exact() {
+        assert_eq!(FuzzyMatcher::score("help", "help"), 100.0);
+    }
+
+    #[test]
+    fn test_fuzzy_matcher_starts_with() {
+        let score = FuzzyMatcher::score("he", "help");
+        assert!(score > 80.0 && score < 100.0);
+    }
+
+    #[test]
+    fn test_fuzzy_matcher_contains() {
+        let score = FuzzyMatcher::score("el", "help");
+        assert!(score > 50.0 && score < 80.0);
+    }
+
+    #[test]
+    fn test_fuzzy_matcher_fuzzy() {
+        let score = FuzzyMatcher::score("hl", "help");
+        assert!(score > 0.0);
+    }
+
+    #[test]
+    fn test_fuzzy_matcher_no_match() {
+        let score = FuzzyMatcher::score("xyz", "help");
+        assert_eq!(score, 0.0);
+    }
+
+    #[test]
+    fn test_fuzzy_matcher_case_insensitive() {
+        let score_lower = FuzzyMatcher::score("help", "HELP");
+        let score_upper = FuzzyMatcher::score("HELP", "help");
+        assert!(score_lower > 0.0);
+        assert!(score_upper > 0.0);
+    }
 
     #[test]
     fn test_smart_completer_slash_commands() {
