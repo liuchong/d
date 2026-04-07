@@ -1,6 +1,5 @@
 //! Read-Eval-Print Loop for interactive chat
 
-use crate::ui;
 use std::io::{self, Write};
 
 /// REPL for interactive chat

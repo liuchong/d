@@ -23,13 +23,13 @@ pub trait PersonalityStorage: Send + Sync {
     }
 }
 
-/// In-memory storage for testing
+#[allow(dead_code)]
 pub struct MemoryStorage {
     profiles: std::sync::Mutex<std::collections::HashMap<String, PersonalityProfile>>,
 }
 
 impl MemoryStorage {
-    /// Create a new memory storage
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             profiles: std::sync::Mutex::new(std::collections::HashMap::new()),
@@ -67,13 +67,13 @@ impl PersonalityStorage for MemoryStorage {
     }
 }
 
-/// File-based storage implementation
+#[allow(dead_code)]
 pub struct FileStorage {
     base_path: std::path::PathBuf,
 }
 
 impl FileStorage {
-    /// Create a new file storage
+    #[allow(dead_code)]
     pub fn new(base_path: impl AsRef<Path>) -> Self {
         Self {
             base_path: base_path.as_ref().to_path_buf(),

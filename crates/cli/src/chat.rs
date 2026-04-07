@@ -190,7 +190,7 @@ Type your message normally to chat with the AI."#, plan_mode_status)
     fn start_game(&self) -> String {
         use agent::game::Game;
         
-        let mut game = Game::new();
+        let game = Game::new();
         format!("🎮 Text Adventure Game Started!\n{}\n\nType 'help' for game commands.", game.look())
     }
 

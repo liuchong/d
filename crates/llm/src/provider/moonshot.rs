@@ -164,6 +164,7 @@ struct MoonshotChoice {
 #[derive(Debug, serde::Deserialize)]
 struct MoonshotMessage {
     content: String,
+    #[allow(dead_code)]
     #[serde(default)]
     reasoning_content: Option<String>,
 }

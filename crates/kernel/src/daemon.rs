@@ -311,6 +311,7 @@ impl Daemon {
 }
 
 /// Daemon client for sending commands
+#[allow(dead_code)]
 pub struct DaemonClient {
     socket_path: PathBuf,
 }

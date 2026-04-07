@@ -189,43 +189,43 @@ fn colors_enabled() -> bool {
 }
 
 /// Convenience functions for colored text
-pub fn red(text: &str) -> Styled {
+pub fn red(text: &str) -> Styled<'_> {
     Styled::new(text).fg(Color::Red)
 }
 
-pub fn green(text: &str) -> Styled {
+pub fn green(text: &str) -> Styled<'_> {
     Styled::new(text).fg(Color::Green)
 }
 
-pub fn yellow(text: &str) -> Styled {
+pub fn yellow(text: &str) -> Styled<'_> {
     Styled::new(text).fg(Color::Yellow)
 }
 
-pub fn blue(text: &str) -> Styled {
+pub fn blue(text: &str) -> Styled<'_> {
     Styled::new(text).fg(Color::Blue)
 }
 
-pub fn magenta(text: &str) -> Styled {
+pub fn magenta(text: &str) -> Styled<'_> {
     Styled::new(text).fg(Color::Magenta)
 }
 
-pub fn cyan(text: &str) -> Styled {
+pub fn cyan(text: &str) -> Styled<'_> {
     Styled::new(text).fg(Color::Cyan)
 }
 
-pub fn bright_green(text: &str) -> Styled {
+pub fn bright_green(text: &str) -> Styled<'_> {
     Styled::new(text).fg(Color::BrightGreen)
 }
 
-pub fn bright_yellow(text: &str) -> Styled {
+pub fn bright_yellow(text: &str) -> Styled<'_> {
     Styled::new(text).fg(Color::BrightYellow)
 }
 
-pub fn bright_blue(text: &str) -> Styled {
+pub fn bright_blue(text: &str) -> Styled<'_> {
     Styled::new(text).fg(Color::BrightBlue)
 }
 
-pub fn bold(text: &str) -> Styled {
+pub fn bold(text: &str) -> Styled<'_> {
     Styled::new(text).bold()
 }
 

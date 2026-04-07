@@ -26,6 +26,7 @@ pub trait Planner: Send + Sync {
 }
 
 /// Simple LLM-based planner
+#[allow(dead_code)]
 pub struct LlmPlanner {
     client: llm::AiClient,
 }

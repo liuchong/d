@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 
 
 use tokio::sync::Mutex;
-use tracing::{debug, info};
+use tracing::info;
 
 mod client;
 mod types;
@@ -44,6 +44,7 @@ pub enum LspError {
 }
 
 /// LSP client builder
+#[allow(dead_code)]
 pub struct LspClientBuilder {
     command: String,
     args: Vec<String>,

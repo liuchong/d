@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use tracing::{debug, info};
+
 
 /// Session metadata for lightweight listing
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -130,7 +130,7 @@ impl SessionMessage {
     }
 
     /// Create tool message
-    pub fn tool(tool_call_id: impl Into<String>, content: impl Into<String>) -> Self {
+    pub fn tool(_tool_call_id: impl Into<String>, content: impl Into<String>) -> Self {
         Self {
             role: "tool".to_string(),
             content: content.into(),

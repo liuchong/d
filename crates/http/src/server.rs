@@ -32,6 +32,7 @@ struct FileEntry {
     size: u64,
     modified_time: Option<std::time::SystemTime>,
     file_type: FileType,
+    #[allow(dead_code)]
     extension: String,
 }
 

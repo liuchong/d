@@ -10,7 +10,6 @@ use chrono::{Datelike, Timelike};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use tracing::info;
 
 mod analyzer;
 mod storage;

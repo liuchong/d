@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStdin, ChildStdout, Command};
+use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tracing::{debug, error, info, trace};
 
@@ -25,7 +25,9 @@ pub struct LspClient {
     stdin: ChildStdin,
     request_id: AtomicI64,
     pending: Arc<Mutex<HashMap<i64, PendingRequest>>>,
+    #[allow(dead_code)]
     notification_tx: mpsc::UnboundedSender<Message>,
+    #[allow(dead_code)]
     root_uri: String,
 }
 
@@ -50,7 +52,7 @@ enum ClientRequest {
     Shutdown,
 }
 
-/// Internal message type
+#[allow(dead_code)]
 enum Message {
     Request(Request),
     Response(Response),
@@ -82,7 +84,7 @@ impl LspClient {
         })?;
 
         let pending = Arc::new(Mutex::new(HashMap::<i64, PendingRequest>::new()));
-        let (notification_tx, mut notification_rx) = mpsc::unbounded_channel();
+        let (notification_tx, _notification_rx) = mpsc::unbounded_channel();
 
         // Spawn reader task
         let pending_for_reader = pending.clone();

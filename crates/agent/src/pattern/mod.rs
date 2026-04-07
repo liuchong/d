@@ -59,6 +59,7 @@ pub struct PatternRecognizer {
 #[derive(Debug, Clone)]
 struct CommandEntry {
     command: String,
+    #[allow(dead_code)]
     timestamp: Instant,
     context: HashMap<String, String>,
 }

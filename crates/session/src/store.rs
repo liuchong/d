@@ -71,12 +71,12 @@ impl SessionIndex {
             .collect()
     }
 
-    /// Get sessions by name
+    #[allow(dead_code)]
     fn by_name(&self, name: &str) -> Vec<String> {
         self.by_name.get(name).cloned().unwrap_or_default()
     }
 
-    /// Get sessions by branch
+    #[allow(dead_code)]
     fn by_branch(&self, branch: &str) -> Vec<String> {
         self.by_git_branch.get(branch).cloned().unwrap_or_default()
     }
