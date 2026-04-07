@@ -7,12 +7,12 @@
 //! - Automatic migration
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 /// Persistable data trait
 pub trait Persistable: Serialize + for<'de> Deserialize<'de> + Send + Sync {

@@ -4,7 +4,7 @@ use super::{Tool, ToolContext, ToolResult};
 use regex::Regex;
 use serde_json::json;
 use serde_json::Value;
-use std::path::PathBuf;
+
 
 /// Grep tool for searching file contents
 pub struct GrepTool;

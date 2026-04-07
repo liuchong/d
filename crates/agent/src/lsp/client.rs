@@ -4,13 +4,15 @@ use super::types::*;
 use super::LspError;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::process::Stdio;
-use std::sync::atomic::{AtomicI64, Ordering};
+
+
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
+use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::{mpsc, oneshot, Mutex};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, trace};
 
 /// Pending request
 struct PendingRequest {

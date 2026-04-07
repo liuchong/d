@@ -9,7 +9,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use tracing::{info, warn, error};
+use tracing::{info, warn};
 
 /// Cmdlet definition
 #[derive(Debug, Clone, Serialize, Deserialize)]

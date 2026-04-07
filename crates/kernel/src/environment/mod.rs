@@ -9,7 +9,6 @@
 use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
-use tracing::{debug, info, warn};
 
 /// Operating system type
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

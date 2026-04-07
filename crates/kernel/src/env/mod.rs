@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
-use tracing::{debug, error, info, warn};
+use tracing::info;
 
 /// Environment variable source
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -8,8 +8,8 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::Mutex;
-use tracing::{debug, error, info, trace, warn};
+
+use tracing::{info, trace};
 
 /// PCode value types
 #[derive(Debug, Clone, PartialEq)]

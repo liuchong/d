@@ -5,8 +5,8 @@
 //! - Log level management
 //! - Structured logging support
 
-use std::path::{Path, PathBuf};
-use tracing::{info, warn};
+use std::path::PathBuf;
+use tracing::info;
 
 /// Log configuration
 #[derive(Debug, Clone)]

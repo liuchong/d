@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 use std::time::Duration;
-use tracing::{debug, info, warn};
+use tracing::info;
 
 /// Optimization category
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

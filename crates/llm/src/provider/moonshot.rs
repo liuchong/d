@@ -2,7 +2,7 @@
 
 use super::{
     CompletionRequest, CompletionResponse, Message, Provider, ProviderCapabilities,
-    ProviderConfig, ProviderType, Role, Usage,
+    ProviderConfig, ProviderType, Usage,
 };
 use async_trait::async_trait;
 

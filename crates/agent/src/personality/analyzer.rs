@@ -1,7 +1,7 @@
 //! Personality analyzer for adapting to user behavior
 
-use super::{CommunicationStyle, DetailLevel, InteractionPatterns, PersonalityProfile};
-use chrono::{Datelike, Timelike};
+use super::{CommunicationStyle, DetailLevel, PersonalityProfile};
+use chrono::Timelike;
 use tracing::debug;
 
 /// Personality analyzer

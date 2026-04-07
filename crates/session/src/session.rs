@@ -8,11 +8,11 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn};
+
+use tracing::{debug, info};
 
 /// Session metadata for lightweight listing
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,6 +1,6 @@
 //! Interactive chat session
 
-use crate::ui::{self, Color, Styled};
+use crate::ui::{self, Color};
 use agent::Agent;
 use kernel::Config;
 use llm::AiClient;
