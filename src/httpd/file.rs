@@ -102,22 +102,20 @@ fn is_not_modified(
     if let Some(value) = req_headers
         .get(header::IF_MODIFIED_SINCE)
         .and_then(|v| v.to_str().ok())
-    {
-        if let (Ok(since), Ok(modified)) =
+        && let (Ok(since), Ok(modified)) =
             (httpdate::parse_http_date(value), metadata.modified())
-        {
-            // Compare at second granularity: timestamps from the filesystem
-            // may carry sub-second precision the header cannot express.
-            let since_secs = since
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            let modified_secs = modified
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            return modified_secs <= since_secs;
-        }
+    {
+        // Compare at second granularity: timestamps from the filesystem
+        // may carry sub-second precision the header cannot express.
+        let since_secs = since
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let modified_secs = modified
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        return modified_secs <= since_secs;
     }
 
     false
@@ -131,17 +129,16 @@ const IMF_FIXDATE: &[time::format_description::FormatItem<'_>] = time::macros::f
 
 /// Insert `Last-Modified` into `headers` when the file's mtime is known.
 fn insert_last_modified(headers: &mut HeaderMap, metadata: &std::fs::Metadata) {
-    if let Ok(modified) = metadata.modified() {
-        if let Ok(time_str) =
+    if let Ok(modified) = metadata.modified()
+        && let Ok(time_str) =
             time::OffsetDateTime::from(modified).format(IMF_FIXDATE)
-        {
-            headers.insert(
-                header::LAST_MODIFIED,
-                time_str
-                    .parse()
-                    .expect("IMF-fixdate is a valid header value"),
-            );
-        }
+    {
+        headers.insert(
+            header::LAST_MODIFIED,
+            time_str
+                .parse()
+                .expect("IMF-fixdate is a valid header value"),
+        );
     }
 }
 
