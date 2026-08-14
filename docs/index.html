@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>d — 单二进制 HTTP 服务器</title>
+    <meta name="description" content="d 是一个单二进制 HTTP 服务器：一行命令秒开目录服务，一个配置文件变身轻量 NGINX。">
+    <link rel="icon" type="image/svg+xml" href="pages/assets/logo.svg">
+    <link rel="stylesheet" href="pages/assets/style.css">
+</head>
+<body>
+
+<nav class="nav">
+    <div class="wrap">
+        <img src="pages/assets/logo.svg" alt="d logo">
+        <span class="brand">d</span>
+        <span class="spacer"></span>
+        <a class="nav-link" href="#features">特性</a>
+        <a class="nav-link" href="#quickstart">快速开始</a>
+        <a class="nav-link" href="#examples">示例</a>
+        <a class="nav-link" href="#roadmap">路线图</a>
+        <a class="nav-link" href="https://github.com/liuchong/d">GitHub</a>
+    </div>
+</nav>
+
+<header class="hero">
+    <img class="hero-logo" src="pages/assets/logo.svg" alt="d logo">
+    <h1><span class="prompt">&gt;_</span> d<span class="blink">▊</span></h1>
+    <p class="tagline">单二进制 HTTP 服务器 —— 一行命令秒开目录服务，一个配置文件变身轻量 NGINX</p>
+    <div class="badges">
+        <span class="hl">rust 🦀 memory-safe</span>
+        <span>single binary</span>
+        <span>axum + tokio</span>
+        <span>license: 1PL</span>
+    </div>
+    <div class="install">
+        <span class="cmd" id="install-cmd">cargo install d</span>
+        <button class="copy-btn" data-copy="#install-cmd">copy</button>
+    </div>
+</header>
+
+<main class="wrap">
+
+<section id="features">
+    <h2 class="section-title">features</h2>
+    <p class="section-sub">开箱即用的目录服务，以及正确的 HTTP 语义。</p>
+    <div class="grid">
+        <div class="card">
+            <div class="icon">📁</div>
+            <h3>目录列表</h3>
+            <p>12 类文件图标、名称/大小/时间/类型四维排序、面包屑导航、隐藏文件开关。</p>
+        </div>
+        <div class="card">
+            <div class="icon">🎨</div>
+            <h3>预览与高亮</h3>
+            <p>代码语法高亮、Markdown/Org 渲染、图片/音视频预览，Preview / Raw / Download 三种视图。</p>
+        </div>
+        <div class="card">
+            <div class="icon">📡</div>
+            <h3>Range 请求 <span class="tag">RFC 9110</span></h3>
+            <p>真正的字节切片（seek + take），支持后缀范围，无效范围返回 416。断点续传、媒体拖动均可用。</p>
+        </div>
+        <div class="card">
+            <div class="icon">🏷️</div>
+            <h3>缓存与 304</h3>
+            <p>ETag + If-None-Match（含弱比较与 <code>*</code>）、If-Modified-Since，命中即 304，省流量。</p>
+        </div>
+        <div class="card">
+            <div class="icon">🗜️</div>
+            <h3>压缩与 CORS</h3>
+            <p>gzip / deflate / brotli 自动协商；CORS 默认放开 GET/HEAD，方便跨域调试。</p>
+        </div>
+        <div class="card">
+            <div class="icon">🛡️</div>
+            <h3>安全</h3>
+            <p>路径穿越钳制、符号链接逃逸防御（canonicalize 校验）、RFC 5987 文件名编码、零 unwrap 生产代码。</p>
+        </div>
+    </div>
+</section>
+
+<section id="quickstart">
+    <h2 class="section-title">quickstart</h2>
+    <p class="section-sub">三秒钟，把任意目录变成 HTTP 服务。</p>
+    <div class="terminal">
+        <div class="terminal-bar">
+            <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+            <span class="title">terminal</span>
+        </div>
+        <pre><span class="c"># 安装</span>
+<span class="p">$</span> cargo install d
+
+<span class="c"># 服务当前目录</span>
+<span class="p">$</span> d
+<span class="o">INFO Starting server on http://localhost:8080</span>
+
+<span class="c"># 指定目录与端口</span>
+<span class="p">$</span> d -r ./public -p 3000
+
+<span class="c"># 断点续传 / 部分下载</span>
+<span class="p">$</span> curl -r 0-1023 http://localhost:8080/data.bin</pre>
+    </div>
+</section>
+
+<section id="examples">
+    <h2 class="section-title">examples</h2>
+    <p class="section-sub">仓库内置 5 组可运行示范（<code>examples/</code>），覆盖各种文件类型。</p>
+    <table>
+        <thead>
+            <tr><th>目录</th><th>演示内容</th><th>启动命令</th></tr>
+        </thead>
+        <tbody>
+            <tr><td><code>demo/</code></td><td>综合演示：列表、排序、各类型预览</td><td><code>d -r examples/demo</code></td></tr>
+            <tr><td><code>code/</code></td><td>多语言语法高亮（Py/JS/Go/Shell/SQL）</td><td><code>d -r examples/code</code></td></tr>
+            <tr><td><code>docs/</code></td><td>文档预览（Markdown/Org/TXT/CSV）</td><td><code>d -r examples/docs</code></td></tr>
+            <tr><td><code>media/</code></td><td>图片预览（SVG）</td><td><code>d -r examples/media</code></td></tr>
+            <tr><td><code>static-site/</code></td><td>静态网站（HTML+CSS+JS）</td><td><code>d -r examples/static-site</code></td></tr>
+        </tbody>
+    </table>
+</section>
+
+<section id="quality">
+    <h2 class="section-title">quality</h2>
+    <p class="section-sub">每个阶段都遵循「开发 → 测试 → 验收」循环。</p>
+    <div class="grid">
+        <div class="card">
+            <div class="icon">🧪</div>
+            <h3>51 个自动化测试</h3>
+            <p>26 单元 + 25 集成（oneshot 方式，无需真实端口），覆盖 Range/304/安全/列表全部关键路径。</p>
+        </div>
+        <div class="card">
+            <div class="icon">✅</div>
+            <h3>验收脚本</h3>
+            <p><code>scripts/acceptance.sh</code>：构建 + 真实启动 + 22 项端到端 HTTP 行为检查，失败即非零退出。</p>
+        </div>
+        <div class="card">
+            <div class="icon">⚙️</div>
+            <h3>CI</h3>
+            <p>GitHub Actions 双平台（ubuntu / macOS）矩阵：fmt + clippy（零警告）+ test。</p>
+        </div>
+    </div>
+</section>
+
+<section id="roadmap">
+    <h2 class="section-title">roadmap</h2>
+    <p class="section-sub">从目录服务到轻量 NGINX。</p>
+
+    <div class="phase done">
+        <h3>Phase 0 — 技术还债 <span class="status">✔ done</span></h3>
+        <p>模块化拆分、Range/304 修复、符号链接防御、SIGTERM、依赖瘦身、测试基座与 CI。</p>
+    </div>
+    <div class="phase active">
+        <h3>Phase 1 — 目录服务打磨 <span class="status">▶ next</span></h3>
+        <p>index.html 自动服务、目录打包下载（zip/tar.gz）、Basic Auth、访问日志、TLS（手动证书）、前端资源内嵌。</p>
+    </div>
+    <div class="phase">
+        <h3>Phase 2 — 轻量 NGINX 模式 <span class="status">planned</span></h3>
+        <p>TOML 配置文件、虚拟主机、反向代理 + 轮询负载均衡（hyper 自研）、SIGHUP 热重载。</p>
+    </div>
+    <div class="phase">
+        <h3>Phase 3 — 写操作（可选） <span class="status">evaluating</span></h3>
+        <p>上传 / WebDAV / 在线编辑，届时根据实际需求评审。</p>
+    </div>
+</section>
+
+</main>
+
+<footer>
+    <img src="pages/assets/logo.svg" alt="d logo">
+    <p class="mono">d — a simple standalone httpd</p>
+    <p>
+        <a href="https://github.com/liuchong/d">GitHub</a> ·
+        <a href="https://crates.io/crates/d">crates.io</a> ·
+        Licensed under the <a href="https://github.com/liuchong/d/blob/master/LICENSE">One Public License (1PL)</a>
+    </p>
+</footer>
+
+<script src="pages/assets/main.js"></script>
+</body>
+</html>

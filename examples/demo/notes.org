@@ -1,0 +1,14 @@
+* d 演示笔记
+
+#+AUTHOR: d examples
+#+DATE: 2026-08-13
+
+* TODO 试用目录排序功能
+* DONE 阅读 README
+* 普通段落文本
+
+org-mode 文件会以基础的样式渲染：标题高亮、TODO/DONE 着色。
+
+#+BEGIN_SRC rust
+fn main() {}
+#+END_SRC

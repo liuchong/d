@@ -55,12 +55,24 @@ Respect the existing project structure:
 
 ```
 .
-├── src/           # Source code
-├── tests/         # Test files
-├── docs/          # Documentation
-├── examples/      # Example code
+├── src/           # Source code (httpd/ 为核心服务器模块目录)
+├── tests/         # Integration tests（cargo test，oneshot 方式）
+├── examples/      # 使用示例集（见 examples/README.md）
+├── scripts/       # acceptance.sh 等工程脚本
+├── .github/       # GitHub Actions CI
 └── AGENTS.md      # This file
 ```
+
+## Acceptance
+
+除 `cargo test` 外，发布前需跑端到端验收脚本：
+
+```bash
+scripts/acceptance.sh   # 构建 + 启动真实服务 + 全套 HTTP 行为检查
+```
+
+新功能开发时，需同步在 `scripts/acceptance.sh` 中追加对应验收项，
+并在 `examples/` 中补充使用示例。
 
 ## Language-Specific Notes
 

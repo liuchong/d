@@ -1,0 +1,348 @@
+/* d — project pages stylesheet (tech dark theme) */
+
+:root {
+    --bg: #0d1117;
+    --bg-raised: #161b22;
+    --bg-sunken: #010409;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --text-strong: #f0f6fc;
+    --text-dim: #8b949e;
+    --accent: #1f6feb;
+    --accent-bright: #58a6ff;
+    --green: #7ee787;
+    --purple: #9c4edd;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    /* subtle circuit dot grid */
+    background-image: radial-gradient(#1c2733 1px, transparent 1px);
+    background-size: 28px 28px;
+}
+
+a { color: var(--accent-bright); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+code, pre, .mono { font-family: var(--mono); }
+
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+/* ---------- nav ---------- */
+
+.nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(13, 17, 23, 0.85);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+}
+
+.nav .wrap {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 56px;
+}
+
+.nav img { width: 28px; height: 28px; border-radius: 6px; }
+
+.nav .brand {
+    font-family: var(--mono);
+    font-weight: 700;
+    color: var(--text-strong);
+    font-size: 1.05rem;
+}
+
+.nav .spacer { flex: 1; }
+
+.nav a.nav-link {
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    margin-left: 20px;
+}
+
+.nav a.nav-link:hover { color: var(--text-strong); text-decoration: none; }
+
+/* ---------- hero ---------- */
+
+.hero {
+    text-align: center;
+    padding: 88px 24px 72px;
+    position: relative;
+}
+
+.hero::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(
+        ellipse 60% 50% at 50% 30%,
+        rgba(31, 111, 235, 0.15),
+        transparent 70%
+    );
+    pointer-events: none;
+}
+
+.hero-logo {
+    width: 148px;
+    height: 148px;
+    border-radius: 28px;
+    box-shadow:
+        0 0 0 1px var(--border),
+        0 0 64px rgba(31, 111, 235, 0.35);
+    position: relative;
+}
+
+.hero h1 {
+    font-family: var(--mono);
+    font-size: 3rem;
+    color: var(--text-strong);
+    margin-top: 28px;
+    position: relative;
+}
+
+.hero h1 .prompt { color: var(--green); }
+
+.hero .tagline {
+    font-size: 1.2rem;
+    color: var(--text-dim);
+    margin-top: 10px;
+    position: relative;
+}
+
+.badges { margin-top: 22px; position: relative; }
+
+.badges span {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    padding: 4px 12px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    color: var(--text-dim);
+    background: var(--bg-raised);
+    margin: 4px;
+}
+
+.badges .hl { color: var(--green); border-color: rgba(126, 231, 135, 0.4); }
+
+/* ---------- install box ---------- */
+
+.install {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+    margin-top: 34px;
+    padding: 14px 20px;
+    background: var(--bg-sunken);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-family: var(--mono);
+    font-size: 1rem;
+    position: relative;
+}
+
+.install .cmd { color: var(--text-strong); }
+.install .cmd::before { content: "$ "; color: var(--green); }
+
+.copy-btn {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-dim);
+    font-size: 0.78rem;
+    padding: 4px 10px;
+    cursor: pointer;
+    font-family: var(--mono);
+}
+
+.copy-btn:hover { color: var(--text-strong); border-color: var(--text-dim); }
+.copy-btn.copied { color: var(--green); border-color: var(--green); }
+
+/* ---------- sections ---------- */
+
+section { padding: 64px 0; }
+
+.section-title {
+    font-family: var(--mono);
+    font-size: 1.5rem;
+    color: var(--text-strong);
+    margin-bottom: 8px;
+}
+
+.section-title::before {
+    content: "// ";
+    color: var(--accent-bright);
+}
+
+.section-sub { color: var(--text-dim); margin-bottom: 36px; }
+
+/* ---------- feature grid ---------- */
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 16px;
+}
+
+.card {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 22px;
+    transition: border-color 0.2s, transform 0.2s;
+}
+
+.card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+}
+
+.card .icon { font-size: 1.5rem; }
+
+.card h3 {
+    color: var(--text-strong);
+    font-size: 1.02rem;
+    margin: 10px 0 6px;
+}
+
+.card h3 .tag {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    color: var(--green);
+    border: 1px solid rgba(126, 231, 135, 0.4);
+    border-radius: 10px;
+    padding: 1px 8px;
+    vertical-align: middle;
+    margin-left: 8px;
+}
+
+.card p { color: var(--text-dim); font-size: 0.92rem; }
+
+/* ---------- terminal ---------- */
+
+.terminal {
+    background: var(--bg-sunken);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.terminal-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: var(--bg-raised);
+    border-bottom: 1px solid var(--border);
+}
+
+.terminal-bar .dot { width: 12px; height: 12px; border-radius: 50%; }
+.terminal-bar .dot.r { background: #ff5f57; }
+.terminal-bar .dot.y { background: #febc2e; }
+.terminal-bar .dot.g { background: #28c840; }
+
+.terminal-bar .title {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    margin-left: 8px;
+}
+
+.terminal pre {
+    padding: 20px;
+    overflow-x: auto;
+    font-size: 0.9rem;
+    line-height: 1.8;
+    color: var(--text);
+}
+
+.terminal .p { color: var(--green); }       /* prompt */
+.terminal .c { color: var(--text-dim); }     /* comment */
+.terminal .o { color: var(--accent-bright); } /* output */
+
+/* ---------- table ---------- */
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    font-size: 0.92rem;
+}
+
+th, td {
+    padding: 12px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+
+th {
+    background: var(--bg-sunken);
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+}
+
+tr:last-child td { border-bottom: none; }
+td code { color: var(--accent-bright); }
+
+/* ---------- roadmap ---------- */
+
+.phase {
+    border-left: 3px solid var(--border);
+    padding: 4px 0 4px 20px;
+    margin-bottom: 28px;
+    position: relative;
+}
+
+.phase::before {
+    content: "";
+    position: absolute;
+    left: -8px;
+    top: 8px;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: var(--border);
+}
+
+.phase.done { border-left-color: var(--green); }
+.phase.done::before { background: var(--green); box-shadow: 0 0 12px rgba(126, 231, 135, 0.6); }
+
+.phase.active { border-left-color: var(--accent); }
+.phase.active::before { background: var(--accent); box-shadow: 0 0 12px rgba(31, 111, 235, 0.6); }
+
+.phase h3 { color: var(--text-strong); font-size: 1.02rem; font-family: var(--mono); }
+.phase h3 .status { font-size: 0.75rem; margin-left: 10px; }
+.phase.done h3 .status { color: var(--green); }
+.phase.active h3 .status { color: var(--accent-bright); }
+.phase p { color: var(--text-dim); font-size: 0.9rem; margin-top: 4px; }
+
+/* ---------- footer ---------- */
+
+footer {
+    border-top: 1px solid var(--border);
+    padding: 32px 0 48px;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 0.85rem;
+}
+
+footer img { width: 36px; height: 36px; border-radius: 8px; opacity: 0.85; }
+footer .mono { font-size: 0.8rem; }

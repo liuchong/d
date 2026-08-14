@@ -13,16 +13,12 @@ keywords = ["d", "httpd", "http-server", "http", "server"]
 
 [dependencies]
 # Async runtime
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "signal", "net"] }
-tokio-util = { version = "0.7", features = ["io", "codec"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "signal", "net"] }
+tokio-util = { version = "0.7", features = ["io"] }
 
 # Web framework
 axum = "0.8"
-tower = "0.5"
-tower-http = { version = "0.6", features = ["fs", "trace", "compression-gzip", "compression-deflate", "compression-br", "cors"] }
-hyper = { version = "1", features = ["full"] }
-http-body = "1"
-http-body-util = "0.1"
+tower-http = { version = "0.6", features = ["compression-gzip", "compression-deflate", "compression-br", "cors"] }
 
 # CLI
 clap = { version = "4", features = ["derive", "env"] }
@@ -36,20 +32,20 @@ thiserror = "2"
 
 # HTTP types
 http = "1"
+httpdate = "1"
 
 # Utilities
 mime_guess = "2"
 percent-encoding = "2"
-time = { version = "0.3", features = ["formatting"] }
-bytes = "1"
-futures = "0.3"
-infer = "0.19"
+time = { version = "0.3", features = ["formatting", "macros"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+tempfile = "3"
 
 [profile.release]
 opt-level = 3
 lto = true
 codegen-units = 1
-panic = "abort"
 strip = true

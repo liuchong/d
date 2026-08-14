@@ -1,0 +1,12 @@
+* 发布检查单
+
+* TODO 更新 CHANGELOG
+* TODO 跑 scripts/acceptance.sh
+* DONE 修复 Range 请求
+* DONE 支持 304 缓存
+
+* 备注
+
+#+BEGIN_SRC bash
+cargo test
+#+END_SRC

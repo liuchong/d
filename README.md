@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/pages/assets/logo.svg" alt="d logo" width="160">
+</p>
+
 # d
 
 [![1PL licensed](https://img.shields.io/badge/license-1PL-blue.svg)](./LICENSE)
@@ -75,6 +79,19 @@ When accessing a directory, you can use query parameters:
 - `?sort=time` - Sort by modification time
 - `?sort=type` - Sort by file type
 - `?hidden=true` - Show hidden files
+
+## Examples
+
+Ready-to-run demo directories live in [`examples/`](./examples) — see
+[examples/README.md](./examples/README.md) for a guided tour (directory
+listing, syntax highlighting, document/image preview, static site).
+
+## Testing & Acceptance
+
+```bash
+cargo test               # unit + integration tests
+scripts/acceptance.sh    # end-to-end HTTP acceptance checks
+```
 
 ## License
 

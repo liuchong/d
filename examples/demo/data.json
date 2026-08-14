@@ -1,0 +1,15 @@
+{
+  "name": "d",
+  "description": "A simple standalone httpd",
+  "features": [
+    "directory listing",
+    "syntax highlighting",
+    "file preview",
+    "range requests",
+    "compression"
+  ],
+  "listen": {
+    "host": "localhost",
+    "port": 8080
+  }
+}

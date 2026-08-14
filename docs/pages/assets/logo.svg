@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#58a6ff"/>
+      <stop offset="55%" stop-color="#1f6feb"/>
+      <stop offset="100%" stop-color="#9c4edd"/>
+    </linearGradient>
+    <linearGradient id="glyph" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#79c0ff"/>
+      <stop offset="100%" stop-color="#1f6feb"/>
+    </linearGradient>
+    <pattern id="dots" width="32" height="32" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.6" fill="#1c2733"/>
+    </pattern>
+  </defs>
+
+  <!-- base plate -->
+  <rect x="14" y="14" width="484" height="484" rx="76" fill="#0d1117"/>
+  <rect x="14" y="14" width="484" height="484" rx="76" fill="url(#dots)"/>
+  <rect x="14" y="14" width="484" height="484" rx="76" fill="none"
+        stroke="url(#edge)" stroke-width="5"/>
+
+  <!-- circuit traces -->
+  <g stroke="#233142" stroke-width="3" fill="none" stroke-linecap="round">
+    <path d="M64 108 H168 L196 136"/>
+    <path d="M64 404 H168 L196 376"/>
+    <path d="M448 108 H344 L316 136"/>
+    <path d="M448 404 H344 L316 376"/>
+  </g>
+  <g fill="#58a6ff">
+    <circle cx="64" cy="108" r="6"/>
+    <circle cx="64" cy="404" r="6"/>
+    <circle cx="448" cy="108" r="6"/>
+    <circle cx="448" cy="404" r="6"/>
+  </g>
+
+  <!-- prompt -->
+  <text x="256" y="150" text-anchor="middle"
+        font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace"
+        font-size="44" font-weight="bold" fill="#7ee787">&gt;_</text>
+
+  <!-- main glyph -->
+  <text x="252" y="330" text-anchor="middle"
+        font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace"
+        font-size="190" font-weight="bold" fill="url(#glyph)">d</text>
+
+  <!-- cursor block -->
+  <rect x="330" y="288" width="34" height="44" fill="#7ee787">
+    <animate attributeName="opacity" values="1;0;1" dur="1.2s" repeatCount="indefinite"/>
+  </rect>
+
+  <!-- subtitle -->
+  <text x="256" y="398" text-anchor="middle"
+        font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace"
+        font-size="34" letter-spacing="14" fill="#8b949e">HTTPD</text>
+</svg>

@@ -1,0 +1,6 @@
+name,type,size_kb,downloads
+hello.rs,Code,1,128
+data.json,Text,1,64
+report.csv,Text,1,32
+logo.svg,Image,2,256
+notes.org,Org,1,16

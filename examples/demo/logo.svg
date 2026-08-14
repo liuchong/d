@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="120" viewBox="0 0 240 120">
+  <rect width="240" height="120" rx="16" fill="#0d1117"/>
+  <circle cx="60" cy="60" r="34" fill="#1f6feb"/>
+  <text x="60" y="70" font-size="32" font-family="sans-serif" font-weight="bold"
+        fill="#ffffff" text-anchor="middle">d</text>
+  <text x="112" y="68" font-size="22" font-family="sans-serif" fill="#c9d1d9">httpd</text>
+</svg>
