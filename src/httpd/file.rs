@@ -175,12 +175,15 @@ fn base_headers(
     headers
 }
 
-/// Open `path` or log and produce a 500 response.
-async fn open_file(path: &Path) -> Result<fs::File, Response> {
+/// Open `path` or log and produce a 500 response. The error is boxed to
+/// keep the `Err` variant small (clippy::result_large_err).
+async fn open_file(path: &Path) -> Result<fs::File, Box<Response>> {
     fs::File::open(path).await.map_err(|e| {
         error!("Failed to open file {}: {}", path.display(), e);
-        (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error")
-            .into_response()
+        Box::new(
+            (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error")
+                .into_response(),
+        )
     })
 }
 
@@ -238,7 +241,7 @@ pub(crate) async fn serve_file(
 
                 let mut file = match open_file(path).await {
                     Ok(f) => f,
-                    Err(resp) => return resp,
+                    Err(resp) => return *resp,
                 };
                 if let Err(e) = file.seek(std::io::SeekFrom::Start(start)).await
                 {
@@ -277,7 +280,7 @@ pub(crate) async fn serve_file(
 
     let file = match open_file(path).await {
         Ok(f) => f,
-        Err(resp) => return resp,
+        Err(resp) => return *resp,
     };
     let stream = ReaderStream::new(file);
     let body = Body::from_stream(stream);
@@ -291,7 +294,7 @@ pub(crate) async fn serve_raw_file(
 ) -> Response {
     let file = match open_file(path).await {
         Ok(f) => f,
-        Err(resp) => return resp,
+        Err(resp) => return *resp,
     };
 
     let mut headers = HeaderMap::new();
@@ -365,7 +368,7 @@ pub(crate) async fn serve_download(
 ) -> Response {
     let file = match open_file(path).await {
         Ok(f) => f,
-        Err(resp) => return resp,
+        Err(resp) => return *resp,
     };
 
     let mut headers = HeaderMap::new();
