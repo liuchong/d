@@ -1,0 +1,2 @@
+# Always check out with LF so rustfmt --check passes on Windows runners.
+* text=auto eol=lf
