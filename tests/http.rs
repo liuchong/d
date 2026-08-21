@@ -3,7 +3,7 @@
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
-use d::httpd::create_app;
+use d::httpd::{Options, create_app, create_app_with_options};
 use tower::ServiceExt;
 
 /// Build a server root with a small file tree and return the app plus the
@@ -447,10 +447,7 @@ async fn head_directory_with_index_returns_index_headers() {
     let resp = app.oneshot(req).await.unwrap();
 
     assert_eq!(resp.status(), StatusCode::OK);
-    assert_eq!(
-        resp.headers().get(header::CONTENT_LENGTH).unwrap(),
-        "13"
-    );
+    assert_eq!(resp.headers().get(header::CONTENT_LENGTH).unwrap(), "13");
     assert!(body_bytes(resp).await.is_empty());
 }
 
@@ -471,4 +468,51 @@ async fn index_html_symlink_escape_falls_back_to_listing() {
     // The listing is shown instead of the escaped symlink target.
     assert!(html.contains("Index of"));
     assert!(html.contains("nested.txt"));
+}
+
+#[tokio::test]
+async fn cors_disabled_by_default() {
+    let (app, _dir) = test_app(false);
+    let req = Request::builder()
+        .uri("/hello.bin")
+        .header(header::ORIGIN, "https://example.com")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(
+        resp.headers()
+            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn cors_enabled_allows_any_origin() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("hello.bin"), b"hi").unwrap();
+    let canonical = dir.path().canonicalize().unwrap();
+    let app = create_app_with_options(
+        canonical,
+        Options {
+            allow_hidden: false,
+            cors: true,
+        },
+    );
+
+    let req = Request::builder()
+        .uri("/hello.bin")
+        .header(header::ORIGIN, "https://example.com")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(
+        resp.headers()
+            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .unwrap(),
+        "*"
+    );
 }

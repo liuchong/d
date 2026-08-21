@@ -58,6 +58,10 @@ struct Cli {
     /// Show hidden files (allows users to toggle visibility)
     #[arg(long, env = "D_SHOW_HIDDEN")]
     hidden: bool,
+
+    /// Enable permissive CORS (allow any origin for GET/HEAD)
+    #[arg(long, env = "D_CORS")]
+    cors: bool,
 }
 
 #[tokio::main]
@@ -106,8 +110,20 @@ async fn main() {
         "  Hidden files: {}",
         if cli.hidden { "allowed" } else { "disabled" }
     );
+    info!(
+        "  CORS: {}",
+        if cli.cors { "permissive" } else { "disabled" }
+    );
 
-    d::start(&addr, &root, cli.hidden).await;
+    d::start_with_options(
+        &addr,
+        &root,
+        d::Options {
+            allow_hidden: cli.hidden,
+            cors: cli.cors,
+        },
+    )
+    .await;
 }
 
 fn init_tracing(level: &str) {

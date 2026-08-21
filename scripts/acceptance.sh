@@ -159,6 +159,10 @@ sub=$(curl -s "$HOST/sub/")
 echo "$sub" | grep -q 'Index of' && ok "Escaped index.html symlink falls back to listing" || bad "Escaped index.html symlink falls back to listing"
 echo "$sub" | grep -q 'localhost' && bad "Escaped index.html symlink not served" || ok "Escaped index.html symlink not served"
 
+echo "==> Phase 0: CORS (default off)"
+acao=$(curl -s -D - -o /dev/null -H 'Origin: https://example.com' "$HOST/data.bin" | grep -ci '^access-control-allow-origin:' || true)
+check "No Access-Control-Allow-Origin by default" 0 "$acao"
+
 echo "==> Phase 0: download headers"
 cd_header=$(curl -s -D - -o /dev/null "$HOST/code.rs?view=download" | grep -i '^content-disposition:' | tr -d '\r')
 echo "$cd_header" | grep -q 'attachment; filename="code.rs"; filename\*=UTF-8' \
@@ -179,6 +183,29 @@ else
     grep -q 'Received SIGTERM' "$LOG" \
         && ok "SIGTERM graceful shutdown" || bad "SIGTERM graceful shutdown"
 fi
+SERVER_PID=""
+
+# ---------------------------------------------------------------------------
+# Phase 1: optional flags (--cors --hidden)
+# ---------------------------------------------------------------------------
+
+echo "==> Phase 1: restart with --cors --hidden"
+"$D_BIN" -p "$PORT" -r "$FIXTURE/root" --cors --hidden > "$LOG" 2>&1 &
+SERVER_PID=$!
+
+for _ in $(seq 1 50); do
+    curl -s -o /dev/null "$HOST/" && break
+    sleep 0.1
+done
+
+acao_star=$(curl -s -D - -o /dev/null -H 'Origin: https://example.com' "$HOST/data.bin" | grep -ci '^access-control-allow-origin: \*' || true)
+check "CORS enabled sends Access-Control-Allow-Origin: *" 1 "$acao_star"
+
+listing=$(curl -s "$HOST/")
+echo "$listing" | grep -qF '.hidden' && ok "Hidden files shown with --hidden" || bad "Hidden files shown with --hidden"
+
+kill -TERM "$SERVER_PID" 2>/dev/null || true
+wait "$SERVER_PID" 2>/dev/null || true
 SERVER_PID=""
 
 # ---------------------------------------------------------------------------

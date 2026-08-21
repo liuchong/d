@@ -36,6 +36,16 @@ pub struct ServerState {
     pub(crate) allow_hidden: bool,
 }
 
+/// Server-wide options shared by the router and the standalone server.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Options {
+    /// Allow clients to toggle hidden-file visibility in listings.
+    pub allow_hidden: bool,
+    /// Enable permissive CORS (any origin) for GET/HEAD requests.
+    /// Disabled by default: browsers then only allow same-origin access.
+    pub cors: bool,
+}
+
 #[derive(Deserialize, Debug, Default, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum SortBy {
@@ -56,31 +66,67 @@ pub(crate) struct RequestQuery {
     listing: Option<bool>,
 }
 
-/// Create the router.
+/// Create the router with CORS disabled.
 ///
 /// `root` must already be canonicalized (see [`ServerState::root`]).
 pub fn create_app(root: PathBuf, allow_hidden: bool) -> Router {
+    create_app_with_options(
+        root,
+        Options {
+            allow_hidden,
+            cors: false,
+        },
+    )
+}
+
+/// Create the router with explicit [`Options`].
+///
+/// `root` must already be canonicalized (see [`ServerState::root`]).
+pub fn create_app_with_options(root: PathBuf, options: Options) -> Router {
     use tower_http::compression::CompressionLayer;
     use tower_http::cors::CorsLayer;
 
-    let state = ServerState { root, allow_hidden };
-
-    let cors = CorsLayer::new()
-        .allow_origin(tower_http::cors::Any)
-        .allow_methods([axum::http::Method::GET, axum::http::Method::HEAD])
-        .allow_headers(tower_http::cors::Any);
+    let state = ServerState {
+        root,
+        allow_hidden: options.allow_hidden,
+    };
 
     let compression = CompressionLayer::new().gzip(true).deflate(true).br(true);
 
-    Router::new()
+    let app = Router::new()
         .route("/{*path}", get(handle_request))
         .route("/", get(handle_root))
         .layer(compression)
-        .layer(cors)
-        .with_state(state)
+        .with_state(state);
+
+    if options.cors {
+        let cors = CorsLayer::new()
+            .allow_origin(tower_http::cors::Any)
+            .allow_methods([Method::GET, Method::HEAD])
+            .allow_headers(tower_http::cors::Any);
+        app.layer(cors)
+    } else {
+        app
+    }
 }
 
 pub async fn start(addr: &SocketAddr, root: &str, allow_hidden: bool) {
+    start_with_options(
+        addr,
+        root,
+        Options {
+            allow_hidden,
+            cors: false,
+        },
+    )
+    .await;
+}
+
+pub async fn start_with_options(
+    addr: &SocketAddr,
+    root: &str,
+    options: Options,
+) {
     let root_path = PathBuf::from(root);
 
     if !root_path.exists() {
@@ -88,7 +134,7 @@ pub async fn start(addr: &SocketAddr, root: &str, allow_hidden: bool) {
         return;
     }
 
-    let app = create_app(root_path, allow_hidden);
+    let app = create_app_with_options(root_path, options);
 
     info!("Starting server on http://{}", addr);
     info!("Serving directory: {}", root);

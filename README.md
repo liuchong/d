@@ -20,7 +20,7 @@ D is a simple standalone httpd with modern features.
 - 📊 **Multiple sort options** (name, size, time, type)
 - 👁️ **Hidden files** toggle (configurable)
 - 🗜️ **Compression** support (gzip, deflate, brotli)
-- 🌐 **CORS** support
+- 🌐 **CORS** support (opt-in via `--cors`)
 - 📡 **Range requests** for resumable downloads
 - 🏷️ **ETag** and **cache control**
 - 🖥️ **Graceful shutdown**
@@ -50,8 +50,11 @@ d -r /path/to/serve
 # Show hidden files (allows users to toggle)
 d --hidden
 
+# Allow cross-origin requests (permissive CORS)
+d --cors
+
 # Full options
-d -H 0.0.0.0 -p 8080 -r ./public --hidden
+d -H 0.0.0.0 -p 8080 -r ./public --hidden --cors
 ```
 
 ### Options
@@ -63,12 +66,14 @@ d -H 0.0.0.0 -p 8080 -r ./public --hidden
 | `-r, --root` | Root directory to serve | `.` |
 | `-l, --log` | Log level | `info` |
 | `--hidden` | Allow showing hidden files | disabled |
+| `--cors` | Permissive CORS (any origin) | disabled |
 
 ### Environment Variables
 
 - `D_HOST` - Server host
 - `D_PORT` - Server port
 - `D_ROOT` - Root directory
+- `D_CORS` - Enable permissive CORS
 - `RUST_LOG` - Log level
 
 ## Web Interface
