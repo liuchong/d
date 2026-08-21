@@ -339,10 +339,11 @@ const ATTR_CHAR_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
 /// Build a `Content-Disposition` header value per RFC 5987/RFC 6266:
 /// an ASCII-only `filename` fallback plus a percent-encoded `filename*`.
 pub(crate) fn content_disposition(filename: &str) -> String {
-    let name = Path::new(filename)
-        .file_name()
-        .map(|n| n.to_string_lossy())
-        .unwrap_or_default();
+    // The input is a URL path segment (`/`-separated). Do not use
+    // `Path::file_name`, which also treats `\` as a separator on
+    // Windows; splitting on `/` alone behaves identically everywhere,
+    // and a backslash stays a filename character (sanitized below).
+    let name = filename.rsplit('/').next().unwrap_or_default();
 
     let mut fallback = String::with_capacity(name.len());
     for c in name.chars() {
