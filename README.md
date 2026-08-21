@@ -12,6 +12,7 @@ D is a simple standalone httpd with modern features.
 ## Features
 
 - 📁 **Directory listing** with rich file type icons and sorting
+- 🏠 **index.html serving** for directories (static sites work out of the box)
 - 🎨 **Syntax highlighting** for code files
 - 🖼️ **File preview** for images, videos, audio, markdown and code
 - 📥 **Download/Raw/Preview** options for text files
@@ -79,6 +80,10 @@ When accessing a directory, you can use query parameters:
 - `?sort=time` - Sort by modification time
 - `?sort=type` - Sort by file type
 - `?hidden=true` - Show hidden files
+- `?listing=true` - Show the directory listing even when an `index.html` exists
+
+Directories containing an `index.html` serve that file directly (with Range
+and ETag support), so static sites work out of the box.
 
 ## Examples
 

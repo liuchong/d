@@ -53,6 +53,7 @@ pub(crate) struct RequestQuery {
     sort: SortBy,
     hidden: Option<bool>,
     view: Option<String>,
+    listing: Option<bool>,
 }
 
 /// Create the router.
@@ -154,8 +155,11 @@ async fn shutdown_signal() {
 async fn handle_root(
     State(state): State<ServerState>,
     Query(query): Query<RequestQuery>,
+    request: Request<Body>,
 ) -> impl IntoResponse {
-    handle_dir("", &query, &state).await
+    let headers = request.headers().clone();
+    let is_head = request.method() == Method::HEAD;
+    handle_dir("", &query, &state, &headers, is_head).await
 }
 
 async fn handle_request(
@@ -248,6 +252,12 @@ async fn handle_path(
 
     match fs::metadata(&full_path).await {
         Ok(metadata) if metadata.is_dir() => {
+            if let Some(resp) =
+                serve_index(state, &full_path, req_headers, is_head, query)
+                    .await
+            {
+                return resp;
+            }
             if is_head {
                 (StatusCode::OK, Html("")).into_response()
             } else {
@@ -287,6 +297,8 @@ async fn handle_dir(
     path: &str,
     query: &RequestQuery,
     state: &ServerState,
+    req_headers: &HeaderMap,
+    is_head: bool,
 ) -> Response {
     let full_path = match resolve_path(&state.root, path).await {
         PathResolution::Resolved(p) => p,
@@ -301,8 +313,52 @@ async fn handle_dir(
 
     match fs::metadata(&full_path).await {
         Ok(metadata) if metadata.is_dir() => {
+            if let Some(resp) =
+                serve_index(state, &full_path, req_headers, is_head, query)
+                    .await
+            {
+                return resp;
+            }
             serve_directory(path, &full_path, query, state).await
         }
         _ => (StatusCode::NOT_FOUND, "Not Found").into_response(),
+    }
+}
+
+/// Serve a directory's `index.html` when one exists, unless the client
+/// explicitly requested the listing with `?listing=true`. Returns `None`
+/// when there is no usable index file. The index file is canonicalized and
+/// checked against the server root, same as [`resolve_path`], so a symlink
+/// pointing outside the root falls back to the plain listing.
+async fn serve_index(
+    state: &ServerState,
+    dir: &Path,
+    req_headers: &HeaderMap,
+    is_head: bool,
+    query: &RequestQuery,
+) -> Option<Response> {
+    if query.listing.unwrap_or(false) {
+        return None;
+    }
+
+    let index = dir.join("index.html");
+    let canonical = match fs::canonicalize(&index).await {
+        Ok(p) if p.starts_with(&state.root) => p,
+        Ok(p) => {
+            warn!(
+                "Symlink escape blocked: {} -> {}",
+                index.display(),
+                p.display()
+            );
+            return None;
+        }
+        Err(_) => return None,
+    };
+
+    match fs::metadata(&canonical).await {
+        Ok(metadata) if metadata.is_file() => {
+            Some(serve_file(&canonical, &metadata, req_headers, is_head).await)
+        }
+        _ => None,
     }
 }

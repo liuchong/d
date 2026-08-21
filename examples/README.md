@@ -61,11 +61,12 @@ cargo run -- -r examples/media
 
 ```bash
 cargo run -- -r examples/static-site
-# 打开 http://localhost:8080/index.html
+# 打开 http://localhost:8080/
 ```
 
-当前版本访问目录根会显示文件列表，点击 `index.html` 查看页面。
-Phase 1 起支持 `d -r examples/static-site --index`，访问 `/` 即直接打开站点首页。
+目录下存在 `index.html` 时会直接作为站点首页 serve（支持 Range/ETag），
+访问 `/` 即打开站点。想看文件列表时用 `?listing=true` 绕过：
+<http://localhost:8080/?listing=true>。
 
 ## 命令行玩法（curl）
 

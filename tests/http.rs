@@ -388,3 +388,87 @@ async fn head_directory_ok() {
 
     assert_eq!(resp.status(), StatusCode::OK);
 }
+
+#[tokio::test]
+async fn directory_with_index_html_serves_index() {
+    let (app, dir) = test_app(false);
+    std::fs::write(dir.path().join("subdir/index.html"), "<h1>home</h1>")
+        .unwrap();
+
+    let resp = app.oneshot(get("/subdir/")).await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    let content_type = resp
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert!(content_type.starts_with("text/html"), "got: {content_type}");
+    assert_eq!(&body_bytes(resp).await[..], b"<h1>home</h1>");
+}
+
+#[tokio::test]
+async fn root_index_html_is_served() {
+    let (app, dir) = test_app(false);
+    std::fs::write(dir.path().join("index.html"), "<h1>root</h1>").unwrap();
+
+    let resp = app.oneshot(get("/")).await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(&body_bytes(resp).await[..], b"<h1>root</h1>");
+}
+
+#[tokio::test]
+async fn listing_param_bypasses_index_html() {
+    let (app, dir) = test_app(false);
+    std::fs::write(dir.path().join("subdir/index.html"), "<h1>home</h1>")
+        .unwrap();
+
+    let resp = app.oneshot(get("/subdir/?listing=true")).await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    let html = String::from_utf8(body_bytes(resp).await).unwrap();
+    assert!(html.contains("Index of"));
+    assert!(html.contains("nested.txt"));
+}
+
+#[tokio::test]
+async fn head_directory_with_index_returns_index_headers() {
+    let (app, dir) = test_app(false);
+    std::fs::write(dir.path().join("subdir/index.html"), "<h1>home</h1>")
+        .unwrap();
+
+    let req = Request::builder()
+        .method("HEAD")
+        .uri("/subdir/")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(
+        resp.headers().get(header::CONTENT_LENGTH).unwrap(),
+        "13"
+    );
+    assert!(body_bytes(resp).await.is_empty());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn index_html_symlink_escape_falls_back_to_listing() {
+    let (app, dir) = test_app(false);
+    std::os::unix::fs::symlink(
+        "/etc/hosts",
+        dir.path().join("subdir/index.html"),
+    )
+    .unwrap();
+
+    let resp = app.oneshot(get("/subdir/")).await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    let html = String::from_utf8(body_bytes(resp).await).unwrap();
+    // The listing is shown instead of the escaped symlink target.
+    assert!(html.contains("Index of"));
+    assert!(html.contains("nested.txt"));
+}

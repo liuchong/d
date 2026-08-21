@@ -80,14 +80,17 @@ cleanup() {
 trap cleanup EXIT
 
 echo "==> Preparing fixture tree in $FIXTURE/root"
-mkdir -p "$FIXTURE/root/sub"
+mkdir -p "$FIXTURE/root/sub" "$FIXTURE/root/site"
 printf '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ' > "$FIXTURE/root/data.bin"  # 36 bytes
 echo 'fn main() {}' > "$FIXTURE/root/code.rs"
 echo '你好，世界' > "$FIXTURE/root/中文.txt"
 echo 'nested' > "$FIXTURE/root/sub/note.txt"
 echo 'secret' > "$FIXTURE/root/.hidden"
+echo '<h1>hello site</h1>' > "$FIXTURE/root/site/index.html"
 # Symlink escaping the root (security check).
 ln -s /etc/hosts "$FIXTURE/root/escape-link"
+# index.html symlink escaping the root (must fall back to listing).
+ln -s /etc/hosts "$FIXTURE/root/sub/index.html"
 
 # ---------------------------------------------------------------------------
 # Start server
@@ -146,6 +149,15 @@ listing=$(curl -s "$HOST/")
 echo "$listing" | grep -q 'data.bin'  && ok "Listing shows files"      || bad "Listing shows files"
 echo "$listing" | grep -q 'code.rs'   && ok "Listing shows code files" || bad "Listing shows code files"
 echo "$listing" | grep -qF '.hidden'  && bad "Hidden files excluded"   || ok "Hidden files excluded"
+
+echo "==> Phase 0: index.html serving"
+site=$(curl -s "$HOST/site/")
+echo "$site" | grep -q 'hello site' && ok "Directory serves index.html" || bad "Directory serves index.html"
+site_listing=$(curl -s "$HOST/site/?listing=true")
+echo "$site_listing" | grep -q 'Index of' && ok "?listing=true bypasses index.html" || bad "?listing=true bypasses index.html"
+sub=$(curl -s "$HOST/sub/")
+echo "$sub" | grep -q 'Index of' && ok "Escaped index.html symlink falls back to listing" || bad "Escaped index.html symlink falls back to listing"
+echo "$sub" | grep -q 'localhost' && bad "Escaped index.html symlink not served" || ok "Escaped index.html symlink not served"
 
 echo "==> Phase 0: download headers"
 cd_header=$(curl -s -D - -o /dev/null "$HOST/code.rs?view=download" | grep -i '^content-disposition:' | tr -d '\r')
