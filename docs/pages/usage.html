@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>使用指南 — d</title>
+    <meta name="description" content="d 的完整命令行参数、环境变量、无冲突路由规则、Markdown/代码高亮渲染、curl 用法与 Rust 库嵌入指南。">
+    <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
+    <link rel="stylesheet" href="assets/style.css">
+    <script type="importmap">
+    {
+        "imports": {
+            "eliscript/": "https://unpkg.com/eliscript@0.1.3/"
+        }
+    }
+    </script>
+</head>
+<body>
+
+<a class="skip-link" href="#main">跳到正文</a>
+
+<nav class="nav" aria-label="使用指南导航">
+    <div class="wrap">
+        <a class="brand-link" href="../index.html">
+            <img src="assets/logo.svg" alt="d logo" width="30" height="30">
+            <span class="brand-word">d</span>
+            <span class="brand-tag">使用指南</span>
+        </a>
+        <span class="nav-spacer"></span>
+        <div class="nav-links">
+            <a href="#builder">命令生成器</a>
+            <a href="#cli-ref">参数与环境变量</a>
+            <a href="#routes-ref">路由矩阵</a>
+            <a href="#curl">curl 调试</a>
+            <a href="#embed">Rust 嵌入</a>
+            <a href="usage.html" aria-current="page">指南</a>
+            <a href="../index.html">返回首页</a>
+        </div>
+    </div>
+</nav>
+
+<header class="sub-hero">
+    <div class="wrap">
+        <div class="breadcrumb"><a href="../index.html">d</a> / 使用指南</div>
+        <h1>命令行、路由契约与嵌入开发完整指南</h1>
+        <p>
+            一页查清 <code>d</code> 的全部开关、环境变量、<code>?view=</code> / <code>?listing=</code> 路由规则、内建 GFM 与嵌入式 HTML 能力，以及如何作为 Rust 库装配运行。
+        </p>
+    </div>
+</header>
+
+<main id="main">
+
+<section id="builder" class="section">
+    <div class="wrap">
+        <div class="section-head">
+            <div>
+                <span class="section-kicker">Interactive CLI Builder</span>
+                <h2 class="section-title">交互式命令与环境变量生成器</h2>
+                <p class="section-desc">勾选或输入参数，实时生成可直接复制运行的 CLI 命令或等效 <code>D_*</code> 环境变量启动行。</p>
+            </div>
+        </div>
+
+        <div class="panel" data-cli-builder>
+            <div class="builder-grid">
+                <div class="field">
+                    <label for="cli-host">监听地址 (-H / D_HOST)</label>
+                    <input id="cli-host" type="text" value="localhost" placeholder="localhost" data-cli-host>
+                </div>
+                <div class="field">
+                    <label for="cli-port">端口 (-p / D_PORT)</label>
+                    <input id="cli-port" type="number" min="1" max="65535" value="8080" data-cli-port>
+                </div>
+                <div class="field">
+                    <label for="cli-root">根目录 (-r / D_ROOT)</label>
+                    <input id="cli-root" type="text" value="." placeholder="." data-cli-root>
+                </div>
+                <div class="field">
+                    <label for="cli-log">日志级别 (-l / RUST_LOG)</label>
+                    <select id="cli-log" data-cli-log>
+                        <option value="info" selected>info（默认）</option>
+                        <option value="debug">debug</option>
+                        <option value="trace">trace</option>
+                        <option value="warn">warn</option>
+                        <option value="error">error</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="cli-format">输出格式</label>
+                    <select id="cli-format" data-cli-format>
+                        <option value="cli" selected>命令行选项（Flags）</option>
+                        <option value="env">环境变量（D_* ENV）</option>
+                    </select>
+                </div>
+                <div class="field-checks">
+                    <label class="check-item">
+                        <input type="checkbox" data-cli-hidden>
+                        <span>允许隐藏文件（<code>--hidden</code> / <code>D_SHOW_HIDDEN=true</code>）</span>
+                    </label>
+                    <label class="check-item">
+                        <input type="checkbox" data-cli-cors>
+                        <span>开启 CORS 跨域（<code>--cors</code> / <code>D_CORS=true</code>）</span>
+                    </label>
+                </div>
+            </div>
+            <div class="code-frame">
+                <button class="copy-btn copy-float" type="button" data-cli-copy data-copy-target="#cli-output">复制</button>
+                <pre><code id="cli-output" data-cli-output>d</code></pre>
+            </div>
+            <p class="panel-note">
+                命令行参数优先级始终高于环境变量；布尔型环境变量同时识别 <code>1</code>、<code>true</code>、<code>yes</code>、<code>on</code>（忽略大小写）。
+            </p>
+        </div>
+    </div>
+</section>
+
+<section id="cli-ref" class="section">
+    <div class="wrap">
+        <div class="section-head">
+            <div>
+                <span class="section-kicker">CLI &amp; ENV Reference</span>
+                <h2 class="section-title">命令行选项与环境变量对照表</h2>
+                <p class="section-desc">所有值选项均支持空格分隔（<code>-p 3000</code>）和等号连接（<code>--port=3000</code>）两种写法。</p>
+            </div>
+        </div>
+
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>选项</th>
+                        <th>环境变量</th>
+                        <th>默认值</th>
+                        <th>行为说明</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>-H, --host &lt;HOST&gt;</code></td>
+                        <td><code>D_HOST</code></td>
+                        <td><code>localhost</code></td>
+                        <td>解析监听地址；对主机名解析优先选用 IPv4 地址。</td>
+                    </tr>
+                    <tr>
+                        <td><code>-p, --port &lt;PORT&gt;</code></td>
+                        <td><code>D_PORT</code></td>
+                        <td><code>8080</code></td>
+                        <td>监听 TCP 端口（<code>u16</code> 合法端口）；非法端口直接报错退出。</td>
+                    </tr>
+                    <tr>
+                        <td><code>-r, --root &lt;PATH&gt;</code></td>
+                        <td><code>D_ROOT</code></td>
+                        <td><code>.</code></td>
+                        <td>根目录路径；启动时执行 <code>canonicalize</code> 校验是否存在与可访问。</td>
+                    </tr>
+                    <tr>
+                        <td><code>-l, --log &lt;LEVEL&gt;</code></td>
+                        <td><code>RUST_LOG</code></td>
+                        <td><code>info</code></td>
+                        <td>日志阈值：<code>trace</code>、<code>debug</code>、<code>info</code>、<code>warn</code>、<code>error</code>。</td>
+                    </tr>
+                    <tr>
+                        <td><code>--hidden</code></td>
+                        <td><code>D_SHOW_HIDDEN</code></td>
+                        <td>关闭</td>
+                        <td>允许展示点文件并启用页面/URL <code>?hidden=true|false</code> 切换。</td>
+                    </tr>
+                    <tr>
+                        <td><code>--cors</code></td>
+                        <td><code>D_CORS</code></td>
+                        <td>关闭</td>
+                        <td>附加 <code>Access-Control-Allow-Origin: *</code>，预检 <code>OPTIONS</code> 返回 <code>204</code>。</td>
+                    </tr>
+                    <tr>
+                        <td><code>-h, --help</code> / <code>-V, --version</code></td>
+                        <td>—</td>
+                        <td>—</td>
+                        <td>分别打印完整 CLI 帮助信息或当前版本号后以退出码 <code>0</code> 退出。</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<section id="routes-ref" class="section">
+    <div class="wrap">
+        <div class="section-head">
+            <div>
+                <span class="section-kicker">Routing &amp; Rendering</span>
+                <h2 class="section-title">无冲突路由、内建 Markdown 与语言高亮</h2>
+                <p class="section-desc">所有展示页面均由服务端纯 Rust 生成且零外链；下表给出各文件类型与查询参数的完整行为组合。</p>
+            </div>
+        </div>
+
+        <div class="table-wrap" style="margin-bottom: 18px;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>资源 / 查询参数</th>
+                        <th>返回行为</th>
+                        <th>典型用途</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>/dir</code>（无尾斜杠）</td>
+                        <td><code>301 Moved Permanently</code> 跳转 <code>/dir/</code>（保留 <code>?query</code>）</td>
+                        <td>保证 Markdown <code>./img.svg</code> 与静态页面相对路径基准正确</td>
+                    </tr>
+                    <tr>
+                        <td><code>/dir/</code></td>
+                        <td>优先直出沙箱内 <code>index.html</code>；否则输出极简白底目录列表</td>
+                        <td>静态网站托管与文件浏览；<code>?listing=true</code> 可绕过首页</td>
+                    </tr>
+                    <tr>
+                        <td><code>?sort=name|size|time|type&amp;order=desc</code></td>
+                        <td>对目录列表排序（目录始终排在文件之前）</td>
+                        <td>按修改时间或体积快速定位目标文件</td>
+                    </tr>
+                    <tr>
+                        <td><code>?view=raw</code></td>
+                        <td>直接输出文件原始字节与精准 MIME（支持 <code>Range</code>/<code>ETag</code>）</td>
+                        <td>读取 Markdown 源码、配置文件或验证原始内容</td>
+                    </tr>
+                    <tr>
+                        <td><code>?view=preview</code></td>
+                        <td>输出纯白底渲染/高亮 HTML 正文，省略顶部导航条</td>
+                        <td>嵌入其他页面 <code>&lt;iframe&gt;</code> 或专注纯阅读排版</td>
+                    </tr>
+                    <tr>
+                        <td><code>?view=viewer</code></td>
+                        <td>为图片、音视频、脚本生成白底查看页（内嵌裸路径媒体标签）</td>
+                        <td>浏览器直接看图与拖动音视频进度，而不破坏裸路径直链</td>
+                    </tr>
+                    <tr>
+                        <td><code>?view=download</code></td>
+                        <td>返回 <code>Content-Disposition: attachment; filename*=UTF-8''...</code></td>
+                        <td>遵循 RFC 5987 下载中英文与特殊字符文件名</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="grid">
+            <article class="card">
+                <span class="card-tag">GFM &amp; Anchors</span>
+                <h3>完整文档规范</h3>
+                <p>标题自动生成去重中英文锚点；支持对齐表格、任务列表复选框、删除线、脚注 <code>[^1]</code>、自动链接与行内/围栏代码。</p>
+            </article>
+            <article class="card">
+                <span class="card-tag">Embedded HTML</span>
+                <h3>原生 HTML 透传</h3>
+                <p>保留块级与行内 HTML（<code>&lt;details&gt;</code>、<code>&lt;figure&gt;</code>、<code>&lt;img&gt;</code>、<code>&lt;table&gt;</code>、<code>&lt;kbd&gt;</code>），并预留可选 <code>sanitizer</code> 钩子。</p>
+            </article>
+            <article class="card">
+                <span class="card-tag">Lexical Highlight</span>
+                <h3>多语言词法高亮</h3>
+                <p>内建识别 Rust、JS/TS、Python、Go、C/C++/Java/Zig/Swift/Kotlin/Scala、Shell、JSON、YAML、TOML、SQL、HTML/XML/SVG 与 CSS。</p>
+            </article>
+        </div>
+    </div>
+</section>
+
+<section id="curl" class="section">
+    <div class="wrap">
+        <div class="section-head">
+            <div>
+                <span class="section-kicker">CLI &amp; HTTP Cookbook</span>
+                <h2 class="section-title">常用 <code>curl</code> 与预览验收命令</h2>
+            </div>
+        </div>
+
+        <div class="code-grid-two">
+            <div class="panel">
+                <div class="panel-bar">
+                    <span class="panel-label">HTTP 语义验证（Range / 304 / 301）</span>
+                </div>
+                <div class="code-frame">
+                    <button class="copy-btn copy-float" type="button" data-copy-target="#curl-http">复制</button>
+                    <pre><code id="curl-http"># 1. 字节范围与后缀范围
+curl -r 5-9 http://localhost:8080/data.bin
+curl -r -4 http://localhost:8080/data.bin
+
+# 2. ETag 条件请求（命中返回 304）
+ETAG=$(curl -sI http://localhost:8080/data.bin | awk '/^etag:/{print $2}' | tr -d '\r')
+curl -i -H "If-None-Match: $ETAG" http://localhost:8080/data.bin
+
+# 3. 验证目录尾斜杠 301 与保留参数
+curl -i "http://localhost:8080/docs?listing=true"</code></pre>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-bar">
+                    <span class="panel-label">本地测试与 Pages 预览</span>
+                </div>
+                <div class="code-frame">
+                    <button class="copy-btn copy-float" type="button" data-copy-target="#curl-test">复制</button>
+                    <pre><code id="curl-test"># 1. 代码检查与全部工作区测试
+cargo fmt --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+
+# 2. 启动端到端验收脚本
+scripts/acceptance.sh
+
+# 3. 本地直接预览本站点（docs/）
+cargo run -- -r docs -p 8080</code></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section id="embed" class="section">
+    <div class="wrap">
+        <div class="section-head">
+            <div>
+                <span class="section-kicker">Rust Library API</span>
+                <h2 class="section-title">作为 Rust 库或无端口测试运行时嵌入</h2>
+                <p class="section-desc">所有层都可以通过 <code>d::build_runtime</code>、<code>d::create_app_with_options</code> 或 <code>d::start_with_options</code> 组合使用。</p>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-bar">
+                <span class="panel-label">src/lib.rs 公开入口示例</span>
+            </div>
+            <div class="code-frame">
+                <button class="copy-btn copy-float" type="button" data-copy-target="#rust-embed-code">复制</button>
+                <pre><code id="rust-embed-code">use d::{Options, create_app_with_options, start_with_options};
+use http_api::{HttpRequest, Method};
+use std::net::SocketAddr;
+
+pub async fn run_server() -&gt; Result&lt;(), Box&lt;dyn std::error::Error&gt;&gt; {
+    let addr: SocketAddr = "127.0.0.1:8080".parse()?;
+    start_with_options(
+        &amp;addr,
+        "./public",
+        Options {
+            allow_hidden: false,
+            cors: true,
+        },
+    )
+    .await;
+    Ok(())
+}
+
+pub async fn dispatch_in_memory() -&gt; Result&lt;(), Box&lt;dyn std::error::Error&gt;&gt; {
+    let app = create_app_with_options(
+        "./examples/docs",
+        Options {
+            allow_hidden: false,
+            cors: false,
+        },
+    )
+    .await;
+
+    let resp = app
+        .dispatch(HttpRequest::new(Method::Get, "/guide.md?view=preview"))
+        .await;
+    assert_eq!(resp.status.as_u16(), 200);
+    let _html = resp.body.into_bytes().await?;
+
+    app.dispose().await?;
+    Ok(())
+}</code></pre>
+            </div>
+        </div>
+    </div>
+</section>
+
+</main>
+
+<footer>
+    <div class="wrap">
+        <div class="footer-inner">
+            <div class="footer-brand">
+                <img src="assets/logo.svg" alt="d logo" width="28" height="28">
+                <span class="mono">d — 使用指南</span>
+            </div>
+            <div class="footer-links">
+                <a href="../index.html">项目主页</a>
+                <a href="https://github.com/liuchong/d/blob/master/docs/usage.md">中文手册 (Markdown)</a>
+                <a href="https://github.com/liuchong/d/blob/master/docs/architecture.md">架构设计</a>
+                <a href="https://github.com/liuchong/d">GitHub</a>
+            </div>
+        </div>
+        <p class="footer-status" data-eli-status>页面交互源码：site.eli（等待浏览器端 Eliscript 编译挂载）</p>
+    </div>
+</footer>
+
+<script type="text/eliscript" src="site.eli"></script>
+<script type="module">
+import { mountEliscriptScripts } from "https://unpkg.com/eliscript@0.1.3/dist/browser/host.mjs";
+const BASE = "https://unpkg.com/eliscript@0.1.3/";
+await mountEliscriptScripts(document, {
+    resolveExternal: (s) =>
+        s.startsWith("eliscript/") ? BASE + s.slice("eliscript/".length) : null,
+});
+</script>
+</body>
+</html>

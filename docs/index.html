@@ -3,177 +3,424 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>d — 单二进制 HTTP 服务器</title>
-    <meta name="description" content="d 是一个单二进制 HTTP 服务器：一行命令秒开目录服务，一个配置文件变身轻量 NGINX。">
+    <title>d — 模块化网络守护进程与零外链文件服务器</title>
+    <meta name="description" content="d 是基于零依赖微内核 frame、自建 HTTP/1.1 流式引擎、流式压缩与纯 Rust Markdown/词法高亮构建的单二进制网络守护进程。">
     <link rel="icon" type="image/svg+xml" href="pages/assets/logo.svg">
     <link rel="stylesheet" href="pages/assets/style.css">
+    <script type="importmap">
+    {
+        "imports": {
+            "eliscript/": "https://unpkg.com/eliscript@0.1.3/"
+        }
+    }
+    </script>
 </head>
 <body>
 
-<nav class="nav">
+<a class="skip-link" href="#main">跳到正文</a>
+
+<nav class="nav" aria-label="主导航">
     <div class="wrap">
-        <img src="pages/assets/logo.svg" alt="d logo">
-        <span class="brand">d</span>
-        <span class="spacer"></span>
-        <a class="nav-link" href="#features">特性</a>
-        <a class="nav-link" href="#quickstart">快速开始</a>
-        <a class="nav-link" href="#examples">示例</a>
-        <a class="nav-link" href="#roadmap">路线图</a>
-        <a class="nav-link" href="https://github.com/liuchong/d">GitHub</a>
+        <a class="brand-link" href="index.html" aria-current="page">
+            <img src="pages/assets/logo.svg" alt="d logo" width="30" height="30">
+            <span class="brand-word">d</span>
+            <span class="brand-tag">v0.1.0</span>
+        </a>
+        <span class="nav-spacer"></span>
+        <div class="nav-links">
+            <a href="#scenarios">快速上手</a>
+            <a href="#features">核心特性</a>
+            <a href="#routing">无冲突路由</a>
+            <a href="#architecture">五层架构</a>
+            <a href="#examples">示例</a>
+            <a href="#roadmap">路线图</a>
+            <a class="nav-cta" href="pages/usage.html">完整使用指南</a>
+            <a href="https://github.com/liuchong/d">GitHub</a>
+        </div>
     </div>
 </nav>
 
 <header class="hero">
-    <img class="hero-logo" src="pages/assets/logo.svg" alt="d logo">
-    <h1><span class="prompt">&gt;_</span> d<span class="blink">▊</span></h1>
-    <p class="tagline">单二进制 HTTP 服务器 —— 一行命令秒开目录服务，一个配置文件变身轻量 NGINX</p>
-    <div class="badges">
-        <span class="hl">rust 🦀 memory-safe</span>
-        <span>single binary</span>
-        <span>axum + tokio</span>
-        <span>license: 1PL</span>
-    </div>
-    <div class="install">
-        <span class="cmd" id="install-cmd">cargo install d</span>
-        <button class="copy-btn" data-copy="#install-cmd">copy</button>
+    <div class="wrap">
+        <div class="hero-top">
+            <div class="hero-main">
+                <div class="eyebrow">
+                    <span class="eyebrow-dot" aria-hidden="true"></span>
+                    <span>Rust 2024 · 自建 HTTP/1.1 · 零外链纯白底</span>
+                </div>
+                <h1>单二进制 <span class="mono">d</span>，把五层微内核与文档工作流装进一条命令。</h1>
+                <p class="hero-lead">
+                    立足零依赖微内核 <code>frame</code>、L4 连接优雅排空、自建 HTTP/1.1 无锁快照路由，以及纯 Rust 服务端
+                    CommonMark+GFM / 原生嵌入式 HTML / 词法高亮，既可直接托管线上静态资源，也把本地编码阅读与联调作为同一套正式生产场景。
+                </p>
+                <div class="hero-actions">
+                    <a class="btn btn-primary" href="pages/usage.html">交互式命令与使用手册</a>
+                    <a class="btn" href="#routing">无冲突路由模拟器</a>
+                    <a class="btn" href="https://github.com/liuchong/d/blob/master/docs/architecture.md">架构设计文档</a>
+                </div>
+                <div class="install-box">
+                    <span class="install-prompt" aria-hidden="true">$</span>
+                    <code id="install-cmd">cargo install d</code>
+                    <button class="copy-btn" type="button" data-copy-target="#install-cmd">复制</button>
+                </div>
+            </div>
+            <aside class="hero-aside" aria-label="项目标识">
+                <img class="hero-logo" src="pages/assets/logo.svg" alt="d logo" width="112" height="112">
+                <span class="hero-aside-meta">1PL License · Edition 2024</span>
+            </aside>
+        </div>
+
+        <div class="metrics" aria-label="已验证工作区指标">
+            <div class="metric">
+                <strong>16</strong>
+                <span>分层 Cargo Workspace 包</span>
+            </div>
+            <div class="metric">
+                <strong>0</strong>
+                <span><code>frame</code> / <code>doc-render</code> / <code>viewer-*</code> 外部依赖</span>
+            </div>
+            <div class="metric">
+                <strong>83 + 57</strong>
+                <span>工作区测试 + 端到端 HTTP 验收项</span>
+            </div>
+            <div class="metric">
+                <strong>1PL</strong>
+                <span>One Public License 开源协议</span>
+            </div>
+        </div>
     </div>
 </header>
 
-<main class="wrap">
+<main id="main">
 
-<section id="features">
-    <h2 class="section-title">features</h2>
-    <p class="section-sub">开箱即用的目录服务，以及正确的 HTTP 语义。</p>
-    <div class="grid">
-        <div class="card">
-            <div class="icon">📁</div>
-            <h3>目录列表</h3>
-            <p>12 类文件图标、名称/大小/时间/类型四维排序、面包屑导航、隐藏文件开关。</p>
+<section id="scenarios" class="section">
+    <div class="wrap">
+        <div class="section-head">
+            <div>
+                <span class="section-kicker">Quick Start</span>
+                <h2 class="section-title">常用场景一句话启动</h2>
+                <p class="section-desc">不划分“开发模式”与“生产模式”，同一套引擎兼顾本地文档预览、静态站点托管与 HTTP 协议语义调试。</p>
+            </div>
         </div>
-        <div class="card">
-            <div class="icon">🎨</div>
-            <h3>预览与高亮</h3>
-            <p>代码语法高亮、Markdown/Org 渲染、图片/音视频预览，Preview / Raw / Download 三种视图。</p>
-        </div>
-        <div class="card">
-            <div class="icon">📡</div>
-            <h3>Range 请求 <span class="tag">RFC 9110</span></h3>
-            <p>真正的字节切片（seek + take），支持后缀范围，无效范围返回 416。断点续传、媒体拖动均可用。</p>
-        </div>
-        <div class="card">
-            <div class="icon">🏷️</div>
-            <h3>缓存与 304</h3>
-            <p>ETag + If-None-Match（含弱比较与 <code>*</code>）、If-Modified-Since，命中即 304，省流量。</p>
-        </div>
-        <div class="card">
-            <div class="icon">🗜️</div>
-            <h3>压缩与 CORS</h3>
-            <p>gzip / deflate / brotli 自动协商；CORS 默认放开 GET/HEAD，方便跨域调试。</p>
-        </div>
-        <div class="card">
-            <div class="icon">🛡️</div>
-            <h3>安全</h3>
-            <p>路径穿越钳制、符号链接逃逸防御（canonicalize 校验）、RFC 5987 文件名编码、零 unwrap 生产代码。</p>
+
+        <div class="panel">
+            <div class="panel-bar">
+                <span class="panel-label">场景示例</span>
+                <div class="tab-group" role="tablist" aria-label="启动场景选择">
+                    <button class="tab-btn" type="button" role="tab" aria-selected="true" data-scenario-tab="docs">文档与代码浏览</button>
+                    <button class="tab-btn" type="button" role="tab" aria-selected="false" data-scenario-tab="static">静态网站托管</button>
+                    <button class="tab-btn" type="button" role="tab" aria-selected="false" data-scenario-tab="lan">局域网与 CORS</button>
+                    <button class="tab-btn" type="button" role="tab" aria-selected="false" data-scenario-tab="curl">Range 与 304</button>
+                    <button class="tab-btn" type="button" role="tab" aria-selected="false" data-scenario-tab="rust">Rust 库内嵌</button>
+                </div>
+            </div>
+            <div class="code-frame">
+                <button class="copy-btn copy-float" type="button" data-copy-target="#scenario-code">复制</button>
+                <pre><code id="scenario-code" data-scenario-cmd># 启动当前目录的文档与代码服务
+d -r . -p 8080
+
+# 浏览器访问 Markdown / 源码即得白底阅读页，裸路径自动规范目录尾斜杠
+# http://localhost:8080/README.md
+# http://localhost:8080/docs/guide.md</code></pre>
+            </div>
+            <p class="panel-note" data-scenario-note>
+                Markdown 完整支持 GFM（表格、复选框、脚注、中英文锚点）、嵌入式 HTML 透传以及纯 Rust 浅色代码高亮。
+            </p>
         </div>
     </div>
 </section>
 
-<section id="quickstart">
-    <h2 class="section-title">quickstart</h2>
-    <p class="section-sub">三秒钟，把任意目录变成 HTTP 服务。</p>
-    <div class="terminal">
-        <div class="terminal-bar">
-            <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
-            <span class="title">terminal</span>
+<section id="features" class="section">
+    <div class="wrap">
+        <div class="section-head">
+            <div>
+                <span class="section-kicker">Capabilities</span>
+                <h2 class="section-title">为什么重构后的 d 更简单、更快、更独立</h2>
+                <p class="section-desc">从 L0 微内核、L1 传输监管、L2 自建 HTTP/1.1 引擎到 L4 纯白底内容展示层，全部保持清晰静态契约与可控实现。</p>
+            </div>
         </div>
-        <pre><span class="c"># 安装</span>
-<span class="p">$</span> cargo install d
 
-<span class="c"># 服务当前目录</span>
-<span class="p">$</span> d
-<span class="o">INFO Starting server on http://localhost:8080</span>
-
-<span class="c"># 指定目录与端口</span>
-<span class="p">$</span> d -r ./public -p 3000
-
-<span class="c"># 断点续传 / 部分下载</span>
-<span class="p">$</span> curl -r 0-1023 http://localhost:8080/data.bin</pre>
-    </div>
-</section>
-
-<section id="examples">
-    <h2 class="section-title">examples</h2>
-    <p class="section-sub">仓库内置 5 组可运行示范（<code>examples/</code>），覆盖各种文件类型。</p>
-    <table>
-        <thead>
-            <tr><th>目录</th><th>演示内容</th><th>启动命令</th></tr>
-        </thead>
-        <tbody>
-            <tr><td><code>demo/</code></td><td>综合演示：列表、排序、各类型预览</td><td><code>d -r examples/demo</code></td></tr>
-            <tr><td><code>code/</code></td><td>多语言语法高亮（Py/JS/Go/Shell/SQL）</td><td><code>d -r examples/code</code></td></tr>
-            <tr><td><code>docs/</code></td><td>文档预览（Markdown/Org/TXT/CSV）</td><td><code>d -r examples/docs</code></td></tr>
-            <tr><td><code>media/</code></td><td>图片预览（SVG）</td><td><code>d -r examples/media</code></td></tr>
-            <tr><td><code>static-site/</code></td><td>静态网站（HTML+CSS+JS）</td><td><code>d -r examples/static-site</code></td></tr>
-        </tbody>
-    </table>
-</section>
-
-<section id="quality">
-    <h2 class="section-title">quality</h2>
-    <p class="section-sub">每个阶段都遵循「开发 → 测试 → 验收」循环。</p>
-    <div class="grid">
-        <div class="card">
-            <div class="icon">🧪</div>
-            <h3>51 个自动化测试</h3>
-            <p>26 单元 + 25 集成（oneshot 方式，无需真实端口），覆盖 Range/304/安全/列表全部关键路径。</p>
-        </div>
-        <div class="card">
-            <div class="icon">✅</div>
-            <h3>验收脚本</h3>
-            <p><code>scripts/acceptance.sh</code>：构建 + 真实启动 + 22 项端到端 HTTP 行为检查，失败即非零退出。</p>
-        </div>
-        <div class="card">
-            <div class="icon">⚙️</div>
-            <h3>CI</h3>
-            <p>GitHub Actions 双平台（ubuntu / macOS）矩阵：fmt + clippy（零警告）+ test。</p>
+        <div class="grid">
+            <article class="card">
+                <span class="card-tag">L0 Microkernel</span>
+                <h3>零依赖插件微内核</h3>
+                <p><code>crates/frame</code> 纯 <code>std</code> 实现作用域服务、纤程依赖级联重建、结构化异步效应 LIFO 回滚、四类强类型事件与配置预检。</p>
+            </article>
+            <article class="card">
+                <span class="card-tag">HTTP/1.1 Engine</span>
+                <h3>自建 HTTP/1.1 与无锁路由</h3>
+                <p>自建解析边界（<code>400</code>/<code>413</code>/<code>414</code>/<code>431</code>/<code>505</code>）、<code>streaming: true</code> 零缓冲 chunked 输出与 <code>ArcSwap</code> 风格原子快照路由器。</p>
+            </article>
+            <article class="card">
+                <span class="card-tag">Markdown &amp; Highlight</span>
+                <h3>纯 Rust GFM + 嵌入式 HTML</h3>
+                <p>服务端直接完成表格对齐、复选框、脚注、中英文唯一锚点、原生 HTML 标签透传与多语言词法高亮，彻底零外网脚本。</p>
+            </article>
+            <article class="card">
+                <span class="card-tag">White Minimal UI</span>
+                <h3>统一极简白色纸面体系</h3>
+                <p>全站采用 <code>#ffffff</code> 画布、<code>#f6f8fa</code> 辅底、<code>#e5e7eb</code> 细线与 <code>#0969da</code> 强调蓝，无深色杂糅、无彩色胶囊、无 emoji 堆砌。</p>
+            </article>
+            <article class="card">
+                <span class="card-tag">Streaming Filter</span>
+                <h3>流式感知压缩与可选 CORS</h3>
+                <p>按 <code>br &gt; gzip &gt; deflate</code> 协商；自动豁免 SSE、<code>206</code>、<code>304</code>、<code>HEAD</code>、已压缩音视频字体及小体积实体；CORS 默认关闭。</p>
+            </article>
+            <article class="card">
+                <span class="card-tag">Security &amp; RFC 9110</span>
+                <h3>沙箱安全、Range 与 304</h3>
+                <p>路径穿越与符号链接逃逸 <code>canonicalize</code> 校验、隐藏点文件默认隔离、精确字节切片 <code>206/416</code>、<code>ETag/IMS 304</code> 与 RFC 5987 下载。</p>
+            </article>
         </div>
     </div>
 </section>
 
-<section id="roadmap">
-    <h2 class="section-title">roadmap</h2>
-    <p class="section-sub">从目录服务到轻量 NGINX。</p>
+<section id="routing" class="section">
+    <div class="wrap">
+        <div class="section-head">
+            <div>
+                <span class="section-kicker">Conflict-Free Routing</span>
+                <h2 class="section-title">无冲突内容与媒体路由契约</h2>
+                <p class="section-desc">媒体/静态脚本裸路径永远直出原始字节流；文档与代码默认渲染白底阅读页，按需通过 <code>?view=</code> 或 <code>?listing=true</code> 切换视图。</p>
+            </div>
+        </div>
 
-    <div class="phase done">
-        <h3>Phase 0 — 技术还债 <span class="status">✔ done</span></h3>
-        <p>模块化拆分、Range/304 修复、符号链接防御、SIGTERM、依赖瘦身、测试基座与 CI。</p>
+        <div class="panel">
+            <div class="sim-controls">
+                <div class="sim-row">
+                    <span class="sim-key">目标资源</span>
+                    <div class="tab-group" role="tablist" aria-label="路由模拟资源">
+                        <button class="tab-btn" type="button" role="tab" aria-selected="true" data-route-resource="guide.md">guide.md</button>
+                        <button class="tab-btn" type="button" role="tab" aria-selected="false" data-route-resource="main.rs">main.rs</button>
+                        <button class="tab-btn" type="button" role="tab" aria-selected="false" data-route-resource="diagram.svg">diagram.svg</button>
+                        <button class="tab-btn" type="button" role="tab" aria-selected="false" data-route-resource="clip.mp4">clip.mp4</button>
+                        <button class="tab-btn" type="button" role="tab" aria-selected="false" data-route-resource="app.js">app.js</button>
+                        <button class="tab-btn" type="button" role="tab" aria-selected="false" data-route-resource="/docs">/docs（无尾斜杠）</button>
+                    </div>
+                </div>
+                <div class="sim-row">
+                    <span class="sim-key">查询参数</span>
+                    <div class="tab-group" role="tablist" aria-label="路由模拟模式">
+                        <button class="tab-btn" type="button" role="tab" aria-selected="true" data-route-mode="bare">裸路径</button>
+                        <button class="tab-btn" type="button" role="tab" aria-selected="false" data-route-mode="raw">?view=raw</button>
+                        <button class="tab-btn" type="button" role="tab" aria-selected="false" data-route-mode="preview">?view=preview</button>
+                        <button class="tab-btn" type="button" role="tab" aria-selected="false" data-route-mode="viewer">?view=viewer</button>
+                        <button class="tab-btn" type="button" role="tab" aria-selected="false" data-route-mode="download">?view=download</button>
+                        <button class="tab-btn" type="button" role="tab" aria-selected="false" data-route-mode="listing">?listing=true</button>
+                    </div>
+                </div>
+            </div>
+            <div class="sim-result">
+                <div class="sim-cell">
+                    <label>请求路径 / 重定向</label>
+                    <div class="sim-val" data-route-url>/docs/guide.md</div>
+                </div>
+                <div class="sim-cell">
+                    <label>HTTP 状态码</label>
+                    <div class="sim-val" data-route-status>200 OK</div>
+                </div>
+                <div class="sim-cell">
+                    <label>Content-Type</label>
+                    <div class="sim-val" data-route-mime>text/html; charset=utf-8</div>
+                </div>
+                <div class="sim-cell sim-cell-wide">
+                    <label>处理语义</label>
+                    <div class="sim-desc" data-route-desc>渲染极简白底 Markdown 阅读页（GFM、嵌入式 HTML、相对图片与高亮代码块 + 顶栏操作条）。</div>
+                </div>
+            </div>
+        </div>
     </div>
-    <div class="phase active">
-        <h3>Phase 1 — 目录服务打磨 <span class="status">▶ next</span></h3>
-        <p>index.html 自动服务、目录打包下载（zip/tar.gz）、Basic Auth、访问日志、TLS（手动证书）、前端资源内嵌。</p>
+</section>
+
+<section id="architecture" class="section">
+    <div class="wrap">
+        <div class="section-head">
+            <div>
+                <span class="section-kicker">Architecture</span>
+                <h2 class="section-title">五层单向依赖架构与 16 个 Workspace 包</h2>
+                <p class="section-desc">上层只依赖下层契约包（<code>contracts/*</code>），实现之间零横向直接耦合，由根包 <code>d</code> 按需装配。</p>
+            </div>
+            <a class="btn" href="https://github.com/liuchong/d/blob/master/docs/frame.md">了解 frame 微内核设计</a>
+        </div>
+
+        <div class="arch-split">
+            <div class="arch-list" role="tablist" aria-label="架构分层浏览">
+                <button class="arch-btn" type="button" role="tab" aria-selected="true" data-layer-btn="L0">
+                    <strong>Layer 0 · frame</strong>
+                    <span>纯 std 通用插件微内核</span>
+                </button>
+                <button class="arch-btn" type="button" role="tab" aria-selected="false" data-layer-btn="L1">
+                    <strong>Layer 1 · l4-transport</strong>
+                    <span>TCP 监听监管与两阶段排空</span>
+                </button>
+                <button class="arch-btn" type="button" role="tab" aria-selected="false" data-layer-btn="L2">
+                    <strong>Layer 2 · proto-http</strong>
+                    <span>HTTP/1.1 解析与原子快照路由</span>
+                </button>
+                <button class="arch-btn" type="button" role="tab" aria-selected="false" data-layer-btn="L3">
+                    <strong>Layer 3 · extensions</strong>
+                    <span>流式感知压缩与可选 CORS</span>
+                </button>
+                <button class="arch-btn" type="button" role="tab" aria-selected="false" data-layer-btn="L4">
+                    <strong>Layer 4 · files &amp; viewers</strong>
+                    <span>文件沙箱、Markdown、代码与媒体页</span>
+                </button>
+                <button class="arch-btn" type="button" role="tab" aria-selected="false" data-layer-btn="entry">
+                    <strong>Entries &amp; Root · d-cli / d</strong>
+                    <span>CLI/ENV 解析与全栈运行时装配</span>
+                </button>
+            </div>
+            <div class="arch-detail">
+                <h3 data-layer-title>第 0 层 · frame 插件微内核</h3>
+                <div class="arch-meta">
+                    <div class="arch-meta-row">
+                        <span>包含包（Crates）</span>
+                        <code data-layer-crates>crates/frame（零外部依赖，纯 std）</code>
+                    </div>
+                    <div class="arch-meta-row">
+                        <span>依赖约束</span>
+                        <code data-layer-deps>仅依赖 Rust 标准库 std</code>
+                    </div>
+                </div>
+                <p data-layer-desc>
+                    提供 Context、Scope 作用域隔离、强类型 Service、响应式 Fiber 状态机、结构化异步 EffectScope（LIFO 回滚与并发清理）、四类强类型 Event、声明式增量 Loader 与脱敏 Inspect。
+                </p>
+            </div>
+        </div>
     </div>
-    <div class="phase">
-        <h3>Phase 2 — 轻量 NGINX 模式 <span class="status">planned</span></h3>
-        <p>TOML 配置文件、虚拟主机、反向代理 + 轮询负载均衡（hyper 自研）、SIGHUP 热重载。</p>
+</section>
+
+<section id="examples" class="section">
+    <div class="wrap">
+        <div class="section-head">
+            <div>
+                <span class="section-kicker">Examples &amp; CLI</span>
+                <h2 class="section-title">内置示例目录与命令行速览</h2>
+                <p class="section-desc">仓库在 <code>examples/</code> 下内置五套即跑示例，命令行选项与 <code>D_*</code> 环境变量完整对应，详见 <a href="pages/usage.html">完整使用指南</a>。</p>
+            </div>
+        </div>
+
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>示例目录</th>
+                        <th>验证内容</th>
+                        <th>运行命令</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>examples/demo/</code></td>
+                        <td>目录列表、四维排序、无尾斜杠 <code>301</code> 与综合白底查看器</td>
+                        <td><code>cargo run -- -r examples/demo</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>examples/code/</code></td>
+                        <td>服务端词法高亮（Rust / Python / JS / Go / Shell / SQL）</td>
+                        <td><code>cargo run -- -r examples/code</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>examples/docs/</code></td>
+                        <td>完整 GFM、原生嵌入式 HTML、相对路径图片（<code>guide.md</code>）</td>
+                        <td><code>cargo run -- -r examples/docs</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>examples/media/</code></td>
+                        <td>媒体裸路径原流与 <code>?view=viewer</code> 白底图片/音视频查看页</td>
+                        <td><code>cargo run -- -r examples/media</code></td>
+                    </tr>
+                    <tr>
+                        <td><code>examples/static-site/</code></td>
+                        <td>沙箱 <code>index.html</code> 托管与 <code>?listing=true</code> 列表切换</td>
+                        <td><code>cargo run -- -r examples/static-site</code></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
     </div>
-    <div class="phase">
-        <h3>Phase 3 — 写操作（可选） <span class="status">evaluating</span></h3>
-        <p>上传 / WebDAV / 在线编辑，届时根据实际需求评审。</p>
+</section>
+
+<section id="roadmap" class="section">
+    <div class="wrap">
+        <div class="section-head">
+            <div>
+                <span class="section-kicker">Roadmap</span>
+                <h2 class="section-title">演进路线图</h2>
+                <p class="section-desc">前三个核心重构与产品化阶段已全部交付并通过独立干净重建验收；后续阶段聚焦配置驱动与多协议扩展。</p>
+            </div>
+        </div>
+
+        <div class="roadmap">
+            <article class="phase done">
+                <div class="phase-head">
+                    <h3>阶段 1 · 零外部依赖插件微内核（crates/frame）</h3>
+                    <span class="phase-badge">已完成 · F01–F10</span>
+                </div>
+                <p>Context/Scope 隔离、强类型 Service、响应式 Fiber 级联重建、EffectScope LIFO 清理、四类 Event、预检 Loader 与脱敏 Inspect。</p>
+            </article>
+            <article class="phase done">
+                <div class="phase-head">
+                    <h3>阶段 2 · 五层重构、L4 排空与自建 HTTP/1.1 引擎</h3>
+                    <span class="phase-badge">已完成 · A11–A22</span>
+                </div>
+                <p>拆分 16 包 Cargo Workspace，落地 <code>l4-transport</code>、<code>proto-http</code> 无锁快照路由、<code>ext-compression</code>/<code>ext-cors</code> 与 <code>app-files</code>。</p>
+            </article>
+            <article class="phase done">
+                <div class="phase-head">
+                    <h3>阶段 3 · 纯内建 Markdown、词法高亮与极简白色界面</h3>
+                    <span class="phase-badge">已完成 · A23–A32</span>
+                </div>
+                <p>交付零外部依赖 <code>doc-render</code> 与 <code>viewer-*</code>，实现无冲突媒体/文档路由、全站纯白视觉规范与 83 项测试 + 57 项端到端验收闭环。</p>
+            </article>
+            <article class="phase">
+                <div class="phase-head">
+                    <h3>阶段 4 · 声明式配置热重载与开发工作流套件</h3>
+                    <span class="phase-badge">规划中</span>
+                </div>
+                <p>声明式配置文件增量 Diff 热更新、不中断在途连接的局部重载、本地 HTTPS、聚合反代、Mock 与实时检视器。</p>
+            </article>
+            <article class="phase">
+                <div class="phase-head">
+                    <h3>阶段 5 · WebSocket / 原生 TCP 与通用流量治理</h3>
+                    <span class="phase-badge">规划中</span>
+                </div>
+                <p>补齐 WebSocket 与自定义 TCP 协议引擎、L7/L4 反向代理、健康检查、限流与指标采集。</p>
+            </article>
+        </div>
     </div>
 </section>
 
 </main>
 
 <footer>
-    <img src="pages/assets/logo.svg" alt="d logo">
-    <p class="mono">d — a simple standalone httpd</p>
-    <p>
-        <a href="https://github.com/liuchong/d">GitHub</a> ·
-        <a href="https://crates.io/crates/d">crates.io</a> ·
-        Licensed under the <a href="https://github.com/liuchong/d/blob/master/LICENSE">One Public License (1PL)</a>
-    </p>
+    <div class="wrap">
+        <div class="footer-inner">
+            <div class="footer-brand">
+                <img src="pages/assets/logo.svg" alt="d logo" width="28" height="28">
+                <span class="mono">d — modular network daemon &amp; static/doc server</span>
+            </div>
+            <div class="footer-links">
+                <a href="pages/usage.html">使用指南</a>
+                <a href="https://github.com/liuchong/d/blob/master/docs/usage.md">中文手册 (Markdown)</a>
+                <a href="https://github.com/liuchong/d/blob/master/docs/architecture.md">架构设计</a>
+                <a href="https://github.com/liuchong/d">GitHub</a>
+                <a href="https://crates.io/crates/d">crates.io</a>
+                <a href="https://github.com/liuchong/d/blob/master/LICENSE">1PL License</a>
+            </div>
+        </div>
+        <p class="footer-status" data-eli-status>页面交互源码：pages/site.eli（等待浏览器端 Eliscript 编译挂载）</p>
+    </div>
 </footer>
 
-<script src="pages/assets/main.js"></script>
+<script type="text/eliscript" src="pages/site.eli"></script>
+<script type="module">
+import { mountEliscriptScripts } from "https://unpkg.com/eliscript@0.1.3/dist/browser/host.mjs";
+const BASE = "https://unpkg.com/eliscript@0.1.3/";
+await mountEliscriptScripts(document, {
+    resolveExternal: (s) =>
+        s.startsWith("eliscript/") ? BASE + s.slice("eliscript/".length) : null,
+});
+</script>
 </body>
 </html>

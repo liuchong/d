@@ -1,5 +1,7 @@
 # d 使用示例集
 
+> 相关文档：[README](../README.md) · [完整使用手册](../docs/usage.md) · [架构设计](../docs/architecture.md)
+
 每个子目录都是一个可直接运行的示范。先构建：
 
 ```bash
@@ -16,7 +18,7 @@ cargo build          # 生成 target/debug/d
 | `media/` | 媒体直链原流与 `?view=viewer` 白底查看页（SVG/音视频） | `d -r examples/media` |
 | `static-site/` | 静态网站（HTML+CSS+JS） | `d -r examples/static-site` |
 
-启动后用浏览器打开 <http://localhost:8080>。
+启动后用浏览器打开 <http://localhost:8080>。若要同时预览仓库主页与 Pages 站点源码编译效果，可运行 `cargo run -- -r docs`。
 
 ## 示例 1：综合演示 `demo/`
 
@@ -73,15 +75,28 @@ cargo run -- -r examples/static-site
 启动任意示例后：
 
 ```bash
-# 断点续传 / 部分下载
+# 断点续传 / 部分下载（206 Partial Content & 后缀范围）
 curl -r 0-1023 http://localhost:8080/data.bin
+curl -r -16 http://localhost:8080/data.bin
 
-# 利用 ETag 缓存（第二次返回 304）
+# 利用 ETag 缓存（第二次返回 304 Not Modified）
 curl -sI http://localhost:8080/data.bin | grep -i etag
 curl -H "If-None-Match: \"<上面的ETag>\"" -v http://localhost:8080/data.bin
 
-# 直接下载文本文件（而不是显示查看器）
+# 获取文档/代码原文或纯预览 HTML（不带顶栏）
+curl "http://localhost:8080/README.md?view=raw"
+curl "http://localhost:8080/guide.md?view=preview"
+
+# 打开媒体白底查看器页面，或直接下载文件（RFC 5987 文件名编码）
+curl "http://localhost:8080/logo.svg?view=viewer"
 curl -OJ "http://localhost:8080/README.md?view=download"
+
+# 验证目录无尾斜杠 301 重定向并保留查询参数
+curl -i "http://localhost:8080/subdir?sort=size"
+
+# 开启隐藏文件与跨域头（CORS 预检测试）
+cargo run -- -r examples/demo --hidden --cors
+curl -i -X OPTIONS -H "Origin: https://example.com" -H "Access-Control-Request-Method: GET" http://localhost:8080/README.md
 ```
 
 ## 验收测试
@@ -92,5 +107,4 @@ curl -OJ "http://localhost:8080/README.md?view=download"
 scripts/acceptance.sh
 ```
 
-全部通过时输出 `All acceptance checks passed ✔`，任何一项失败都会
-以红色 FAIL 标出并以非零状态码退出。
+全部通过时输出 `All acceptance checks passed ✔`，任何一项失败都会以红色 FAIL 标出并以非零状态码退出。

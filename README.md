@@ -7,20 +7,31 @@
 [![1PL licensed](https://img.shields.io/badge/license-1PL-blue.svg)](./LICENSE)
 [![crates.io](https://meritbadge.herokuapp.com/d)](https://crates.io/crates/d)
 
-D is a modular, low-overhead standalone network daemon and file/document server built on an internal plugin microkernel (`frame`), a custom HTTP/1.1 streaming engine, and pure-Rust server-side Markdown and syntax rendering.
+`d` is a modular, low-overhead standalone network daemon and file/document server built on a zero-dependency plugin microkernel (`frame`), a custom HTTP/1.1 streaming engine, and pure-Rust server-side Markdown and syntax rendering.
 
-## Features
+**[Usage Handbook (中文)](./docs/usage.md)** ·
+**[Project Site Source](./docs/index.html)** ·
+**[Examples](./examples/README.md)** ·
+**[Architecture](./docs/architecture.md)** ·
+**[Microkernel (`frame`)](./docs/frame.md)**
 
-- **Layered plugin architecture**: Clean separation across Layer 0 (`frame` microkernel), Layer 1 (`l4-transport` with two-phase graceful drain), Layer 2 (`proto-http` HTTP/1.1 parser, chunked zero-buffer streaming, and lock-free snapshot routing), Layer 3 (`ext-compression`, `ext-cors`), and Layer 4 (`app-files`, `viewer-*`).
-- **Built-in CommonMark + GFM & native embedded HTML**: Zero-dependency pure-Rust `doc-render` supporting headings with CJK/ASCII anchors, aligned tables, task lists, strikethrough, footnotes, and unescaped block/inline embedded HTML (`<details>`, `<figure>`, `<img>`, `<table>`, `<kbd>`).
-- **Server-side lexical code highlighting**: Built-in tokenizer and light stylesheet for Rust, JavaScript/TypeScript, Python, Go, C/C++, Bash, JSON, YAML, TOML, SQL, HTML, and CSS — zero external scripts or CDNs.
-- **Minimalist white interface**: Offline self-contained white canvas (`#ffffff` / `#f6f8fa` / `#0969da`), no dark themes, no colored badges, no external assets, and no JavaScript required.
-- **Conflict-free media and file routing**:
-  - Bare media/asset paths (`/img.svg`, `/clip.mp4`, `/style.css`, `/app.js`) always stream raw bytes with full `Range` (`206`/`416`), `ETag`/`Last-Modified` (`304`), and `HEAD` support.
-  - Explicit `?view=viewer` opens a minimalist white media viewer page embedding the bare stream; `?view=raw`, `?view=preview`, and `?view=download` (RFC 5987 UTF-8 `Content-Disposition`) work across documents and files.
-  - Directories without a trailing slash redirect via `301` (preserving query parameters) so relative images and links always resolve cleanly.
-- **Static sites & directory controls**: Automatic sandboxed `index.html` serving (`?listing=true` bypass), sorting (`name`, `size`, `time`, `type`), and permission-gated hidden file toggle (`--hidden`).
-- **Streaming-aware compression & opt-in CORS**: `brotli`, `gzip`, and `deflate` negotiation that automatically exempts SSE/streaming bodies, `206`, `304`, `HEAD`, pre-compressed media, and tiny payloads; CORS disabled by default (`--cors`).
+---
+
+## Key Capabilities
+
+- **Layered plugin architecture (5 layers, 16 workspace crates)**:
+  - Layer 0 (`frame`): zero-dependency pure-`std` microkernel (`Context`, `Scope`, `Service`, `Fiber`, `EffectHandle`, `Event`, `Loader`, `Inspect`).
+  - Layer 1 (`l4-transport`): TCP listener management and two-phase graceful connection drain on `SIGINT`/`SIGTERM` or teardown.
+  - Layer 2 (`proto-http`): custom HTTP/1.1 parser (`400`/`413`/`414`/`431`/`505` wire bounds), chunked unbuffered streaming (`streaming: true`), and lock-free atomic snapshot routing (`HttpRouter`).
+  - Layer 3 (`ext-compression`, `ext-cors`): streaming-aware `br`/`gzip`/`deflate` negotiation (automatically exempting SSE/`streaming`, `206`, `304`, `HEAD`, pre-compressed media, and tiny payloads under 256 bytes) and opt-in permissive CORS (`--cors`).
+  - Layer 4 (`app-files`, `doc-render`, `viewer-markdown`, `viewer-code`, `viewer-media`): sandboxed file server with pure-Rust rendering and minimalist white viewers.
+- **Built-in CommonMark + GFM & native embedded HTML**: Zero-dependency `doc-render` compiles Markdown on the server with CJK/ASCII unique heading anchors, aligned GFM tables, task lists, strikethrough, footnotes, autolinks, and unescaped block/inline HTML (`<details>`, `<figure>`, `<img>`, `<table>`, `<kbd>`).
+- **Server-side lexical code highlighting**: Built-in tokenizer and light stylesheet for Rust, JavaScript/TypeScript, Python, Go, C/C++/Java/Zig/Swift/Kotlin/Scala, Shell (`sh`/`bash`/`zsh`/`fish`), JSON, YAML, TOML, SQL, HTML/XML/SVG, and CSS/SCSS — zero external scripts or CDNs.
+- **Minimalist white UI**: Self-contained offline `#ffffff` / `#f6f8fa` / `#0969da` layout across directory listings and document/code/media viewers; no dark themes, no colored badges, no emoji, and no client JavaScript required.
+- **Conflict-free content & media routing**: Bare media/asset/HTML paths stream raw bytes cleanly; documents/source render white server-side viewer pages; explicit `?view=` parameters select `raw`, `preview`, `viewer`, or `download` (RFC 5987 UTF-8 `Content-Disposition`). Directories without trailing slashes redirect via `301` preserving query strings.
+- **No mode split**: `d` makes no internal "dev mode vs prod mode" distinction — serving local documentation, static sites, and files on an engineer's machine is treated as a first-class production scenario using the exact same HTTP/1.1 engine and lifecycle guarantees.
+
+---
 
 ## Usage
 
@@ -28,69 +39,164 @@ D is a modular, low-overhead standalone network daemon and file/document server 
 
 ```bash
 cargo install d
-# or
+# or install from source
 cargo install --git https://github.com/liuchong/d
 ```
 
-### Run
+Build locally from a cloned checkout:
 
 ```bash
-# Serve current directory
-d
-
-# Custom port and root
-d -p 8080 -r /path/to/serve
-
-# Allow toggling hidden dotfiles and permissive CORS
-d -H 0.0.0.0 -p 8080 -r ./public --hidden --cors
+cargo build --release
+# binary at target/release/d
 ```
 
-### Options
+### Quick Start & Common Recipes
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `-H, --host` | Listening host | `localhost` |
-| `-p, --port` | Listening port | `8080` |
-| `-r, --root` | Root directory to serve | `.` |
-| `-l, --log` | Log level (`trace`, `debug`, `info`, `warn`, `error`) | `info` |
-| `--hidden` | Allow showing hidden files | disabled |
-| `--cors` | Enable permissive CORS (`GET`/`HEAD`/`OPTIONS`) | disabled |
+```bash
+# Serve the current directory on http://localhost:8080
+d
 
-### Environment Variables
+# Serve a specific directory on all interfaces
+d -H 0.0.0.0 -p 8080 -r ./public
 
-- `D_HOST` - Server host
-- `D_PORT` - Server port
-- `D_ROOT` - Root directory
-- `D_SHOW_HIDDEN` - Allow showing hidden files (`true`/`1`)
-- `D_CORS` - Enable permissive CORS (`true`/`1`)
-- `RUST_LOG` - Log level
+# Enable hidden dotfiles toggle and permissive CORS (GET/HEAD/OPTIONS)
+d -r ./workspace --hidden --cors -l debug
 
-## Web Interface & Query Parameters
+# Using --flag=value syntax or environment variables (CLI flags override ENV)
+d --host=127.0.0.1 --port=3000 --root=./docs
+D_HOST=0.0.0.0 D_PORT=9000 D_ROOT=./examples/demo D_SHOW_HIDDEN=true d
 
-Directory queries:
+# Preview the project's documentation site locally
+cargo run -- -r docs -p 8080
+```
 
-- `?sort=name|size|time|type` - Sort directory entries
-- `?order=desc` - Reverse sort order
-- `?hidden=true|false` - Toggle hidden dotfiles (when `--hidden` is enabled)
-- `?listing=true` - View directory listing even when `index.html` exists
+### CLI Options & Environment Variables
 
-File queries:
+| Option | Env Var | Default | Notes |
+|--------|---------|---------|-------|
+| `-H, --host <HOST>` | `D_HOST` | `localhost` | Listening host; prefers IPv4 when resolving names like `localhost` |
+| `-p, --port <PORT>` | `D_PORT` | `8080` | Listening TCP port (`u16`) |
+| `-r, --root <PATH>` | `D_ROOT` | `.` | Root directory to serve (canonicalized; symlink escapes rejected) |
+| `-l, --log <LEVEL>` | `RUST_LOG` | `info` | `trace`, `debug`, `info`, `warn`, `error` |
+| `--hidden` | `D_SHOW_HIDDEN` | disabled | Expose dotfiles and allow `?hidden=true\|false` toggling (`1`/`true`/`yes`/`on`) |
+| `--cors` | `D_CORS` | disabled | Add `Access-Control-Allow-Origin: *` and handle `OPTIONS` preflight (`204`) |
+| `-h, --help` | — | — | Print help and exit |
+| `-V, --version` | — | — | Print version and exit |
 
-- `?view=raw` - Serve raw unmodified bytes
-- `?view=preview` - Render pure preview HTML without chrome
-- `?view=viewer` - Open minimalist white viewer page (especially for images, audio, and video)
-- `?view=download` - Force attachment download with RFC 5987 filename encoding
+Precedence is strictly **CLI flag > Environment variable > Default**. Boolean environment variables treat `1`, `true`, `yes`, and `on` (case-insensitive) as enabled.
 
-## Examples
+---
 
-Ready-to-run demo directories live in [`examples/`](./examples) — see [examples/README.md](./examples/README.md) for guided tours of Markdown with embedded HTML and relative images, syntax highlighting, media viewing, and static sites.
+## Web Interface, Routing & Query Parameters
+
+### Conflict-free Resource Routing
+
+| Resource Type | Bare Path (`/path/to/file`) | Explicit Query Modes |
+|---------------|-----------------------------|----------------------|
+| **Directories** (`/dir/`) | Serves sandboxed `index.html` if present, otherwise renders minimalist white listing; missing trailing `/` issues `301` preserving `?query` | `?listing=true` (bypass `index.html`), `?sort=name\|size\|time\|type`, `?order=desc`, `?hidden=true\|false` (requires `--hidden`) |
+| **Markdown** (`.md`, `.markdown`, `.mkd`, `.mdown`) | Renders minimalist white reading view with server-side HTML + code highlighting and top action bar | `?view=raw` (raw UTF-8), `?view=preview` (document body without toolbar), `?view=download` |
+| **Code / Text / Org** (`.rs`, `.py`, `.go`, `.ts`, `.toml`, `.yaml`, `.txt`, `.csv`, `.org`, etc.) | Renders white server-side syntax-highlighted or monospace viewer (note: `.js`/`.mjs`/`.cjs` bare paths stream raw script bytes for static websites) | `?view=raw`, `?view=preview`, `?view=viewer`, `?view=download` |
+| **Media & Web Assets** (images, video, audio, `.html`, `.css`, `.js`, fonts, binaries) | Streams raw bytes with accurate MIME type, `Range` (`206`/`416`), `ETag`/`Last-Modified` (`304`), and `HEAD` | `?view=viewer` (white `<img/video/audio>` viewer embedding the bare stream), `?view=download` (RFC 5987 attachment) |
+
+### Common `curl` Commands
+
+```bash
+# Directory trailing-slash normalization (301 Location: /docs/?sort=size)
+curl -i "http://localhost:8080/docs?sort=size"
+
+# Byte-range slice (206 Partial Content) & suffix range
+curl -r 0-1023 http://localhost:8080/data.bin
+curl -r -16 http://localhost:8080/data.bin
+
+# Conditional caching with ETag (returns 304 Not Modified on match)
+ETAG=$(curl -sI http://localhost:8080/data.bin | awk '/^etag:/{print $2}' | tr -d '\r')
+curl -i -H "If-None-Match: $ETAG" http://localhost:8080/data.bin
+
+# Fetch raw source of a rendered Markdown or code file, or force RFC 5987 download
+curl "http://localhost:8080/README.md?view=raw"
+curl -OJ "http://localhost:8080/README.md?view=download"
+
+# Inspect negotiated compression vs 206 exemption
+curl -i --compressed http://localhost:8080/README.md
+curl -i --compressed -r 0-99 http://localhost:8080/data.bin
+```
+
+---
+
+## Rust Library Usage
+
+`d` can also be embedded in Rust applications or driven in-memory without binding a TCP port:
+
+```rust
+use std::net::SocketAddr;
+use d::{Options, create_app_with_options, start_with_options};
+use http_api::{HttpRequest, Method};
+
+// 1. Start full HTTP/1.1 daemon until SIGINT/SIGTERM
+async fn serve() -> Result<(), Box<dyn std::error::Error>> {
+    let addr: SocketAddr = "127.0.0.1:8080".parse()?;
+    start_with_options(
+        &addr,
+        "./public",
+        Options {
+            allow_hidden: false,
+            cors: true,
+        },
+    )
+    .await;
+    Ok(())
+}
+
+// 2. Dispatch in-memory through the full plugin & filter pipeline
+async fn dispatch_once() -> Result<(), Box<dyn std::error::Error>> {
+    let app = create_app_with_options(
+        "./examples/docs",
+        Options {
+            allow_hidden: false,
+            cors: false,
+        },
+    )
+    .await;
+
+    let resp = app.dispatch(HttpRequest::new(Method::Get, "/guide.md")).await;
+    assert_eq!(resp.status.as_u16(), 200);
+    let _body = resp.body.into_bytes().await?;
+
+    app.dispose().await?;
+    Ok(())
+}
+```
+
+---
+
+## Workspace Crates & Examples
+
+| Layer | Crates | Responsibility |
+|-------|--------|----------------|
+| **Layer 0** | `crates/frame` | Pure-`std` zero-dependency plugin microkernel (`Context`, `Scope`, `Service`, `Fiber`, `Effect`, `Event`, `Loader`, `Inspect`) |
+| **Contracts** | `crates/contracts/{net-api,http-api,files-api,render-api}` | Zero-dependency trait and wire contracts decoupling layers |
+| **Layer 1** | `crates/components/l4-transport` | TCP listener supervision and two-phase graceful connection drain |
+| **Layer 2** | `crates/components/proto-http` | Bounded HTTP/1.1 parser/writer, streaming chunk encoder, lock-free snapshot `HttpRouter` |
+| **Layer 3** | `crates/components/{ext-compression,ext-cors}` | Streaming-aware `br`/`gzip`/`deflate` compression filter and opt-in CORS filter |
+| **Layer 4** | `crates/components/{app-files,doc-render,viewer-markdown,viewer-code,viewer-media}` | Sandboxed file handler, pure-Rust Markdown/GFM/HTML/highlight engine, minimalist white viewers |
+| **Entry & Root** | `crates/entries/cli`, `.` (`d`) | Pure-`std` CLI/ENV/logging entrypoint (`d-cli`) and runtime assembly (`d`) |
+
+Ready-to-run sample directories live in [`examples/`](./examples) — see [examples/README.md](./examples/README.md) for guided tours of `demo/`, `code/`, `docs/`, `media/`, and `static-site/`.
+
+---
 
 ## Testing & Acceptance
 
 ```bash
-cargo test --workspace   # unit, contract, and integration tests
-scripts/acceptance.sh    # end-to-end HTTP, Markdown, and UI acceptance checks
+cargo fmt --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace     # 83 unit, contract, and integration tests
+scripts/acceptance.sh      # 57 end-to-end HTTP, Markdown, and UI checks
 ```
+
+For comprehensive Chinese usage documentation, see [docs/usage.md](./docs/usage.md).
+
+---
 
 ## License
 

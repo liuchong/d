@@ -1,0 +1,408 @@
+;; d — project Pages interactions compiled live in the browser from Eliscript.
+;;
+;; All interactive behaviors on `docs/index.html` and `docs/pages/usage.html`
+;; live in this file: clipboard copy buttons, scenario switcher, route/query
+;; simulator, 5-layer architecture explorer, and CLI/ENV command builder.
+
+(module d.pages.site
+  (import "eliscript/platform/browser"
+          browserCapabilities browserDocument)
+
+  (defconst capabilities
+    (browserCapabilities globalThis.globalThis (js-array "document")))
+  (defconst page (browserDocument capabilities))
+
+  ;; ------------------------------------------------------------- host helpers
+
+  (defun field (object name)
+    (get object name))
+
+  (defun set-field (object name value)
+    (Reflect/set object name value))
+
+  (defun text-of (element)
+    (field element "textContent"))
+
+  (defun set-text (element value)
+    (set-field element "textContent" (str value)))
+
+  (defun trimmed (value)
+    (js-call (str value) :trim))
+
+  (defun nodes (selector)
+    (Array/from (js-call page :querySelectorAll selector)))
+
+  (defun node (selector)
+    (js-call page :querySelector selector))
+
+  (defun present? (value)
+    (not (nil? value)))
+
+  (defun same? (left right)
+    (Object/is left right))
+
+  (defun attr (element name)
+    (js-call element :getAttribute name))
+
+  (defun set-selected (element selected)
+    (js-call element :setAttribute "aria-selected"
+             (if selected "true" "false")))
+
+  (defun watch (element event handler)
+    (js-call element :addEventListener event handler))
+
+  (defun each (values handler)
+    (let ((index 0)
+          (total (js-length values)))
+      (while (< index total)
+        (funcall handler (js-nth index values))
+        (setq index (1+ index)))))
+
+  ;; ------------------------------------------------------------- clipboard copy
+
+  (defun write-clipboard (text)
+    (let ((clipboard (field globalThis.navigator "clipboard")))
+      (when (and (present? clipboard)
+                 (present? (field clipboard "writeText")))
+        (try
+          (let ((pending (js-call clipboard :writeText text)))
+            (when (and (present? pending)
+                       (present? (field pending "catch")))
+              (js-call pending :catch (lambda (err) nil))))
+          (catch err nil)))))
+
+  (defun bind-copy-buttons ()
+    (each (nodes "[data-copy-command], [data-copy-target]")
+          (lambda (button)
+            (let ((original (trimmed (text-of button))))
+              (watch button "click"
+                     (lambda (event)
+                       (let* ((target-sel (attr button "data-copy-target"))
+                              (target-el (if (and (present? target-sel)
+                                                  (not (= target-sel "")))
+                                             (node target-sel)
+                                           nil))
+                              (payload (if (present? target-el)
+                                           (trimmed (text-of target-el))
+                                         (or (attr button "data-copy-command") ""))))
+                         (when (not (= payload ""))
+                           (write-clipboard payload)
+                           (js-call (field button "classList") :add "copied")
+                           (set-text button "已复制")
+                           (globalThis.setTimeout
+                             (lambda ()
+                               (js-call (field button "classList") :remove "copied")
+                               (set-text button (if (= original "") "复制" original)))
+                             1500)))))))))
+
+  ;; --------------------------------------------------------- scenario switcher
+
+  (defun scenario-table ()
+    (js-object
+      "docs" (js-object
+               "cmd" "# 启动当前目录的文档与代码服务\nd -r . -p 8080\n\n# 浏览器访问 Markdown / 源码即得白底阅读页，裸路径自动规范目录尾斜杠\n# http://localhost:8080/README.md\n# http://localhost:8080/docs/guide.md"
+               "note" "Markdown 完整支持 GFM（表格、复选框、脚注、中英文锚点）、嵌入式 HTML 透传以及纯 Rust 浅色代码高亮。")
+      "static" (js-object
+                 "cmd" "# 托管静态站点或本地 Preview Pages\nd -r ./docs -p 8080\n\n# 访问 / 自动直出 index.html；想绕过首页看文件索引：\n# http://localhost:8080/?listing=true"
+                 "note" "静态资源（HTML/CSS/JS/WASM/图片）裸路径直接原流输出；若 index.html 指向根目录外符号链接将自动安全回退为目录列表。")
+      "lan" (js-object
+              "cmd" "# 对局域网开放，允许隐藏文件开关并开启跨域请求\nd -H 0.0.0.0 -p 8080 -r ./share --hidden --cors -l debug"
+              "note" "未传 --hidden 时点文件完全不可见；启用 --cors 后附加 Access-Control-Allow-Origin: * 并响应 OPTIONS 204 预检。")
+      "curl" (js-object
+               "cmd" "# 字节范围切片（206）与后缀范围\ncurl -r 0-1023 http://localhost:8080/data.bin\ncurl -r -16 http://localhost:8080/data.bin\n\n# 条件缓存（命中 ETag 返回 304）与原流 / RFC 5987 下载\ncurl -sI http://localhost:8080/data.bin\ncurl \"http://localhost:8080/README.md?view=raw\"\ncurl -OJ \"http://localhost:8080/README.md?view=download\""
+               "note" "自建 HTTP/1.1 引擎完整处理 Range/416、弱比较 ETag/304、HEAD 与流式压缩（206/304/HEAD/SSE 自动豁免）。")
+      "rust" (js-object
+               "cmd" "use d::{Options, create_app_with_options};\nuse http_api::{HttpRequest, Method};\n\nlet app = create_app_with_options(\n    \"./examples/docs\",\n    Options { allow_hidden: false, cors: false },\n).await;\nlet resp = app.dispatch(HttpRequest::new(Method::Get, \"/guide.md\")).await;\napp.dispose().await?;"
+               "note" "除 CLI 守护进程外，也可零端口直接在内存中装配完整 5 层插件树并向 RouterService 派发请求。")))
+
+  (defun bind-scenarios ()
+    (let ((tabs (nodes "[data-scenario-tab]"))
+          (cmd-el (node "[data-scenario-cmd]"))
+          (note-el (node "[data-scenario-note]"))
+          (table (scenario-table)))
+      (when (and (present? cmd-el) (present? note-el))
+        (each tabs
+              (lambda (tab)
+                (watch tab "click"
+                       (lambda (event)
+                         (let* ((key (attr tab "data-scenario-tab"))
+                                (entry (field table key)))
+                           (when (present? entry)
+                             (each tabs
+                                   (lambda (candidate)
+                                     (set-selected candidate (same? candidate tab))))
+                             (set-text cmd-el (field entry "cmd"))
+                             (set-text note-el (field entry "note")))))))))))
+
+  ;; ---------------------------------------------------------- route simulator
+
+  (defun route-entry (url status mime desc)
+    (js-object "url" url "status" status "mime" mime "desc" desc))
+
+  (defun route-table ()
+    (js-object
+      "guide.md" (js-object
+                   "bare" (route-entry "/docs/guide.md" "200 OK" "text/html; charset=utf-8"
+                            "渲染极简白底 Markdown 阅读页（GFM、嵌入式 HTML、相对图片与高亮代码块 + 顶栏操作条）。")
+                   "raw" (route-entry "/docs/guide.md?view=raw" "200 OK" "text/markdown; charset=utf-8"
+                           "绕过渲染，直接返回原始 Markdown UTF-8 字节流。")
+                   "preview" (route-entry "/docs/guide.md?view=preview" "200 OK" "text/html; charset=utf-8"
+                               "仅输出纯白底渲染正文（无顶部导航条），适合嵌入预览。")
+                   "viewer" (route-entry "/docs/guide.md?view=viewer" "200 OK" "text/html; charset=utf-8"
+                              "由 viewer-markdown 渲染带顶栏切换的标准查看页。")
+                   "download" (route-entry "/docs/guide.md?view=download" "200 OK" "text/markdown; charset=utf-8"
+                                "附加 Content-Disposition: attachment 与 RFC 5987 UTF-8 文件名触发下载。")
+                   "listing" (route-entry "/docs/guide.md?listing=true" "200 OK" "text/html; charset=utf-8"
+                               "?listing=true 仅对目录生效；文件请求保持原文件默认视图。"))
+      "main.rs" (js-object
+                  "bare" (route-entry "/src/main.rs" "200 OK" "text/html; charset=utf-8"
+                           "服务端执行 doc-render 纯 Rust 词法高亮并输出浅色代码阅读页。")
+                  "raw" (route-entry "/src/main.rs?view=raw" "200 OK" "text/plain; charset=utf-8"
+                          "返回源码原始字节流。")
+                  "preview" (route-entry "/src/main.rs?view=preview" "200 OK" "text/html; charset=utf-8"
+                              "输出无顶栏的高亮源码纯正文 HTML。")
+                  "viewer" (route-entry "/src/main.rs?view=viewer" "200 OK" "text/html; charset=utf-8"
+                             "由 viewer-code 输出白底高亮源码查看页。")
+                  "download" (route-entry "/src/main.rs?view=download" "200 OK" "text/plain; charset=utf-8"
+                               "以附件形式下载源码文件。")
+                  "listing" (route-entry "/src/main.rs?listing=true" "200 OK" "text/html; charset=utf-8"
+                              "?listing=true 仅作用于目录；文件仍按默认源码查看页响应。"))
+      "diagram.svg" (js-object
+                      "bare" (route-entry "/docs/diagram.svg" "200 OK" "image/svg+xml"
+                               "图片裸路径永远返回原始字节流，保障 Markdown 内 ./diagram.svg 与 <img> 引用 100% 可用。")
+                      "raw" (route-entry "/docs/diagram.svg?view=raw" "200 OK" "image/svg+xml"
+                              "直接输出原始 SVG 字节流，支持 ETag / Range。")
+                      "preview" (route-entry "/docs/diagram.svg?view=preview" "200 OK" "image/svg+xml"
+                                  "媒体文件无无框 HTML 预览器，自动回退为原始字节流。")
+                      "viewer" (route-entry "/docs/diagram.svg?view=viewer" "200 OK" "text/html; charset=utf-8"
+                                 "由 viewer-media 生成白底图片查看页，页内 <img src=\"/docs/diagram.svg\"> 直连裸路径。")
+                      "download" (route-entry "/docs/diagram.svg?view=download" "200 OK" "image/svg+xml"
+                                   "附加 attachment 下载响应头直接保存 SVG 文件。")
+                      "listing" (route-entry "/docs/diagram.svg?listing=true" "200 OK" "image/svg+xml"
+                                  "对非目录图片按裸路径原始字节流返回。"))
+      "clip.mp4" (js-object
+                   "bare" (route-entry "/media/clip.mp4" "200 / 206 Partial Content" "video/mp4"
+                            "视频裸路径直接流式输出并支持 Range 进度条拖动；video/* 自动豁免 HTTP 压缩。")
+                   "raw" (route-entry "/media/clip.mp4?view=raw" "200 OK" "video/mp4"
+                           "直接读取原始 MP4 视频字节流。")
+                   "preview" (route-entry "/media/clip.mp4?view=preview" "200 / 206" "video/mp4"
+                               "媒体无纯预览模式，按原流与 Range 支持返回。")
+                   "viewer" (route-entry "/media/clip.mp4?view=viewer" "200 OK" "text/html; charset=utf-8"
+                              "渲染白底播放器页，内嵌 <video controls src=\"/media/clip.mp4\"> 无冲突拖动进度。")
+                   "download" (route-entry "/media/clip.mp4?view=download" "200 OK" "video/mp4"
+                                "以附件头强制下载视频文件。")
+                   "listing" (route-entry "/media/clip.mp4?listing=true" "200 / 206" "video/mp4"
+                               "非目录媒体继续按裸路径视频流响应。"))
+      "app.js" (js-object
+                 "bare" (route-entry "/assets/app.js" "200 OK" "text/javascript; charset=utf-8"
+                          "Web 脚本后缀（.js/.mjs/.cjs）裸路径始终返回原始 JS 流，避免破坏静态站点。")
+                 "raw" (route-entry "/assets/app.js?view=raw" "200 OK" "text/javascript; charset=utf-8"
+                         "强制返回原始 JavaScript 字节流。")
+                 "preview" (route-entry "/assets/app.js?view=preview" "200 OK" "text/html; charset=utf-8"
+                             "显式传入 ?view=preview 时才进入纯高亮源码预览 HTML。")
+                 "viewer" (route-entry "/assets/app.js?view=viewer" "200 OK" "text/html; charset=utf-8"
+                            "显式传入 ?view=viewer 时可在白底源码查看器中阅读高亮脚本。")
+                 "download" (route-entry "/assets/app.js?view=download" "200 OK" "text/javascript; charset=utf-8"
+                              "以附件头下载 JS 源文件。")
+                 "listing" (route-entry "/assets/app.js?listing=true" "200 OK" "text/javascript; charset=utf-8"
+                             "非目录文件保持裸路径 JS 原流响应。"))
+      "/docs" (js-object
+                "bare" (route-entry "/docs -> 301 Location: /docs/" "301 -> 200 OK" "text/html; charset=utf-8"
+                         "目录缺少尾部斜杠时先返回 301 重定向到 /docs/，再用沙箱 index.html 或白底目录索引响应。")
+                "raw" (route-entry "/docs?view=raw -> 301 /docs/?view=raw" "301 -> 200 OK" "text/html; charset=utf-8"
+                        "301 重定向完整保留查询参数；目录响应仍由 index.html 或目录索引处理。")
+                "preview" (route-entry "/docs?view=preview -> 301 /docs/?view=preview" "301 -> 200 OK" "text/html; charset=utf-8"
+                            "目录先 301 补全尾斜杠再按目录逻辑输出。")
+                "viewer" (route-entry "/docs?view=viewer -> 301 /docs/?view=viewer" "301 -> 200 OK" "text/html; charset=utf-8"
+                           "目录先 301 补全尾斜杠再输出目录视图。")
+                "download" (route-entry "/docs?view=download -> 301 /docs/?view=download" "301 -> 200 OK" "text/html; charset=utf-8"
+                             "目录不打包为单文件；保留查询串重定向到规范目录路径。")
+                "listing" (route-entry "/docs?listing=true -> 301 /docs/?listing=true" "301 -> 200 OK" "text/html; charset=utf-8"
+                            "重定向补全 / 后保留 ?listing=true，绕过目录内 index.html 强制列出文件清单。"))))
+
+  (defun bind-route-simulator ()
+    (let ((res-btns (nodes "[data-route-resource]"))
+          (mode-btns (nodes "[data-route-mode]"))
+          (url-el (node "[data-route-url]"))
+          (status-el (node "[data-route-status]"))
+          (mime-el (node "[data-route-mime]"))
+          (desc-el (node "[data-route-desc]"))
+          (table (route-table))
+          (current-res "guide.md")
+          (current-mode "bare"))
+      (when (and (present? url-el) (present? status-el) (present? mime-el) (present? desc-el))
+        (let ((refresh
+                (lambda ()
+                  (let* ((res-map (field table current-res))
+                         (entry (if (present? res-map) (field res-map current-mode) nil)))
+                    (when (present? entry)
+                      (set-text url-el (field entry "url"))
+                      (set-text status-el (field entry "status"))
+                      (set-text mime-el (field entry "mime"))
+                      (set-text desc-el (field entry "desc")))))))
+          (each res-btns
+                (lambda (btn)
+                  (watch btn "click"
+                         (lambda (event)
+                           (setq current-res (attr btn "data-route-resource"))
+                           (each res-btns
+                                 (lambda (c) (set-selected c (same? c btn))))
+                           (funcall refresh)))))
+          (each mode-btns
+                (lambda (btn)
+                  (watch btn "click"
+                         (lambda (event)
+                           (setq current-mode (attr btn "data-route-mode"))
+                           (each mode-btns
+                                 (lambda (c) (set-selected c (same? c btn))))
+                           (funcall refresh)))))
+          (funcall refresh)))))
+
+  ;; ----------------------------------------------------- architecture explorer
+
+  (defun layer-table ()
+    (js-object
+      "L0" (js-object
+             "title" "第 0 层 · frame 插件微内核"
+             "crates" "crates/frame（零外部依赖，纯 std）"
+             "deps" "仅依赖 Rust 标准库 std"
+             "desc" "提供 Context、Scope 作用域隔离、强类型 Service、响应式 Fiber 状态机、结构化异步 EffectScope（LIFO 回滚与并发清理）、四类强类型 Event、声明式增量 Loader 与脱敏 Inspect。")
+      "L1" (js-object
+             "title" "第 1 层 · 守护进程与传输核心层"
+             "crates" "crates/components/l4-transport · 契约 crates/contracts/net-api"
+             "deps" "依赖 frame、net-api 与 tokio 传输原语"
+             "desc" "封装 TCP 监听绑定与连接监管台账。收到停机或卸载信号时执行两阶段优雅排空：立即停收新连接，等待在途连接结束并在超时窗收尾，同时向 frame 服务就绪探针同步状态。")
+      "L2" (js-object
+             "title" "第 2 层 · 自建底层 HTTP/1.1 引擎层"
+             "crates" "crates/components/proto-http · 契约 crates/contracts/http-api"
+             "deps" "依赖 frame、net-api、http-api"
+             "desc" "自建边界受控 HTTP/1.1 解析器（请求行/头数量/头大小/请求体越界返回 414/431/413/400/505）、流式 chunked 零缓冲写器（streaming: true），以及基于不可变原子快照与 Effect 自动热插拔的 HttpRouter。")
+      "L3" (js-object
+             "title" "第 3 层 · 能力扩展过滤器层"
+             "crates" "crates/components/ext-compression · crates/components/ext-cors"
+             "deps" "仅通过 http-api::HttpFilter 挂载，零内部耦合"
+             "desc" "ext-compression 实现 br/gzip/deflate 流式编码与自动豁免（SSE、streaming、206、304、HEAD、已压缩媒体及 <256B 小响应）；ext-cors 零外部依赖，按需启用（--cors）响应全源头与 OPTIONS 204。")
+      "L4" (js-object
+             "title" "第 4 层 · 文件服务与零外链展示层"
+             "crates" "app-files · doc-render · viewer-markdown · viewer-code · viewer-media · contracts/{files,render}-api"
+             "deps" "doc-render、viewer-* 与契约包全部零外部依赖"
+             "desc" "app-files 负责 canonicalize 沙箱路径校验、目录 301 规范化、Range/ETag/304/HEAD 与 RFC 5987 下载；doc-render 服务端解析完整 CommonMark+GFM、原生嵌入式 HTML 与多语言高亮；viewer-* 输出统一极简白底界面。")
+      "entry" (js-object
+                "title" "纯入口壳与根装配层"
+                "crates" "crates/entries/cli（d-cli，纯 std）· 根包 d"
+                "deps" "d 装配五层插件；d-cli 零外部依赖"
+                "desc" "d-cli 统一解析命令行与 D_* 环境变量并输出轻量日志；根包 d 暴露 start_with_options、create_app_with_options 与 build_runtime，支持独立后台服务或零端口内存派发。")))
+
+  (defun bind-layers ()
+    (let ((btns (nodes "[data-layer-btn]"))
+          (title-el (node "[data-layer-title]"))
+          (crates-el (node "[data-layer-crates]"))
+          (deps-el (node "[data-layer-deps]"))
+          (desc-el (node "[data-layer-desc]"))
+          (table (layer-table)))
+      (when (and (present? title-el) (present? crates-el) (present? deps-el) (present? desc-el))
+        (each btns
+              (lambda (btn)
+                (watch btn "click"
+                       (lambda (event)
+                         (let* ((key (attr btn "data-layer-btn"))
+                                (entry (field table key)))
+                           (when (present? entry)
+                             (each btns
+                                   (lambda (c) (set-selected c (same? c btn))))
+                             (set-text title-el (field entry "title"))
+                             (set-text crates-el (field entry "crates"))
+                             (set-text deps-el (field entry "deps"))
+                             (set-text desc-el (field entry "desc")))))))))))
+
+  ;; ------------------------------------------------------- CLI & ENV builder
+
+  (defun quote-arg (raw)
+    (if (or (js-call raw :includes " ")
+            (js-call raw :includes "\""))
+        (str "\"" raw "\"")
+      raw))
+
+  (defun bind-cli-builder ()
+    (let ((root-box (node "[data-cli-builder]")))
+      (when (present? root-box)
+        (let ((host-in (node "[data-cli-host]"))
+              (port-in (node "[data-cli-port]"))
+              (dir-in (node "[data-cli-root]"))
+              (log-in (node "[data-cli-log]"))
+              (hidden-in (node "[data-cli-hidden]"))
+              (cors-in (node "[data-cli-cors]"))
+              (fmt-in (node "[data-cli-format]"))
+              (out-el (node "[data-cli-output]")))
+          (when (and (present? host-in) (present? port-in) (present? dir-in)
+                     (present? log-in) (present? hidden-in) (present? cors-in)
+                     (present? fmt-in) (present? out-el))
+            (let ((rebuild
+                    (lambda (event)
+                      (let* ((host (let ((v (trimmed (field host-in "value"))))
+                                     (if (= v "") "localhost" v)))
+                             (port (let ((v (trimmed (field port-in "value"))))
+                                     (if (= v "") "8080" v)))
+                             (dir (let ((v (trimmed (field dir-in "value"))))
+                                    (if (= v "") "." v)))
+                             (log (let ((v (trimmed (field log-in "value"))))
+                                    (if (= v "") "info" v)))
+                             (hidden (field hidden-in "checked"))
+                             (cors (field cors-in "checked"))
+                             (fmt (field fmt-in "value")))
+                        (if (= fmt "env")
+                            (let ((envs ""))
+                              (when (not (= host "localhost"))
+                                (setq envs (str envs "D_HOST=" (quote-arg host) " ")))
+                              (when (not (= port "8080"))
+                                (setq envs (str envs "D_PORT=" port " ")))
+                              (when (not (= dir "."))
+                                (setq envs (str envs "D_ROOT=" (quote-arg dir) " ")))
+                              (when (not (= log "info"))
+                                (setq envs (str envs "RUST_LOG=" log " ")))
+                              (when hidden
+                                (setq envs (str envs "D_SHOW_HIDDEN=true ")))
+                              (when cors
+                                (setq envs (str envs "D_CORS=true ")))
+                              (set-text out-el (str envs "d")))
+                          (let ((cmd "d"))
+                            (when (not (= host "localhost"))
+                              (setq cmd (str cmd " -H " (quote-arg host))))
+                            (when (not (= port "8080"))
+                              (setq cmd (str cmd " -p " port)))
+                            (when (not (= dir "."))
+                              (setq cmd (str cmd " -r " (quote-arg dir))))
+                            (when (not (= log "info"))
+                              (setq cmd (str cmd " -l " log)))
+                            (when hidden
+                              (setq cmd (str cmd " --hidden")))
+                            (when cors
+                              (setq cmd (str cmd " --cors")))
+                            (set-text out-el cmd)))))))
+              (each (js-array host-in port-in dir-in log-in hidden-in cors-in fmt-in)
+                    (lambda (ctrl)
+                      (watch ctrl "input" rebuild)
+                      (watch ctrl "change" rebuild)))
+              (funcall rebuild nil)))))))
+
+  ;; -------------------------------------------------------- runtime bootstrap
+
+  (defun mark-runtime-ready ()
+    (let ((doc-el (field page "documentElement"))
+          (status-el (node "[data-eli-status]")))
+      (when (present? doc-el)
+        (js-call doc-el :setAttribute "data-eli-ready" "true"))
+      (when (present? status-el)
+        (set-text status-el "Eliscript 0.1.3 已在浏览器实时编译运行"))))
+
+  (defun start ()
+    (bind-copy-buttons)
+    (bind-scenarios)
+    (bind-route-simulator)
+    (bind-layers)
+    (bind-cli-builder)
+    (mark-runtime-ready))
+
+  (if (= (field page "readyState") "loading")
+      (watch page "DOMContentLoaded" (lambda (event) (start)))
+    (start)))
