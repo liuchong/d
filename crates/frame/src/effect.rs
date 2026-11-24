@@ -53,6 +53,15 @@ impl EffectHandle {
     }
 }
 
+impl std::fmt::Debug for EffectHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EffectHandle")
+            .field("id", &self.inner.id)
+            .field("label", &self.inner.label)
+            .finish()
+    }
+}
+
 #[derive(Clone)]
 pub struct EffectScope {
     inner: Arc<EffectInner>,
@@ -250,6 +259,113 @@ async fn run_cleanup_steps(
     fold_cleanup_errors(errors)
 }
 
+fn allocate_effect(
+    engine: &Arc<Engine>,
+    owner_id: FiberId,
+    label: String,
+) -> Result<Arc<EffectInner>, FrameError> {
+    let mut eng = engine.state.lock().expect("engine lock");
+    let owner = eng
+        .fibers
+        .get(&owner_id)
+        .cloned()
+        .ok_or_else(FrameError::inactive_fiber)?;
+    let id = eng.next_effect_id;
+    eng.next_effect_id += 1;
+
+    let mut owner_inner = owner.inner.lock().expect("fiber lock");
+    if owner_inner.disposing
+        || matches!(
+            owner_inner.state,
+            FiberState::Unloading | FiberState::Disposed
+        )
+    {
+        return Err(FrameError::new(
+            ErrorKind::InactiveFiber,
+            "cannot register effect on unloading or disposed fiber",
+        ));
+    }
+
+    let inner = Arc::new(EffectInner {
+        id,
+        label,
+        owner: Arc::clone(&owner),
+        engine: Arc::clone(engine),
+        state: Mutex::new(EffectState {
+            phase: EffectPhase::Initializing,
+            dispose_requested: false,
+            steps: Vec::new(),
+        }),
+        dispose_done: SignalValue::new(),
+    });
+    owner_inner.effects.insert(id, Arc::clone(&inner));
+    Ok(inner)
+}
+
+fn take_rollback_steps(effect: &EffectInner) -> Vec<CleanupStep> {
+    let mut st = effect.state.lock().expect("effect lock");
+    st.phase = EffectPhase::Cleaning;
+    std::mem::take(&mut st.steps)
+}
+
+fn finish_ready_or_raced(effect: &EffectInner) -> Option<Vec<CleanupStep>> {
+    let mut st = effect.state.lock().expect("effect lock");
+    if st.dispose_requested {
+        st.phase = EffectPhase::Cleaning;
+        Some(std::mem::take(&mut st.steps))
+    } else {
+        st.phase = EffectPhase::Ready;
+        None
+    }
+}
+
+pub(crate) fn create_effect_sync<F>(
+    engine: Arc<Engine>,
+    owner_id: FiberId,
+    label: impl Into<String>,
+    setup: F,
+) -> Result<EffectHandle, FrameError>
+where
+    F: FnOnce(EffectScope) -> Result<(), FrameError>,
+{
+    let effect = allocate_effect(&engine, owner_id, label.into())?;
+    let scope = EffectScope {
+        inner: Arc::clone(&effect),
+    };
+    if let Err(setup_err) = setup(scope) {
+        let steps = take_rollback_steps(&effect);
+        if steps.iter().all(|s| matches!(s, CleanupStep::Sync(_))) {
+            let cleanup_res =
+                run_sync_cleanup_steps(&effect.engine, steps, true);
+            effect.finish_disposal(cleanup_res);
+        } else {
+            let eff = Arc::clone(&effect);
+            effect.engine.spawn_tracked(Box::pin(async move {
+                let cleanup_res =
+                    run_cleanup_steps(&eff.engine, steps, true).await;
+                eff.finish_disposal(cleanup_res);
+            }));
+        }
+        return Err(setup_err);
+    }
+
+    if let Some(steps) = finish_ready_or_raced(&effect) {
+        if steps.iter().all(|s| matches!(s, CleanupStep::Sync(_))) {
+            let cleanup_res =
+                run_sync_cleanup_steps(&effect.engine, steps, true);
+            effect.finish_disposal(cleanup_res);
+        } else {
+            let eff = Arc::clone(&effect);
+            effect.engine.spawn_tracked(Box::pin(async move {
+                let cleanup_res =
+                    run_cleanup_steps(&eff.engine, steps, true).await;
+                eff.finish_disposal(cleanup_res);
+            }));
+        }
+    }
+    Ok(EffectHandle { inner: effect })
+}
+
 pub(crate) fn create_effect<F>(
     engine: Arc<Engine>,
     owner_id: FiberId,
@@ -263,45 +379,7 @@ where
 {
     let label = label.into();
     Box::pin(async move {
-        let effect = {
-            let mut eng = engine.state.lock().expect("engine lock");
-            let owner = eng
-                .fibers
-                .get(&owner_id)
-                .cloned()
-                .ok_or_else(FrameError::inactive_fiber)?;
-            let id = eng.next_effect_id;
-            eng.next_effect_id += 1;
-
-            let mut owner_inner = owner.inner.lock().expect("fiber lock");
-            if owner_inner.disposing
-                || matches!(
-                    owner_inner.state,
-                    FiberState::Unloading | FiberState::Disposed
-                )
-            {
-                return Err(FrameError::new(
-                    ErrorKind::InactiveFiber,
-                    "cannot register effect on unloading or disposed fiber",
-                ));
-            }
-
-            let inner = Arc::new(EffectInner {
-                id,
-                label,
-                owner: Arc::clone(&owner),
-                engine: Arc::clone(&engine),
-                state: Mutex::new(EffectState {
-                    phase: EffectPhase::Initializing,
-                    dispose_requested: false,
-                    steps: Vec::new(),
-                }),
-                dispose_done: SignalValue::new(),
-            });
-            owner_inner.effects.insert(id, Arc::clone(&inner));
-            inner
-        };
-
+        let effect = allocate_effect(&engine, owner_id, label)?;
         let scope = EffectScope {
             inner: Arc::clone(&effect),
         };
@@ -309,28 +387,14 @@ where
 
         match setup_res {
             Err(setup_err) => {
-                let steps = {
-                    let mut st = effect.state.lock().expect("effect lock");
-                    st.phase = EffectPhase::Cleaning;
-                    std::mem::take(&mut st.steps)
-                };
+                let steps = take_rollback_steps(&effect);
                 let cleanup_res =
                     run_cleanup_steps(&effect.engine, steps, true).await;
                 effect.finish_disposal(cleanup_res);
                 Err(setup_err)
             }
             Ok(()) => {
-                let raced_steps = {
-                    let mut st = effect.state.lock().expect("effect lock");
-                    if st.dispose_requested {
-                        st.phase = EffectPhase::Cleaning;
-                        Some(std::mem::take(&mut st.steps))
-                    } else {
-                        st.phase = EffectPhase::Ready;
-                        None
-                    }
-                };
-                if let Some(steps) = raced_steps {
+                if let Some(steps) = finish_ready_or_raced(&effect) {
                     let cleanup_res =
                         run_cleanup_steps(&effect.engine, steps, true).await;
                     effect.finish_disposal(cleanup_res);

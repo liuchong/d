@@ -1,4 +1,6 @@
-use crate::effect::{EffectHandle, EffectScope, create_effect};
+use crate::effect::{
+    EffectHandle, EffectScope, create_effect, create_effect_sync,
+};
 use crate::error::{ErrorKind, FrameError};
 use crate::event::{
     AsyncListener, BailListener, Event, EventFilter, EventKey, ListenerKind,
@@ -387,6 +389,22 @@ impl Context {
         create_effect(Arc::clone(&self.engine), self.fiber_id, label, setup)
     }
 
+    pub fn effect_sync<F>(
+        &self,
+        label: impl Into<String>,
+        setup: F,
+    ) -> Result<EffectHandle, FrameError>
+    where
+        F: FnOnce(EffectScope) -> Result<(), FrameError>,
+    {
+        create_effect_sync(
+            Arc::clone(&self.engine),
+            self.fiber_id,
+            label,
+            setup,
+        )
+    }
+
     pub(crate) fn register_sync_effect<F>(
         &self,
         label: impl Into<String>,
@@ -395,28 +413,10 @@ impl Context {
     where
         F: FnOnce() -> Result<(), FrameError> + Send + 'static,
     {
-        let label = label.into();
-        let fut = create_effect(
-            Arc::clone(&self.engine),
-            self.fiber_id,
-            label,
-            move |scope| {
-                Box::pin(async move {
-                    scope.defer_result(cleanup);
-                    Ok(())
-                })
-            },
-        );
-        // Setup performs no async awaits, poll once to completion.
-        let mut pinned = fut;
-        let waker = std::task::Waker::noop();
-        let mut cx = std::task::Context::from_waker(waker);
-        match std::future::Future::poll(pinned.as_mut(), &mut cx) {
-            std::task::Poll::Ready(res) => res,
-            std::task::Poll::Pending => {
-                unreachable!("sync effect setup cannot suspend")
-            }
-        }
+        self.effect_sync(label, move |scope| {
+            scope.defer_result(cleanup);
+            Ok(())
+        })
     }
 
     pub fn plugin<P: Plugin>(
@@ -789,6 +789,19 @@ mod tests {
         )
         .expect("bail 2");
         assert_eq!(ctx.bail(&SyncBailEvent, None).expect("bail"), Some(7));
+
+        let rolled_back = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let rolled_back_clone = Arc::clone(&rolled_back);
+        let sync_err = ctx
+            .effect_sync("sync-fail", move |scope| {
+                scope.defer(move || {
+                    rolled_back_clone.store(true, Ordering::Release);
+                });
+                Err(FrameError::new(ErrorKind::ActivationFailed, "sync boom"))
+            })
+            .expect_err("sync effect error");
+        assert_eq!(sync_err.kind, ErrorKind::ActivationFailed);
+        assert!(rolled_back.load(Ordering::Acquire));
 
         let mut cx = std::task::Context::from_waker(Waker::noop());
         let mut d = ctx.dispose();

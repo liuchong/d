@@ -1,0 +1,11 @@
+[package]
+name = "ext-cors"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license-file = "../../../LICENSE"
+description = "Layer 3 zero-dependency CORS filter extension for d"
+
+[dependencies]
+frame = { path = "../../frame" }
+http-api = { path = "../../contracts/http-api" }

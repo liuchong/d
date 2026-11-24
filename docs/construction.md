@@ -367,7 +367,7 @@ flowchart LR
 | :--- | :---: | :--- | :--- | :--- | :--- |
 | `P0` | [x] | 已准备 | 补齐 `architecture.md`、`frame.md` 与 `construction.md` | 当前对话授权 | 文档齐备，无第三方名称，未启动代码实现 |
 | `P1` | [x] | 已完成 | 阶段 1：`crates/frame/` 契约实现（Red `C01` → Green `C02–C06` → Refactor/Verify `C07`） | `P0` | `A01`–`A10` 全部实测通过，零外部依赖 |
-| `P2` | [ ] | 待施工 | 阶段 2：Workspace + 契约 + L4 + 自建 HTTP/1.1 + 扩展 + `app-files` + `cli`（Red `C08–C09` → Green `C10–C19` → Refactor/Verify `C20`） | `P1` | `A11`–`A22`、`A29`、`A32` 通过，旧 `src/httpd/` 已移除 |
+| `P2` | [x] | 已完成 | 阶段 2：Workspace + 契约 + L4 + 自建 HTTP/1.1 + 扩展 + `app-files` + `cli`（Red `C08–C09` → Green `C10–C19` → Refactor/Verify `C20`） | `P1` | `A12`–`A22` 与工作区门禁、`acceptance.sh`（36 项）通过，旧 `src/httpd/` 已移除 |
 | `P3` | [ ] | 待施工 | 阶段 3：`doc-render` + `viewer-*` + 极简白色 UI + 示例 + 全量端到端与干净重建（Red `C21–C22` → Green `C23–C29` → Refactor/Verify `C30–C32`） | `P2` | `A01`–`A32` 全部实测通过，CI 门禁与干净重建绿灯，文档更新并签名交付 |
 
 ### 唯一施工清单（`C01`–`C32`，写完一项即勾一项）
@@ -388,19 +388,19 @@ flowchart LR
 
 | 施工 ID | 写完打勾 | 变更 / 需求 | 文件与锚点 | 明确施工动作 | 依赖 | 对应验收 |
 | :--- | :---: | :--- | :--- | :--- | :--- | :--- |
-| `C08` | [ ] | `D03`–`D07` / `Q02`–`Q07` | `Cargo.toml`, `crates/contracts/*` | **[P2-Red]** 更新根 `Cargo.toml` 为 Workspace（`d` + 成员）；创建零依赖契约包骨架，使接口与阶段 2 测试目标可编译对齐 | `C07` | `A11` |
-| `C09` | [ ] | `D08`–`D12`, `D20` / `Q03`–`Q07` | `crates/components/*`, `tests/http.rs` | **[P2-Red]** 按 `T-H01`–`T-H12` 一次性写齐 L4 排空、HTTP/1.1 解析与流式快照路由、流式压缩豁免、CORS 与更新后的 `tests/http.rs` 集成测试（包括目录 `301` 尾斜杠），确认红灯基线 | `C08` | `A12`–`A22` |
-| `C10` | [ ] | `D04`–`D06` / `Q02`–`Q06` | `crates/contracts/{net,http,files}-api/src/*.rs` | **[P2-Green]** 完成 `net-api`、`http-api`（含 `Method`/`StatusCode`/`Headers`/`BodyKind`/`HttpRequest`/`HttpResponse`/`RouteSpec`/`HttpFilter`/`RouterService`）与 `files-api` 完整契约实现 | `C09` | `A11`–`A22` |
-| `C11` | [ ] | `D08` / `Q03` | `crates/components/l4-transport/src/lib.rs` | **[P2-Green]** 实现 `TransportPlugin` 与 `DefaultTransportService`：TCP 监听 Effect、活跃连接台账、停机信号与两阶段优雅排空（短连接等待 + 长连接排空通知与硬超时） | `C10` | `A12` |
-| `C12` | [ ] | `D09` / `Q04` | `crates/components/proto-http/src/{parser,writer}.rs` | **[P2-Green]** 实现底层 HTTP/1.1 请求解析器（请求行/头上限、Chunked、`Content-Length`、Keep-Alive、`400`/`413`/`414`/`431`/`505`）与流式响应写出器（含 `streaming: true` 即时 flush） | `C10` | `A13`, `A14`, `A16` |
-| `C13` | [ ] | `D09` / `Q04` | `crates/components/proto-http/src/{router,lib}.rs` | **[P2-Green]** 实现 `HttpEnginePlugin` 与 `HttpRouter`：控制面通过 `EffectHandle` 注册/撤销路由与过滤器，编译不可变 `RoutingSnapshot` 并原子切换至数据面 `dispatch` | `C11`, `C12` | `A15`, `A16` |
-| `C14` | [ ] | `D10`–`D11` / `Q05` | `crates/components/{ext-compression,ext-cors}/src/lib.rs` | **[P2-Green]** 实现 `CompressionPlugin`（`Accept-Encoding` 协商 + 流式/SSE/206/304/已压缩体自动豁免）与零依赖 `CorsPlugin`（`OPTIONS`/`GET`/`HEAD`） | `C13` | `A17`, `A18` |
-| `C15` | [ ] | `D12` / `Q06`, `Q07` | `crates/components/app-files/src/{mime,percent,httpdate,path,file}.rs` | **[P2-Green]** 纯 `std` 内建 MIME、百分号编解码、IMF-fixdate 解析格式化；迁移并巩固 `resolve_path` 沙箱、目录无尾斜杠 `301` 规范化、`Range`（206/416/忽略）、`ETag`/条件 `304`、`HEAD` 与 RFC 5987 下载 | `C10`, `C13` | `A19`–`A22` |
-| `C16` | [ ] | `D12` / `Q06`, `Q12`, `Q13` | `crates/components/app-files/src/{dir,viewer,lib}.rs` | **[P2-Green]** 实现 `FilesAppPlugin`、`ViewerRegistryService`、白底过渡目录索引与默认基础查看器对接（保证阶段 2 已具备完整文件服务闭环） | `C15` | `A20`, `A22`, `A28` |
-| `C17` | [ ] | `D13` / `Q14` | `crates/entries/cli/src/lib.rs` | **[P2-Green]** 实现 `d-cli` 参数/环境变量解析、地址/根目录规范化与日志初始化，完整兼容原 `-H/-p/-r/-l/--hidden/--cors` 与 `D_*` 环境变量 | `C16` | `A20` |
-| `C18` | [ ] | `D14` / `Q14` | `src/lib.rs`, `src/main.rs` | **[P2-Green]** 改写 `src/lib.rs`（基于 `frame` 装配各层插件并导出兼容入口）与 `src/main.rs`（调用 `d_cli`） | `C14`, `C17` | `A20`, `A32` |
-| `C19` | [ ] | `D03`, `D15` / `Q14` | `Cargo.toml`, `src/httpd/*`, `src/error.rs`, `src/utils.rs` | **[P2-Green]** 删除旧 `src/httpd/`、`src/error.rs`、`src/utils.rs` 及淘汰的外置 Web/编码/序列化依赖，确保无双套实现残留 | `C18` | `A32` |
-| `C20` | [ ] | `D20`, `D22` / `Q02`–`Q07`, `Q14` | `tests/http.rs`, `scripts/acceptance.sh` | **[P2-Refactor & Verify]** 在 `scripts/acceptance.sh` 补充目录 `301` 与流式压缩豁免检查；运行全工作区 `cargo test`、`fmt`、`clippy` 与 `scripts/acceptance.sh` 全部通过后推进 `P3` | `C19` | `A11`–`A22`, `A32` |
+| `C08` | [x] | `D03`–`D07` / `Q02`–`Q07` | `Cargo.toml`, `crates/contracts/*` | **[P2-Red]** 更新根 `Cargo.toml` 为 Workspace（`d` + 成员）；创建零依赖契约包骨架，使接口与阶段 2 测试目标可编译对齐 | `C07` | `A11` |
+| `C09` | [x] | `D08`–`D12`, `D20` / `Q03`–`Q07` | `crates/components/*`, `tests/http.rs` | **[P2-Red]** 按 `T-H01`–`T-H12` 一次性写齐 L4 排空、HTTP/1.1 解析与流式快照路由、流式压缩豁免、CORS 与更新后的 `tests/http.rs` 集成测试（包括目录 `301` 尾斜杠），确认红灯基线 | `C08` | `A12`–`A22` |
+| `C10` | [x] | `D04`–`D06` / `Q02`–`Q06` | `crates/contracts/{net,http,files}-api/src/*.rs` | **[P2-Green]** 完成 `net-api`、`http-api`（含 `Method`/`StatusCode`/`Headers`/`BodyKind`/`HttpRequest`/`HttpResponse`/`RouteSpec`/`HttpFilter`/`RouterService`）与 `files-api` 完整契约实现 | `C09` | `A11`–`A22` |
+| `C11` | [x] | `D08` / `Q03` | `crates/components/l4-transport/src/lib.rs` | **[P2-Green]** 实现 `TransportPlugin` 与 `DefaultTransportService`：TCP 监听 Effect、活跃连接台账、停机信号与两阶段优雅排空（短连接等待 + 长连接排空通知与硬超时） | `C10` | `A12` |
+| `C12` | [x] | `D09` / `Q04` | `crates/components/proto-http/src/{parser,writer}.rs` | **[P2-Green]** 实现底层 HTTP/1.1 请求解析器（请求行/头上限、Chunked、`Content-Length`、Keep-Alive、`400`/`413`/`414`/`431`/`505`）与流式响应写出器（含 `streaming: true` 即时 flush） | `C10` | `A13`, `A14`, `A16` |
+| `C13` | [x] | `D09` / `Q04` | `crates/components/proto-http/src/{router,lib}.rs` | **[P2-Green]** 实现 `HttpEnginePlugin` 与 `HttpRouter`：控制面通过 `EffectHandle` 注册/撤销路由与过滤器，编译不可变 `RoutingSnapshot` 并原子切换至数据面 `dispatch` | `C11`, `C12` | `A15`, `A16` |
+| `C14` | [x] | `D10`–`D11` / `Q05` | `crates/components/{ext-compression,ext-cors}/src/lib.rs` | **[P2-Green]** 实现 `CompressionPlugin`（`Accept-Encoding` 协商 + 流式/SSE/206/304/已压缩体自动豁免）与零依赖 `CorsPlugin`（`OPTIONS`/`GET`/`HEAD`） | `C13` | `A17`, `A18` |
+| `C15` | [x] | `D12` / `Q06`, `Q07` | `crates/components/app-files/src/{mime,percent,httpdate,path,file}.rs` | **[P2-Green]** 纯 `std` 内建 MIME、百分号编解码、IMF-fixdate 解析格式化；迁移并巩固 `resolve_path` 沙箱、目录无尾斜杠 `301` 规范化、`Range`（206/416/忽略）、`ETag`/条件 `304`、`HEAD` 与 RFC 5987 下载 | `C10`, `C13` | `A19`–`A22` |
+| `C16` | [x] | `D12` / `Q06`, `Q12`, `Q13` | `crates/components/app-files/src/{dir,viewer,lib}.rs` | **[P2-Green]** 实现 `FilesAppPlugin`、`ViewerRegistryService`、白底过渡目录索引与默认基础查看器对接（保证阶段 2 已具备完整文件服务闭环） | `C15` | `A20`, `A22`, `A28` |
+| `C17` | [x] | `D13` / `Q14` | `crates/entries/cli/src/lib.rs` | **[P2-Green]** 实现 `d-cli` 参数/环境变量解析、地址/根目录规范化与日志初始化，完整兼容原 `-H/-p/-r/-l/--hidden/--cors` 与 `D_*` 环境变量 | `C16` | `A20` |
+| `C18` | [x] | `D14` / `Q14` | `src/lib.rs`, `src/main.rs` | **[P2-Green]** 改写 `src/lib.rs`（基于 `frame` 装配各层插件并导出兼容入口）与 `src/main.rs`（调用 `d_cli`） | `C14`, `C17` | `A20`, `A32` |
+| `C19` | [x] | `D03`, `D15` / `Q14` | `Cargo.toml`, `src/httpd/*`, `src/error.rs`, `src/utils.rs` | **[P2-Green]** 删除旧 `src/httpd/`、`src/error.rs`、`src/utils.rs` 及淘汰的外置 Web/编码/序列化依赖，确保无双套实现残留 | `C18` | `A32` |
+| `C20` | [x] | `D20`, `D22` / `Q02`–`Q07`, `Q14` | `tests/http.rs`, `scripts/acceptance.sh` | **[P2-Refactor & Verify]** 在 `scripts/acceptance.sh` 补充目录 `301` 与流式压缩豁免检查；运行全工作区 `cargo test`、`fmt`、`clippy` 与 `scripts/acceptance.sh` 全部通过后推进 `P3` | `C19` | `A11`–`A22`, `A32` |
 
 #### 阶段 3：`doc-render`、展示层插件、极简白底 UI、示例完善与全量验收
 
@@ -583,18 +583,18 @@ flowchart LR
 | `A08` | [x] | `Q01` / `C05,C07` / `T-F08` | `frame` 编译通过 | `cargo test -p frame -- --exact f08_config_validation_and_update_veto` | 校验不可绕过、否决保留原有效配置、各插件更新钩子互相隔离 | 已实测：`f08_config_validation_and_update_veto` 通过 |
 | `A09` | [x] | `Q01` / `C06,C07` / `T-F09` | `frame` 编译通过 | `cargo test -p frame -- --exact f09_loader_preflight_patch_and_nested` | 预检失败零变动、补丁连续插引准确、仅配置改走热更、嵌套树逆序卸载 | 已实测：`f09_loader_preflight_patch_and_nested` 与 `loader::tests`（3 项）通过 |
 | `A10` | [x] | `Q01` / `C02,C07` / `T-F10` | `frame` 编译通过 | `cargo test -p frame -- --exact f10_inspect_settle_root_and_dispose` | `inspect()` 脱敏截断 512 字节、`Pending` 下 `settle()` 不阻塞、根可重置与终态关停 | 已实测：`f10_inspect_settle_root_and_dispose` 与 `inspect::tests` 通过 |
-| `A11` | [ ] | `Q02` / `C08,C10,C20` / `T-H01` | 阶段 2 包构建完成 | 核对 `Cargo.toml` 依赖清单并执行 `cargo tree -p frame -p net-api -p http-api -p files-api -p render-api -p doc-render -p ext-cors` | 上述核心与纯内建包外部第三方依赖数为 0，组件间无直接实现耦合 | 待施工验收 |
-| `A12` | [ ] | `Q03` / `C11,C20` / `T-H02` | `l4-transport` 完成 | `cargo test -p l4-transport` | 停接新连、短连正常完成后退出、长连收到 `DrainSignal` 收尾或超时回收 | 待施工验收 |
-| `A13` | [ ] | `Q04` / `C12,C20` / `T-H03` | `proto-http` 完成 | `cargo test -p proto-http -- parser` | Keep-Alive、Chunked、`Content-Length` 与 `400`/`413`/`414`/`431`/`505` 防御全准确 | 待施工验收 |
-| `A14` | [ ] | `Q04` / `C12,C20` / `T-H04` | `proto-http` 完成 | `cargo test -p proto-http -- streaming` | `streaming: true` 响应首块在流关闭前即时到达对端，无整包缓冲 | 待施工验收 |
-| `A15` | [ ] | `Q04` / `C13,C20` / `T-H05` | `proto-http` 完成 | `cargo test -p proto-http -- router` | 路由/过滤器由 `EffectHandle` 控制注册撤销，并发 `dispatch` 无锁撕裂 | 待施工验收 |
-| `A16` | [ ] | `Q04` / `C12,C13,C20` / `T-H03–H05` | `proto-http` 完成 | `cargo clippy -p proto-http --all-targets -- -D warnings` | 自建 HTTP 引擎零编译/Clippy 警告 | 待施工验收 |
-| `A17` | [ ] | `Q05` / `C14,C20` / `T-H06` | `ext-compression` 完成 | `cargo test -p ext-compression` | 可压缩文本正常协商压缩；SSE/`streaming`/206/304/图片压缩全自动豁免 | 待施工验收 |
-| `A18` | [ ] | `Q05` / `C14,C20` / `T-H07` | `ext-cors` + `tests/http.rs` | `cargo test --test http cors` | 默认无 `Access-Control-Allow-Origin`，启用后 `GET`/`HEAD`/`OPTIONS` 准确放行 | 待施工验收 |
-| `A19` | [ ] | `Q06,Q07` / `C15,C20` / `T-H08` | `app-files` + `tests/http.rs` | `cargo test --test http traversal symlink favicon trailing_slash` | 遍历/越界软链/`/favicon.ico` 返回 `404`；无尾斜杠目录 `301` 补 `/` 并保留 query | 待施工验收 |
-| `A20` | [ ] | `Q06,Q14` / `C15–C18,C20` / `T-H09,H11` | `tests/http.rs` + CLI 编译 | `cargo test --test http` 与 `scripts/acceptance.sh`（Phase 0–1） | Range(206/416)、ETag/Last-Modified/304、HEAD、RFC 5987、CLI/ENV 与 SIGTERM 全通过 | 待施工验收 |
-| `A21` | [ ] | `Q06` / `C16,C20` / `T-H10` | `app-files` 完成 | `cargo test --test http index listing hidden sort` | `index.html` 托管、`?listing=true` 切回、排序与 `--hidden` 权限开关全部通过 | 待施工验收 |
-| `A22` | [ ] | `Q06` / `C16,C20` / `T-H08–H10` | `app-files` 完成 | `cargo test -p app-files` | 内建 MIME、百分号编解码与 IMF-fixdate 单元测试全部通过 | 待施工验收 |
+| `A11` | [ ] | `Q02` / `C08,C10,C20` / `T-H01` | 阶段 2 包构建完成 | 核对 `Cargo.toml` 依赖清单并执行 `cargo tree -p frame -p net-api -p http-api -p files-api -p render-api -p doc-render -p ext-cors` | 上述核心与纯内建包外部第三方依赖数为 0，组件间无直接实现耦合 | 阶段 2 核验通过：`frame`/`contracts/*`/`ext-cors`/`d-cli` 均零外部依赖；待 `P3` 补齐 `doc-render` 后完整勾 `[x]` |
+| `A12` | [x] | `Q03` / `C11,C20` / `T-H02` | `l4-transport` 完成 | `cargo test -p l4-transport` | 停接新连、短连正常完成后退出、长连收到 `DrainSignal` 收尾或超时回收 | 已实测：`l4-transport` 2 项排空测试全通过（0.08s） |
+| `A13` | [x] | `Q04` / `C12,C20` / `T-H03` | `proto-http` 完成 | `cargo test -p proto-http -- parser` | Keep-Alive、Chunked、`Content-Length` 与 `400`/`413`/`414`/`431`/`505` 防御全准确 | 已实测：`parser_keep_alive_chunked_and_malformed_defense` 通过 |
+| `A14` | [x] | `Q04` / `C12,C20` / `T-H04` | `proto-http` 完成 | `cargo test -p proto-http -- streaming` | `streaming: true` 响应首块在流关闭前即时到达对端，无整包缓冲 | 已实测：`streaming_response_flushes_chunks_before_close` 通过 |
+| `A15` | [x] | `Q04` / `C13,C20` / `T-H05` | `proto-http` 完成 | `cargo test -p proto-http -- router` | 路由/过滤器由 `EffectHandle` 控制注册撤销，并发 `dispatch` 无锁撕裂 | 已实测：`router_effect_lifecycle_and_snapshot_isolation` 通过 |
+| `A16` | [x] | `Q04` / `C12,C13,C20` / `T-H03–H05` | `proto-http` 完成 | `cargo clippy -p proto-http --all-targets -- -D warnings` | 自建 HTTP 引擎零编译/Clippy 警告 | 已实测：工作区全量 `clippy --all-targets -- -D warnings` 零警告通过 |
+| `A17` | [x] | `Q05` / `C14,C20` / `T-H06` | `ext-compression` 完成 | `cargo test -p ext-compression` | 可压缩文本正常协商压缩；SSE/`streaming`/206/304/图片压缩全自动豁免 | 已实测：`negotiates_compression_and_exempts_streaming_range_media` 及 `tests/http` 通过 |
+| `A18` | [x] | `Q05` / `C14,C20` / `T-H07` | `ext-cors` + `tests/http.rs` | `cargo test --test http cors` | 默认无 `Access-Control-Allow-Origin`，启用后 `GET`/`HEAD`/`OPTIONS` 准确放行 | 已实测：`ext-cors` 单测 + `tests/http` `cors_*` 与 `scripts/acceptance.sh` OPTIONS/ENV 检查通过 |
+| `A19` | [x] | `Q06,Q07` / `C15,C20` / `T-H08` | `app-files` + `tests/http.rs` | `cargo test --test http traversal symlink favicon trailing_slash` | 遍历/越界软链/`/favicon.ico` 返回 `404`；无尾斜杠目录 `301` 补 `/` 并保留 query | 已实测：`tests/http` 与 `app-files`、`acceptance.sh` 301 检查全通过 |
+| `A20` | [x] | `Q06,Q14` / `C15–C18,C20` / `T-H09,H11` | `tests/http.rs` + CLI 编译 | `cargo test --test http` 与 `scripts/acceptance.sh`（Phase 0–1） | Range(206/416)、ETag/Last-Modified/304、HEAD、RFC 5987、CLI/ENV 与 SIGTERM 全通过 | 已实测：`tests/http` 36 项、`d-cli` 2 项、`acceptance.sh` 36 项全通过 |
+| `A21` | [x] | `Q06` / `C16,C20` / `T-H10` | `app-files` 完成 | `cargo test --test http index listing hidden sort` | `index.html` 托管、`?listing=true` 切回、排序与 `--hidden` 权限开关全部通过 | 已实测：`app-files` 与 `tests/http` 相关测试及 `acceptance.sh` 全通过 |
+| `A22` | [x] | `Q06` / `C16,C20` / `T-H08–H10` | `app-files` 完成 | `cargo test -p app-files` | 内建 MIME、百分号编解码与 IMF-fixdate 单元测试全部通过 | 已实测：`app-files` 7 unit + 3 integration 全部通过 |
 | `A23` | [ ] | `Q09` / `C23,C25,C30` / `T-M01` | `doc-render` + `viewer-markdown` | `cargo test -p doc-render -- markdown` | CommonMark + GFM（对齐表/任务列表/删除线/脚注/自动链接）及中英文去重锚点通过 | 待施工验收 |
 | `A24` | [ ] | `Q10` / `C23,C25,C29,C30` / `T-M02,M03` | `doc-render` + `examples/docs/` | `cargo test --test http markdown_html markdown_images` + `scripts/acceptance.sh` | 原生块级/行内 HTML（`<details>`/`<figure>`/`<img>`/`<table>`/`<kbd>`）未转义透传；相对图片路径 `200` 正常加载 | 待施工验收 |
 | `A25` | [ ] | `Q08,Q13` / `C24,C25,C30` / `T-M04,M06` | `viewer-markdown` | `cargo test --test http viewer_modes no_external_cdn` | `?view=raw`/`preview`/`download` 准确，无外网 CDN，禁用 JS 链接切换可用 | 待施工验收 |
@@ -616,9 +616,9 @@ flowchart LR
 - **里程碑与完成度**：
   - `P0` 设计与施工准备：**已完成 100%**（`architecture.md`、`frame.md`、`construction.md` 已写入；不计入实现/验收率）。
   - `P1`（`C01`–`C07` / `A01`–`A10`）：代码实现 `7 / 7`（100%），实测验收 `10 / 10`（100%）——零外部依赖，7 个单元测试 + 10 个 BDD 契约测试全部绿灯。
-  - `P2`（`C08`–`C20` / `A11`–`A22`）：代码实现 `0 / 13`（0%），实测验收 `0 / 12`（0%）。
+  - `P2`（`C08`–`C20` / `A11`–`A22`）：代码实现 `13 / 13`（100%），阶段 2 实测验收 `A12`–`A22` 通过（`A11` 待 `P3` 补齐 `doc-render` 后终验勾出）。
   - `P3`（`C21`–`C32` / `A23`–`A32`）：代码实现 `0 / 12`（0%），实测验收 `0 / 10`（0%）。
-- **卡点与风险**：无阻塞卡点；需在 `P2` 严格控制 `proto-http` 字节流状态机边界测试与 `P3` 确保嵌入式 HTML 不被多余转义或外网链接污染。
+- **卡点与风险**：无阻塞卡点；进入 `P3` 重点确保纯 Rust `doc-render` 嵌入式 HTML 原样透传与全站极简白色 UI 无外链/无黑底/无 emoji。
 
 ### 交付与善后协议
 
@@ -632,10 +632,11 @@ flowchart LR
 
 - **唯一施工入口**：`docs/construction.md`（本文件）
 - **配套设计规范**：`docs/architecture.md`、`docs/frame.md`
-- **当前待执行起点**：`P2 / C08`（Workspace 拆分与零依赖契约包骨架，进入阶段 2 BDD/TDD Red 基线）
+- **当前待执行起点**：`P3 / C21`（创建零依赖 `doc-render` 与 `T-M01`–`T-M08` TDD Red 契约测试）
 - **变更记录**：
   - `2026-11-24`：创建唯一施工手册与 `/goal` 驱动文案，完成前置资料核对（基线 `master @ eb012ac`）。
   - `2026-11-24`：完成 `P1`（`C01`–`C07`），`crates/frame` 零外部依赖通过 `A01`–`A10`、工作区测试、`cargo fmt --check` 与 `clippy --all-targets -- -D warnings`。
+  - `2026-11-24`：完成 `P2`（`C08`–`C20`），重构为分层工作区、移除旧 `src/httpd/` 与重型外置依赖、通过全工作区测试、`clippy`、`cargo tree` 零外依赖核查与 `scripts/acceptance.sh`（36 项）。
 
 ---
 

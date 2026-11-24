@@ -1,147 +1,51 @@
-use clap::Parser;
-use std::net::{SocketAddr, ToSocketAddrs};
+//! Binary entrypoint for `d`.
+
+use d_cli::ParseOutcome;
 use std::process::exit;
-use tracing::{error, info};
-
-const DEFAULT_HOST: &str = "localhost";
-const DEFAULT_PORT: u16 = 8080;
-
-#[derive(Parser, Debug)]
-#[command(
-    name = "d",
-    version,
-    about = "D is a simple standalone httpd",
-    author = "Liu Chong",
-    long_about = None
-)]
-struct Cli {
-    /// Set listening host
-    #[arg(
-        short = 'H',
-        long,
-        value_name = "HOST",
-        default_value = DEFAULT_HOST,
-        env = "D_HOST"
-    )]
-    host: String,
-
-    /// Set listening port
-    #[arg(
-        short,
-        long,
-        value_name = "PORT",
-        default_value_t = DEFAULT_PORT,
-        env = "D_PORT"
-    )]
-    port: u16,
-
-    /// Set root directory to serve
-    #[arg(
-        short,
-        long,
-        value_name = "PATH",
-        default_value = ".",
-        env = "D_ROOT"
-    )]
-    root: String,
-
-    /// Set log level (trace, debug, info, warn, error)
-    #[arg(
-        short,
-        long,
-        value_name = "LEVEL",
-        default_value = "info",
-        env = "RUST_LOG"
-    )]
-    log: String,
-
-    /// Show hidden files (allows users to toggle visibility)
-    #[arg(long, env = "D_SHOW_HIDDEN")]
-    hidden: bool,
-
-    /// Enable permissive CORS (allow any origin for GET/HEAD)
-    #[arg(long, env = "D_CORS")]
-    cors: bool,
-}
 
 #[tokio::main]
 async fn main() {
-    let cli = Cli::parse();
-
-    // Initialize tracing subscriber
-    init_tracing(&cli.log);
-
-    // Parse socket address
-    let addr: SocketAddr = match format!("{}:{}", cli.host, cli.port)
-        .to_socket_addrs()
-    {
-        Ok(mut addrs) => match addrs.next() {
-            Some(a) => a,
-            None => {
-                error!("Failed to resolve address '{}:{}'", cli.host, cli.port);
-                exit(1);
-            }
-        },
-        Err(e) => {
-            error!(
-                "Failed to parse address '{}:{}': {}",
-                cli.host, cli.port, e
-            );
-            exit(1);
+    let cfg = match d_cli::parse_from_env() {
+        ParseOutcome::Run(cfg) => cfg,
+        ParseOutcome::ExitOk(msg) => {
+            print!("{msg}");
+            return;
+        }
+        ParseOutcome::ExitErr(err) => {
+            eprintln!("Error: {err}");
+            exit(2);
         }
     };
 
-    // Resolve root path
-    let root = match std::fs::canonicalize(&cli.root) {
-        Ok(p) => p.to_string_lossy().to_string(),
-        Err(e) => {
-            error!("Invalid root path '{}': {}", cli.root, e);
-            exit(1);
-        }
-    };
+    d_cli::init_log_level(cfg.log_level);
 
-    info!("D HTTP Server starting...");
-    info!("Configuration:");
-    info!("  Host: {}", cli.host);
-    info!("  Port: {}", cli.port);
-    info!("  Root: {}", root);
-    info!("  Log:  {}", cli.log);
-    info!(
+    let root_str = cfg.root.to_string_lossy().to_string();
+    d_cli::log_info("D HTTP Server starting...");
+    d_cli::log_info("Configuration:");
+    d_cli::log_info(&format!("  Host: {}", cfg.host));
+    d_cli::log_info(&format!("  Port: {}", cfg.port));
+    d_cli::log_info(&format!("  Root: {root_str}"));
+    d_cli::log_info(&format!("  Log:  {}", cfg.log_level.as_str()));
+    d_cli::log_info(&format!(
         "  Hidden files: {}",
-        if cli.hidden { "allowed" } else { "disabled" }
-    );
-    info!(
+        if cfg.allow_hidden {
+            "allowed"
+        } else {
+            "disabled"
+        }
+    ));
+    d_cli::log_info(&format!(
         "  CORS: {}",
-        if cli.cors { "permissive" } else { "disabled" }
-    );
+        if cfg.cors { "permissive" } else { "disabled" }
+    ));
 
     d::start_with_options(
-        &addr,
-        &root,
+        &cfg.addr,
+        &root_str,
         d::Options {
-            allow_hidden: cli.hidden,
-            cors: cli.cors,
+            allow_hidden: cfg.allow_hidden,
+            cors: cfg.cors,
         },
     )
     .await;
-}
-
-fn init_tracing(level: &str) {
-    use tracing_subscriber::EnvFilter;
-    use tracing_subscriber::layer::SubscriberExt;
-    use tracing_subscriber::util::SubscriberInitExt;
-
-    let filter = EnvFilter::try_new(format!("d={}", level))
-        .or_else(|_| EnvFilter::try_new(level))
-        .unwrap_or_else(|_| EnvFilter::new("info"));
-
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::fmt::layer()
-                .with_target(false)
-                .with_timer(tracing_subscriber::fmt::time::time())
-                .compact(),
-        )
-        .with(filter)
-        .init();
 }

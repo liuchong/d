@@ -1,0 +1,18 @@
+[package]
+name = "app-files"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license-file = "../../../LICENSE"
+description = "Layer 4 file server, sandbox, 301 canonicalization, and directory index for d"
+
+[dependencies]
+frame = { path = "../../frame" }
+http-api = { path = "../../contracts/http-api" }
+files-api = { path = "../../contracts/files-api" }
+tokio = { version = "1", features = ["fs", "io-util"] }
+
+[dev-dependencies]
+proto-http = { path = "../proto-http" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tempfile = "3"

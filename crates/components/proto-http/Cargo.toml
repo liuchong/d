@@ -1,0 +1,17 @@
+[package]
+name = "proto-http"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license-file = "../../../LICENSE"
+description = "Layer 2 self-built HTTP/1.1 protocol engine and snapshot router for d"
+
+[dependencies]
+frame = { path = "../../frame" }
+net-api = { path = "../../contracts/net-api" }
+http-api = { path = "../../contracts/http-api" }
+tokio = { version = "1", features = ["sync", "time"] }
+
+[dev-dependencies]
+l4-transport = { path = "../l4-transport" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util"] }

@@ -1,0 +1,12 @@
+[package]
+name = "l4-transport"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license-file = "../../../LICENSE"
+description = "Layer 1 TCP transport listener and two-phase graceful drain for d"
+
+[dependencies]
+frame = { path = "../../frame" }
+net-api = { path = "../../contracts/net-api" }
+tokio = { version = "1", features = ["net", "io-util", "sync", "time", "rt", "macros"] }

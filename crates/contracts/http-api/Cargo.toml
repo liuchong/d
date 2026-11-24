@@ -1,0 +1,11 @@
+[package]
+name = "http-api"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license-file = "../../../LICENSE"
+description = "Layer 2 HTTP types, streaming body, routing, and filter contracts for d"
+
+[dependencies]
+frame = { path = "../../frame" }
+net-api = { path = "../net-api" }

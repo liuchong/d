@@ -150,6 +150,13 @@ echo "$listing" | grep -q 'data.bin'  && ok "Listing shows files"      || bad "L
 echo "$listing" | grep -q 'code.rs'   && ok "Listing shows code files" || bad "Listing shows code files"
 echo "$listing" | grep -qF '.hidden'  && bad "Hidden files excluded"   || ok "Hidden files excluded"
 
+echo "==> Phase 0: directory trailing-slash 301"
+check "Directory without trailing slash returns 301" 301 "$(http_code "$HOST/site")"
+loc_plain=$(curl -s -D - -o /dev/null "$HOST/site" | grep -i '^location:' | awk '{print $2}' | tr -d '\r')
+check "Directory 301 Location is /site/" "/site/" "$loc_plain"
+loc_query=$(curl -s -D - -o /dev/null "$HOST/site?listing=true" | grep -i '^location:' | awk '{print $2}' | tr -d '\r')
+check "Directory 301 preserves query string" "/site/?listing=true" "$loc_query"
+
 echo "==> Phase 0: index.html serving"
 site=$(curl -s "$HOST/site/")
 echo "$site" | grep -q 'hello site' && ok "Directory serves index.html" || bad "Directory serves index.html"
@@ -201,10 +208,43 @@ done
 acao_star=$(curl -s -D - -o /dev/null -H 'Origin: https://example.com' "$HOST/data.bin" | grep -ci '^access-control-allow-origin: \*' || true)
 check "CORS enabled sends Access-Control-Allow-Origin: *" 1 "$acao_star"
 
+opt_code=$(curl -s -X OPTIONS -H 'Origin: https://example.com' -H 'Access-Control-Request-Method: GET' -o /dev/null -w '%{http_code}' "$HOST/data.bin")
+check "CORS OPTIONS preflight returns 204" 204 "$opt_code"
+opt_methods=$(curl -s -D - -o /dev/null -X OPTIONS -H 'Origin: https://example.com' "$HOST/data.bin" | grep -ci '^access-control-allow-methods:.*GET' || true)
+check "CORS OPTIONS advertises Access-Control-Allow-Methods" 1 "$opt_methods"
+
 listing=$(curl -s "$HOST/")
 echo "$listing" | grep -qF '.hidden' && ok "Hidden files shown with --hidden" || bad "Hidden files shown with --hidden"
 
 kill -TERM "$SERVER_PID" 2>/dev/null || true
+wait "$SERVER_PID" 2>/dev/null || true
+SERVER_PID=""
+
+# ---------------------------------------------------------------------------
+# Phase 2: ENV variable compatibility (D_PORT, D_CORS, D_ROOT)
+# ---------------------------------------------------------------------------
+
+ENV_PORT=$((PORT + 1))
+ENV_HOST="http://127.0.0.1:$ENV_PORT"
+echo "==> Phase 2: start with D_PORT=$ENV_PORT D_CORS=true"
+D_PORT="$ENV_PORT" D_CORS=true D_ROOT="$FIXTURE/root" "$D_BIN" > "$FIXTURE/env.log" 2>&1 &
+SERVER_PID=$!
+
+for _ in $(seq 1 50); do
+    curl -s -o /dev/null "$ENV_HOST/" && break
+    sleep 0.1
+done
+
+env_cors=$(curl -s -D - -o /dev/null -H 'Origin: https://example.com' "$ENV_HOST/data.bin" | grep -ci '^access-control-allow-origin: \*' || true)
+check "ENV D_PORT + D_CORS enables CORS" 1 "$env_cors"
+
+kill -TERM "$SERVER_PID"
+for _ in $(seq 1 50); do
+    kill -0 "$SERVER_PID" 2>/dev/null || break
+    sleep 0.1
+done
+grep -q 'Received SIGTERM' "$FIXTURE/env.log" \
+    && ok "ENV instance SIGTERM graceful shutdown" || bad "ENV instance SIGTERM graceful shutdown"
 wait "$SERVER_PID" 2>/dev/null || true
 SERVER_PID=""
 

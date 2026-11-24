@@ -1,0 +1,10 @@
+[package]
+name = "render-api"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license-file = "../../../LICENSE"
+description = "Layer 3/4 Markdown rendering and syntax highlighting contracts for d"
+
+[dependencies]
+frame = { path = "../../frame" }

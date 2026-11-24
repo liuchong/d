@@ -1,0 +1,10 @@
+[package]
+name = "net-api"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license-file = "../../../LICENSE"
+description = "Layer 1 transport and connection lifecycle contracts for d"
+
+[dependencies]
+frame = { path = "../../frame" }

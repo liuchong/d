@@ -444,8 +444,7 @@ fn f01_service_ownership_and_readiness() {
                 ready: Arc::new(AtomicBool::new(true)),
             }))
             .await
-            .err()
-            .expect("duplicate provide should fail");
+            .expect_err("duplicate provide should fail");
         assert_eq!(dup_err.kind, ErrorKind::DuplicateService);
 
         // Non-owner update fails.
@@ -801,8 +800,7 @@ fn f04_effect_race_rollback_and_join() {
                 }
             })
             .await
-            .err()
-            .expect("setup must fail");
+            .expect_err("setup must fail");
         assert_eq!(err.kind, ErrorKind::ActivationFailed);
         assert_eq!(*rb_log.lock().expect("rb"), vec!["c1", "r1"]);
 

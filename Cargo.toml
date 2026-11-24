@@ -1,6 +1,32 @@
 [workspace]
-members = [".", "crates/frame"]
-default-members = [".", "crates/frame"]
+members = [
+    ".",
+    "crates/frame",
+    "crates/contracts/net-api",
+    "crates/contracts/http-api",
+    "crates/contracts/files-api",
+    "crates/contracts/render-api",
+    "crates/components/l4-transport",
+    "crates/components/proto-http",
+    "crates/components/ext-compression",
+    "crates/components/ext-cors",
+    "crates/components/app-files",
+    "crates/entries/cli",
+]
+default-members = [
+    ".",
+    "crates/frame",
+    "crates/contracts/net-api",
+    "crates/contracts/http-api",
+    "crates/contracts/files-api",
+    "crates/contracts/render-api",
+    "crates/components/l4-transport",
+    "crates/components/proto-http",
+    "crates/components/ext-compression",
+    "crates/components/ext-cors",
+    "crates/components/app-files",
+    "crates/entries/cli",
+]
 
 [package]
 name = "d"
@@ -12,40 +38,24 @@ license-file = "LICENSE"
 repository = "https://github.com/liuchong/d"
 homepage = "https://github.com/liuchong/d"
 documentation = "https://docs.rs/d"
-description = "D is a simple standalone httpd."
+description = "D is a modular extensible network daemon with built-in HTTP and file services."
 keywords = ["d", "httpd", "http-server", "http", "server"]
 
 [dependencies]
-# Async runtime
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "signal", "net"] }
-tokio-util = { version = "0.7", features = ["io"] }
-
-# Web framework
-axum = "0.8"
-tower-http = { version = "0.6", features = ["compression-gzip", "compression-deflate", "compression-br", "cors"] }
-
-# CLI
-clap = { version = "4", features = ["derive", "env"] }
-
-# Logging & Tracing
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
-
-# Error handling
-thiserror = "2"
-
-# HTTP types
-http = "1"
-httpdate = "1"
-
-# Utilities
-mime_guess = "2"
-percent-encoding = "2"
-time = { version = "0.3", features = ["formatting", "macros"] }
-serde = { version = "1", features = ["derive"] }
+frame = { path = "crates/frame" }
+net-api = { path = "crates/contracts/net-api" }
+http-api = { path = "crates/contracts/http-api" }
+files-api = { path = "crates/contracts/files-api" }
+render-api = { path = "crates/contracts/render-api" }
+l4-transport = { path = "crates/components/l4-transport" }
+proto-http = { path = "crates/components/proto-http" }
+ext-compression = { path = "crates/components/ext-compression" }
+ext-cors = { path = "crates/components/ext-cors" }
+app-files = { path = "crates/components/app-files" }
+d-cli = { path = "crates/entries/cli" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net"] }
 
 [dev-dependencies]
-tower = { version = "0.5", features = ["util"] }
 tempfile = "3"
 
 [profile.release]

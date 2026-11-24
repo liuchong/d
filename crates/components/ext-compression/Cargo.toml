@@ -1,0 +1,17 @@
+[package]
+name = "ext-compression"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license-file = "../../../LICENSE"
+description = "Layer 3 streaming-aware response compression extension for d"
+
+[dependencies]
+frame = { path = "../../frame" }
+http-api = { path = "../../contracts/http-api" }
+flate2 = "1"
+brotli = "8"
+
+[dev-dependencies]
+proto-http = { path = "../proto-http" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
