@@ -1,3 +1,7 @@
+[workspace]
+members = [".", "crates/frame"]
+default-members = [".", "crates/frame"]
+
 [package]
 name = "d"
 version = "0.1.0"
