@@ -89,6 +89,7 @@ version = "0.1.0"
 dependencies = [
  "app-files",
  "d-cli",
+ "doc-render",
  "ext-compression",
  "ext-cors",
  "files-api",
@@ -100,11 +101,22 @@ dependencies = [
  "render-api",
  "tempfile",
  "tokio",
+ "viewer-code",
+ "viewer-markdown",
+ "viewer-media",
 ]
 
 [[package]]
 name = "d-cli"
 version = "0.1.0"
+
+[[package]]
+name = "doc-render"
+version = "0.1.0"
+dependencies = [
+ "frame",
+ "render-api",
+]
 
 [[package]]
 name = "errno"
@@ -381,6 +393,35 @@ name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
+
+[[package]]
+name = "viewer-code"
+version = "0.1.0"
+dependencies = [
+ "files-api",
+ "frame",
+ "http-api",
+ "render-api",
+]
+
+[[package]]
+name = "viewer-markdown"
+version = "0.1.0"
+dependencies = [
+ "files-api",
+ "frame",
+ "http-api",
+ "render-api",
+]
+
+[[package]]
+name = "viewer-media"
+version = "0.1.0"
+dependencies = [
+ "files-api",
+ "frame",
+ "http-api",
+]
 
 [[package]]
 name = "wasi"

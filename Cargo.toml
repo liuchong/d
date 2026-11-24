@@ -11,6 +11,10 @@ members = [
     "crates/components/ext-compression",
     "crates/components/ext-cors",
     "crates/components/app-files",
+    "crates/components/doc-render",
+    "crates/components/viewer-markdown",
+    "crates/components/viewer-code",
+    "crates/components/viewer-media",
     "crates/entries/cli",
 ]
 default-members = [
@@ -25,6 +29,10 @@ default-members = [
     "crates/components/ext-compression",
     "crates/components/ext-cors",
     "crates/components/app-files",
+    "crates/components/doc-render",
+    "crates/components/viewer-markdown",
+    "crates/components/viewer-code",
+    "crates/components/viewer-media",
     "crates/entries/cli",
 ]
 
@@ -52,6 +60,10 @@ proto-http = { path = "crates/components/proto-http" }
 ext-compression = { path = "crates/components/ext-compression" }
 ext-cors = { path = "crates/components/ext-cors" }
 app-files = { path = "crates/components/app-files" }
+doc-render = { path = "crates/components/doc-render" }
+viewer-markdown = { path = "crates/components/viewer-markdown" }
+viewer-code = { path = "crates/components/viewer-code" }
+viewer-media = { path = "crates/components/viewer-media" }
 d-cli = { path = "crates/entries/cli" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net"] }
 

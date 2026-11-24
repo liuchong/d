@@ -10,10 +10,10 @@ cargo build          # 生成 target/debug/d
 
 | 目录 | 演示内容 | 启动命令 |
 |------|----------|----------|
-| `demo/` | 综合演示：目录列表、排序、各类文件预览 | `d -r examples/demo` |
-| `code/` | 多语言语法高亮（Rust/Python/JS/Go/Shell/SQL） | `d -r examples/code` |
-| `docs/` | 文档预览（Markdown/Org/TXT/CSV） | `d -r examples/docs` |
-| `media/` | 图片预览（SVG） | `d -r examples/media` |
+| `demo/` | 综合演示：目录列表、排序、各类白底文件查看器 | `d -r examples/demo` |
+| `code/` | 服务端词法高亮（Rust/Python/JS/Go/Shell/SQL） | `d -r examples/code` |
+| `docs/` | Markdown（GFM/嵌入式 HTML/相对图片）、Org/TXT/CSV | `d -r examples/docs` |
+| `media/` | 媒体直链原流与 `?view=viewer` 白底查看页（SVG/音视频） | `d -r examples/media` |
 | `static-site/` | 静态网站（HTML+CSS+JS） | `d -r examples/static-site` |
 
 启动后用浏览器打开 <http://localhost:8080>。
@@ -26,36 +26,36 @@ cargo run -- -r examples/demo
 
 看点：
 
-- 目录列表：文件类型图标、大小、修改时间
+- 极简白底目录列表：文件类别微标、大小、修改时间
 - 排序：点击 Name / Size / Time / Type
-- `README.md` 渲染为排版页面；`hello.rs` 带语法高亮
-- `subdir/` 演示面包屑导航与 `..` 返回
+- `README.md` 服务端渲染为白底阅读页；`hello.rs` 服务端语法高亮
+- `subdir/` 演示无尾斜杠自动 `301` 规范化与面包屑导航
 
-## 示例 2：语法高亮 `code/`
+## 示例 2：服务端语法高亮 `code/`
 
 ```bash
 cargo run -- -r examples/code
 ```
 
-依次点击 `app.py`、`server.js`、`main.go`、`build.sh`、`query.sql`，
-观察不同语言的高亮效果。
+依次访问 `app.py`、`main.go`、`build.sh`、`query.sql` 或 `server.js?view=viewer`，
+观察零外部脚本的纯 Rust 服务端浅色高亮效果（裸路径 `/server.js` 保持原 JS 流以兼容静态网站）。
 
-## 示例 3：文档预览 `docs/`
+## 示例 3：文档、嵌入式 HTML 与相对图片 `docs/`
 
 ```bash
 cargo run -- -r examples/docs
 ```
 
-`guide.md` 是完整的使用指南（也是 Markdown 渲染示例）；
-`inventory.csv`、`release-notes.txt` 演示纯文本等宽预览。
+`guide.md` 演示标准 GFM 表格、复选框、脚注、中英文标题锚点、原生嵌入式 `<details>`/`<figure>`/`<table>` 以及相对图片 `./diagram.svg`；
+`inventory.csv`、`release-notes.txt` 演示白底等宽预览。
 
-## 示例 4：图片预览 `media/`
+## 示例 4：媒体直链与白底查看器 `media/`
 
 ```bash
 cargo run -- -r examples/media
 ```
 
-点击 `logo.svg` / `icon.svg` 直接查看图片。
+在目录页点击图片、音频或视频将通过 `?view=viewer` 打开白底媒体查看页；直接请求 `/logo.svg` 或 `/icon.svg` 裸路径永远返回原始二进制流，确保 `<img src>`、`curl` 与 `Range` 拖动稳定无冲突。
 
 ## 示例 5：静态站点 `static-site/`
 
@@ -64,7 +64,7 @@ cargo run -- -r examples/static-site
 # 打开 http://localhost:8080/
 ```
 
-目录下存在 `index.html` 时会直接作为站点首页 serve（支持 Range/ETag），
+目录下存在 `index.html` 时会直接作为站点首页托管（支持 `Range`/`ETag`），
 访问 `/` 即打开站点。想看文件列表时用 `?listing=true` 绕过：
 <http://localhost:8080/?listing=true>。
 
@@ -86,11 +86,11 @@ curl -OJ "http://localhost:8080/README.md?view=download"
 
 ## 验收测试
 
-仓库自带自动化验收脚本（构建 + 启动 + 全套 HTTP 行为检查）：
+仓库自带自动化验收脚本（构建 + 启动 + 全套 HTTP/Markdown/UI 行为检查）：
 
 ```bash
 scripts/acceptance.sh
 ```
 
 全部通过时输出 `All acceptance checks passed ✔`，任何一项失败都会
-以红色 FAIL 标出并以非零状态码退出，可直接用于 CI 或发布前检查。
+以红色 FAIL 标出并以非零状态码退出。

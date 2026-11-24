@@ -80,13 +80,47 @@ cleanup() {
 trap cleanup EXIT
 
 echo "==> Preparing fixture tree in $FIXTURE/root"
-mkdir -p "$FIXTURE/root/sub" "$FIXTURE/root/site"
+mkdir -p "$FIXTURE/root/sub" "$FIXTURE/root/site" "$FIXTURE/root/docs" "$FIXTURE/root/media"
 printf '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ' > "$FIXTURE/root/data.bin"  # 36 bytes
 echo 'fn main() {}' > "$FIXTURE/root/code.rs"
 echo '你好，世界' > "$FIXTURE/root/中文.txt"
 echo 'nested' > "$FIXTURE/root/sub/note.txt"
 echo 'secret' > "$FIXTURE/root/.hidden"
 echo '<h1>hello site</h1>' > "$FIXTURE/root/site/index.html"
+cat > "$FIXTURE/root/docs/diagram.svg" <<'EOF'
+<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40"><rect width="80" height="40" fill="#ffffff"/></svg>
+EOF
+cat > "$FIXTURE/root/docs/guide.md" <<'EOF'
+# 架构 Overview
+
+![架构图](./diagram.svg)
+
+| Col | Align |
+| :--- | :---: |
+| a | b |
+
+- [x] done
+- [ ] todo
+
+~~old~~ text[^1]
+
+<details><summary>more</summary>
+
+Press <kbd>Ctrl</kbd>
+
+</details>
+
+```rust
+fn demo() {}
+```
+
+[^1]: footnote note
+EOF
+cat > "$FIXTURE/root/media/logo.svg" <<'EOF'
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><circle cx="16" cy="16" r="10"/></svg>
+EOF
+printf 'mp4data' > "$FIXTURE/root/media/clip.mp4"
+printf 'mp3data' > "$FIXTURE/root/media/song.mp3"
 # Symlink escaping the root (security check).
 ln -s /etc/hosts "$FIXTURE/root/escape-link"
 # index.html symlink escaping the root (must fall back to listing).
@@ -177,6 +211,45 @@ echo "$cd_header" | grep -q 'attachment; filename="code.rs"; filename\*=UTF-8' \
 cd_cn=$(curl -s -D - -o /dev/null "$HOST/%E4%B8%AD%E6%96%87.txt?view=download" | grep -i '^content-disposition:' | tr -d '\r')
 echo "$cd_cn" | grep -q "filename\*=UTF-8''%E4%B8%AD%E6%96%87.txt" \
     && ok "Content-Disposition (RFC 5987 non-ASCII)" || bad "Content-Disposition (RFC 5987 non-ASCII)"
+
+echo "==> Phase 0: built-in markdown, highlight, white UI & media viewer"
+check "Docs directory without trailing slash returns 301" 301 "$(http_code "$HOST/docs")"
+check "Docs 301 Location is /docs/" "/docs/" "$(curl -s -D - -o /dev/null "$HOST/docs" | grep -i '^location:' | awk '{print $2}' | tr -d '\r')"
+
+md_html=$(curl -s "$HOST/docs/guide.md")
+echo "$md_html" | grep -q '<h1 id="架构-overview">' && ok "Markdown CJK/ASCII anchor rendered" || bad "Markdown CJK/ASCII anchor rendered"
+echo "$md_html" | grep -q 'style="text-align:center"' && ok "GFM table alignment rendered" || bad "GFM table alignment rendered"
+echo "$md_html" | grep -q '<input type="checkbox" checked disabled>' && ok "GFM task checkbox rendered" || bad "GFM task checkbox rendered"
+echo "$md_html" | grep -q '<del>old</del>' && ok "GFM strikethrough rendered" || bad "GFM strikethrough rendered"
+echo "$md_html" | grep -q 'id="fn-1"' && ok "Markdown footnote rendered" || bad "Markdown footnote rendered"
+echo "$md_html" | grep -q '<details><summary>more</summary>' && ok "Embedded block HTML unescaped" || bad "Embedded block HTML unescaped"
+echo "$md_html" | grep -q '<kbd>Ctrl</kbd>' && ok "Embedded inline HTML unescaped" || bad "Embedded inline HTML unescaped"
+echo "$md_html" | grep -q '<span class="hl-kw">fn</span>' && ok "Fenced code highlighted server-side" || bad "Fenced code highlighted server-side"
+echo "$md_html" | grep -q '<img src="./diagram.svg" alt="架构图">' && ok "Markdown relative image preserved" || bad "Markdown relative image preserved"
+
+svg_ct=$(curl -s -D - -o /dev/null "$HOST/docs/diagram.svg" | grep -i '^content-type:' | awk '{print $2}' | tr -d '\r')
+check "Relative diagram.svg returns 200 image/svg+xml" "200 image/svg+xml" "$(http_code "$HOST/docs/diagram.svg") $svg_ct"
+
+code_html=$(curl -s "$HOST/code.rs")
+echo "$code_html" | grep -q '<span class="hl-kw">fn</span>' && ok "Code viewer uses built-in highlighting" || bad "Code viewer uses built-in highlighting"
+
+raw_svg=$(curl -s "$HOST/media/logo.svg")
+echo "$raw_svg" | grep -q '<svg' && ! echo "$raw_svg" | grep -qi '<!DOCTYPE' \
+    && ok "Media bare path serves raw bytes" || bad "Media bare path serves raw bytes"
+img_view=$(curl -s "$HOST/media/logo.svg?view=viewer")
+echo "$img_view" | grep -q '<img src="/media/logo.svg"' && ok "Image ?view=viewer embeds bare path" || bad "Image ?view=viewer embeds bare path"
+curl -s "$HOST/media/clip.mp4?view=viewer" | grep -q '<video controls' && ok "Video ?view=viewer renders player" || bad "Video ?view=viewer renders player"
+curl -s "$HOST/media/song.mp3?view=viewer" | grep -q '<audio controls' && ok "Audio ?view=viewer renders player" || bad "Audio ?view=viewer renders player"
+
+for page_path in "/" "/docs/guide.md" "/code.rs" "/media/logo.svg?view=viewer"; do
+    page=$(curl -s "$HOST$page_path")
+    if echo "$page" | grep -q '#ffffff' && echo "$page" | grep -q '#f6f8fa' && echo "$page" | grep -q '#0969da' \
+        && ! echo "$page" | grep -qiE '<script|href="https?://|#0d1117|#161b22|file-type-badge|📁|📜|🎬|⬇️'; then
+        ok "White minimal offline UI verified ($page_path)"
+    else
+        bad "White minimal offline UI verified ($page_path)"
+    fi
+done
 
 echo "==> Phase 0: graceful shutdown"
 kill -TERM "$SERVER_PID"

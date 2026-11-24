@@ -7,23 +7,20 @@
 [![1PL licensed](https://img.shields.io/badge/license-1PL-blue.svg)](./LICENSE)
 [![crates.io](https://meritbadge.herokuapp.com/d)](https://crates.io/crates/d)
 
-D is a simple standalone httpd with modern features.
+D is a modular, low-overhead standalone network daemon and file/document server built on an internal plugin microkernel (`frame`), a custom HTTP/1.1 streaming engine, and pure-Rust server-side Markdown and syntax rendering.
 
 ## Features
 
-- 📁 **Directory listing** with rich file type icons and sorting
-- 🏠 **index.html serving** for directories (static sites work out of the box)
-- 🎨 **Syntax highlighting** for code files
-- 🖼️ **File preview** for images, videos, audio, markdown and code
-- 📥 **Download/Raw/Preview** options for text files
-- 🔍 **Breadcrumb navigation** with clickable paths
-- 📊 **Multiple sort options** (name, size, time, type)
-- 👁️ **Hidden files** toggle (configurable)
-- 🗜️ **Compression** support (gzip, deflate, brotli)
-- 🌐 **CORS** support (opt-in via `--cors`)
-- 📡 **Range requests** for resumable downloads
-- 🏷️ **ETag** and **cache control**
-- 🖥️ **Graceful shutdown**
+- **Layered plugin architecture**: Clean separation across Layer 0 (`frame` microkernel), Layer 1 (`l4-transport` with two-phase graceful drain), Layer 2 (`proto-http` HTTP/1.1 parser, chunked zero-buffer streaming, and lock-free snapshot routing), Layer 3 (`ext-compression`, `ext-cors`), and Layer 4 (`app-files`, `viewer-*`).
+- **Built-in CommonMark + GFM & native embedded HTML**: Zero-dependency pure-Rust `doc-render` supporting headings with CJK/ASCII anchors, aligned tables, task lists, strikethrough, footnotes, and unescaped block/inline embedded HTML (`<details>`, `<figure>`, `<img>`, `<table>`, `<kbd>`).
+- **Server-side lexical code highlighting**: Built-in tokenizer and light stylesheet for Rust, JavaScript/TypeScript, Python, Go, C/C++, Bash, JSON, YAML, TOML, SQL, HTML, and CSS — zero external scripts or CDNs.
+- **Minimalist white interface**: Offline self-contained white canvas (`#ffffff` / `#f6f8fa` / `#0969da`), no dark themes, no colored badges, no external assets, and no JavaScript required.
+- **Conflict-free media and file routing**:
+  - Bare media/asset paths (`/img.svg`, `/clip.mp4`, `/style.css`, `/app.js`) always stream raw bytes with full `Range` (`206`/`416`), `ETag`/`Last-Modified` (`304`), and `HEAD` support.
+  - Explicit `?view=viewer` opens a minimalist white media viewer page embedding the bare stream; `?view=raw`, `?view=preview`, and `?view=download` (RFC 5987 UTF-8 `Content-Disposition`) work across documents and files.
+  - Directories without a trailing slash redirect via `301` (preserving query parameters) so relative images and links always resolve cleanly.
+- **Static sites & directory controls**: Automatic sandboxed `index.html` serving (`?listing=true` bypass), sorting (`name`, `size`, `time`, `type`), and permission-gated hidden file toggle (`--hidden`).
+- **Streaming-aware compression & opt-in CORS**: `brotli`, `gzip`, and `deflate` negotiation that automatically exempts SSE/streaming bodies, `206`, `304`, `HEAD`, pre-compressed media, and tiny payloads; CORS disabled by default (`--cors`).
 
 ## Usage
 
@@ -38,22 +35,13 @@ cargo install --git https://github.com/liuchong/d
 ### Run
 
 ```bash
-# Basic usage
+# Serve current directory
 d
 
-# Custom port
-d -p 8080
+# Custom port and root
+d -p 8080 -r /path/to/serve
 
-# Custom root directory
-d -r /path/to/serve
-
-# Show hidden files (allows users to toggle)
-d --hidden
-
-# Allow cross-origin requests (permissive CORS)
-d --cors
-
-# Full options
+# Allow toggling hidden dotfiles and permissive CORS
 d -H 0.0.0.0 -p 8080 -r ./public --hidden --cors
 ```
 
@@ -64,43 +52,44 @@ d -H 0.0.0.0 -p 8080 -r ./public --hidden --cors
 | `-H, --host` | Listening host | `localhost` |
 | `-p, --port` | Listening port | `8080` |
 | `-r, --root` | Root directory to serve | `.` |
-| `-l, --log` | Log level | `info` |
+| `-l, --log` | Log level (`trace`, `debug`, `info`, `warn`, `error`) | `info` |
 | `--hidden` | Allow showing hidden files | disabled |
-| `--cors` | Permissive CORS (any origin) | disabled |
+| `--cors` | Enable permissive CORS (`GET`/`HEAD`/`OPTIONS`) | disabled |
 
 ### Environment Variables
 
 - `D_HOST` - Server host
 - `D_PORT` - Server port
 - `D_ROOT` - Root directory
-- `D_CORS` - Enable permissive CORS
+- `D_SHOW_HIDDEN` - Allow showing hidden files (`true`/`1`)
+- `D_CORS` - Enable permissive CORS (`true`/`1`)
 - `RUST_LOG` - Log level
 
-## Web Interface
+## Web Interface & Query Parameters
 
-When accessing a directory, you can use query parameters:
+Directory queries:
 
-- `?sort=name` - Sort by name (default)
-- `?sort=size` - Sort by file size
-- `?sort=time` - Sort by modification time
-- `?sort=type` - Sort by file type
-- `?hidden=true` - Show hidden files
-- `?listing=true` - Show the directory listing even when an `index.html` exists
+- `?sort=name|size|time|type` - Sort directory entries
+- `?order=desc` - Reverse sort order
+- `?hidden=true|false` - Toggle hidden dotfiles (when `--hidden` is enabled)
+- `?listing=true` - View directory listing even when `index.html` exists
 
-Directories containing an `index.html` serve that file directly (with Range
-and ETag support), so static sites work out of the box.
+File queries:
+
+- `?view=raw` - Serve raw unmodified bytes
+- `?view=preview` - Render pure preview HTML without chrome
+- `?view=viewer` - Open minimalist white viewer page (especially for images, audio, and video)
+- `?view=download` - Force attachment download with RFC 5987 filename encoding
 
 ## Examples
 
-Ready-to-run demo directories live in [`examples/`](./examples) — see
-[examples/README.md](./examples/README.md) for a guided tour (directory
-listing, syntax highlighting, document/image preview, static site).
+Ready-to-run demo directories live in [`examples/`](./examples) — see [examples/README.md](./examples/README.md) for guided tours of Markdown with embedded HTML and relative images, syntax highlighting, media viewing, and static sites.
 
 ## Testing & Acceptance
 
 ```bash
-cargo test               # unit + integration tests
-scripts/acceptance.sh    # end-to-end HTTP acceptance checks
+cargo test --workspace   # unit, contract, and integration tests
+scripts/acceptance.sh    # end-to-end HTTP, Markdown, and UI acceptance checks
 ```
 
 ## License

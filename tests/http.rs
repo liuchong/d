@@ -254,7 +254,8 @@ async fn text_file_gets_viewer_page() {
     assert_eq!(resp.status, StatusCode::OK);
     let html = String::from_utf8(body_bytes(resp).await).unwrap();
     assert!(html.contains("Preview"));
-    assert!(html.contains("fn main()"));
+    assert!(html.contains("<span class=\"hl-kw\">fn</span>"));
+    assert!(html.contains("<span class=\"hl-fn\">main</span>"));
 }
 
 #[tokio::test]
@@ -502,7 +503,11 @@ fn workspace_dependency_purity_and_legacy_removed() {
         "crates/contracts/http-api/Cargo.toml",
         "crates/contracts/files-api/Cargo.toml",
         "crates/contracts/render-api/Cargo.toml",
+        "crates/components/doc-render/Cargo.toml",
         "crates/components/ext-cors/Cargo.toml",
+        "crates/components/viewer-markdown/Cargo.toml",
+        "crates/components/viewer-code/Cargo.toml",
+        "crates/components/viewer-media/Cargo.toml",
         "crates/entries/cli/Cargo.toml",
     ] {
         let toml = std::fs::read_to_string(root.join(zero_dep)).unwrap();
@@ -517,6 +522,182 @@ fn workspace_dependency_purity_and_legacy_removed() {
             assert!(
                 line.contains("path ="),
                 "{zero_dep} must have zero external dependencies, found: {line}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn markdown_html_passthrough_and_relative_images() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    std::fs::create_dir(root.join("docs")).unwrap();
+    std::fs::write(
+        root.join("docs/diagram.svg"),
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"64\" height=\"64\"></svg>",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("docs/guide.md"),
+        "# 架构 Overview\n\n![架构图](./diagram.svg)\n\n<details><summary>展开</summary>\n\n说明文本 <kbd>Ctrl</kbd>\n\n</details>\n",
+    )
+    .unwrap();
+
+    let app = create_app(root.canonicalize().unwrap(), false).await;
+
+    // Without trailing slash, /docs redirects to /docs/ so relative `./diagram.svg` resolves properly.
+    let redir = app.dispatch(get("/docs")).await;
+    assert_eq!(redir.status, StatusCode::MOVED_PERMANENTLY);
+    assert_eq!(redir.header("location"), Some("/docs/"));
+
+    let md_resp = app.dispatch(get("/docs/guide.md")).await;
+    assert_eq!(md_resp.status, StatusCode::OK);
+    let html = String::from_utf8(body_bytes(md_resp).await).unwrap();
+    assert!(html.contains("<h1 id=\"架构-overview\">"), "{html}");
+    assert!(
+        html.contains("<img src=\"./diagram.svg\" alt=\"架构图\""),
+        "{html}"
+    );
+    assert!(html.contains("<details><summary>展开</summary>"), "{html}");
+    assert!(html.contains("<kbd>Ctrl</kbd>"), "{html}");
+    assert!(!html.contains("&lt;details&gt;"), "{html}");
+
+    let img_resp = app.dispatch(get("/docs/diagram.svg")).await;
+    assert_eq!(img_resp.status, StatusCode::OK);
+    assert_eq!(img_resp.header("content-type"), Some("image/svg+xml"));
+}
+
+#[tokio::test]
+async fn viewer_modes_and_no_external_cdn() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    std::fs::write(root.join("note.md"), "# Hello\n\nBody\n").unwrap();
+    std::fs::write(root.join("code.rs"), "fn main() {}\n").unwrap();
+    let app = create_app(root.canonicalize().unwrap(), false).await;
+
+    for uri in ["/", "/note.md", "/code.rs"] {
+        let resp = app.dispatch(get(uri)).await;
+        assert_eq!(resp.status, StatusCode::OK);
+        let html = String::from_utf8(body_bytes(resp).await).unwrap();
+        assert!(!html.contains("<script"), "no external scripts on {uri}");
+        assert!(
+            !html.contains("<link") || !html.contains("http"),
+            "no remote stylesheet links on {uri}"
+        );
+    }
+
+    let viewer = String::from_utf8(
+        body_bytes(app.dispatch(get("/note.md")).await).await,
+    )
+    .unwrap();
+    assert!(viewer.contains("href=\"/note.md?view=raw\""), "{viewer}");
+    assert!(
+        viewer.contains("href=\"/note.md?view=download\""),
+        "{viewer}"
+    );
+
+    let preview = String::from_utf8(
+        body_bytes(app.dispatch(get("/note.md?view=preview")).await).await,
+    )
+    .unwrap();
+    assert!(preview.contains("<h1 id=\"hello\">"), "{preview}");
+
+    let raw = String::from_utf8(
+        body_bytes(app.dispatch(get("/note.md?view=raw")).await).await,
+    )
+    .unwrap();
+    assert_eq!(raw, "# Hello\n\nBody\n");
+}
+
+#[tokio::test]
+async fn code_viewer_server_side_highlighting() {
+    let (app, _dir) = test_app(false).await;
+    let resp = app.dispatch(get("/code.rs")).await;
+    assert_eq!(resp.status, StatusCode::OK);
+    let html = String::from_utf8(body_bytes(resp).await).unwrap();
+    assert!(html.contains("<span class=\"hl-kw\">fn</span>"), "{html}");
+    assert!(html.contains(".hl-kw"), "{html}");
+}
+
+#[tokio::test]
+async fn media_raw_and_viewer() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    std::fs::create_dir(root.join("media")).unwrap();
+    std::fs::write(root.join("media/logo.svg"), "<svg></svg>").unwrap();
+    std::fs::write(root.join("media/clip.mp4"), b"fake-mp4").unwrap();
+    std::fs::write(root.join("media/song.mp3"), b"fake-mp3").unwrap();
+    let app = create_app(root.canonicalize().unwrap(), false).await;
+
+    // Bare media paths ALWAYS stream raw bytes.
+    let raw_svg = app.dispatch(get("/media/logo.svg")).await;
+    assert_eq!(raw_svg.status, StatusCode::OK);
+    assert_eq!(raw_svg.header("content-type"), Some("image/svg+xml"));
+    assert_eq!(&body_bytes(raw_svg).await[..], b"<svg></svg>");
+
+    // Directory listing points media items to ?view=viewer.
+    let dir_html =
+        String::from_utf8(body_bytes(app.dispatch(get("/media/")).await).await)
+            .unwrap();
+    assert!(
+        dir_html.contains("/media/logo.svg?view=viewer"),
+        "{dir_html}"
+    );
+
+    // ?view=viewer opens white minimalist HTML viewer embedding the bare stream path.
+    let img_viewer = String::from_utf8(
+        body_bytes(app.dispatch(get("/media/logo.svg?view=viewer")).await)
+            .await,
+    )
+    .unwrap();
+    assert!(
+        img_viewer.contains("<img src=\"/media/logo.svg\""),
+        "{img_viewer}"
+    );
+
+    let vid_viewer = String::from_utf8(
+        body_bytes(app.dispatch(get("/media/clip.mp4?view=viewer")).await)
+            .await,
+    )
+    .unwrap();
+    assert!(vid_viewer.contains("<video controls"), "{vid_viewer}");
+
+    let aud_viewer = String::from_utf8(
+        body_bytes(app.dispatch(get("/media/song.mp3?view=viewer")).await)
+            .await,
+    )
+    .unwrap();
+    assert!(aud_viewer.contains("<audio controls"), "{aud_viewer}");
+}
+
+#[tokio::test]
+async fn white_minimal_ui() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path();
+    std::fs::write(root.join("doc.md"), "# Title\n").unwrap();
+    std::fs::write(root.join("src.rs"), "fn f() {}\n").unwrap();
+    std::fs::write(root.join("pic.svg"), "<svg></svg>").unwrap();
+    let app = create_app(root.canonicalize().unwrap(), false).await;
+
+    for uri in ["/", "/doc.md", "/src.rs", "/pic.svg?view=viewer"] {
+        let html =
+            String::from_utf8(body_bytes(app.dispatch(get(uri)).await).await)
+                .unwrap();
+        assert!(html.contains("#ffffff"), "missing #ffffff on {uri}");
+        assert!(html.contains("#f6f8fa"), "missing #f6f8fa on {uri}");
+        assert!(html.contains("#0969da"), "missing #0969da on {uri}");
+        for forbidden in [
+            "#0d1117",
+            "#161b22",
+            "file-type-badge",
+            "📁",
+            "📜",
+            "🎬",
+            "⬇️",
+        ] {
+            assert!(
+                !html.contains(forbidden),
+                "forbidden dark/emoji token {forbidden} present on {uri}"
             );
         }
     }

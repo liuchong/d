@@ -1,0 +1,12 @@
+[package]
+name = "viewer-media"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license-file = "../../../LICENSE"
+description = "Layer 4 minimalist white image, audio, and video viewer plugin for d"
+
+[dependencies]
+frame = { path = "../../frame" }
+http-api = { path = "../../contracts/http-api" }
+files-api = { path = "../../contracts/files-api" }

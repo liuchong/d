@@ -406,17 +406,17 @@ flowchart LR
 
 | 施工 ID | 写完打勾 | 变更 / 需求 | 文件与锚点 | 明确施工动作 | 依赖 | 对应验收 |
 | :--- | :---: | :--- | :--- | :--- | :--- | :--- |
-| `C21` | [ ] | `D07`, `D16` / `Q08`–`Q11` | `crates/contracts/render-api/`, `crates/components/doc-render/` | **[P3-Red]** 完善 `render-api` 契约，并在 `doc-render`（无任何外部依赖）按 `T-M01`–`T-M06` 编写纯 Rust Markdown 解析、嵌入式 HTML 透传、图片、锚点与词法高亮的 TDD 测试源码，确认红灯基线 | `C20` | `A23`–`A26` |
-| `C22` | [ ] | `D17`–`D20` / `Q08`, `Q12`, `Q13` | `tests/http.rs` | **[P3-Red]** 按 `T-M07`–`T-M10` 在 `tests/http.rs` 与展示插件测试中添加白底 UI、零外链/零黑底/零 emoji、裸路径媒体原流与 `?view=viewer`、禁用 JS 退化链路测试，确认红灯基线 | `C21` | `A27`–`A30` |
-| `C23` | [ ] | `D16` / `Q09`–`Q11` | `crates/components/doc-render/src/{markdown,inline,highlight,style,lib}.rs` | **[P3-Green]** 纯 `std` 实现完整两阶段 Markdown 引擎（CommonMark + GFM + 原生块级/行内 HTML 透传 + 中英文锚点 + 脚注 + 表格 + 可选清洗钩子）与多语言词法高亮器 + 内置浅色高亮 CSS | `C22` | `A23`–`A26` |
-| `C24` | [ ] | `D12`, `D17`–`D19` / `Q08`, `Q12` | `app-files/src/shell.rs`, `viewer-{markdown,code,media}/Cargo.toml` | **[P3-Green]** 抽取共享极简白底 HTML Shell（纯白 `#ffffff`、单行面包屑/工具栏、`max-width: 820px` 阅读排版、零 emoji、零彩色徽标、零外部 CDN），创建三个零外依赖展示组件包 | `C23` | `A28`–`A30` |
-| `C25` | [ ] | `D17` / `Q08`–`Q10`, `Q13` | `crates/components/viewer-markdown/src/lib.rs` | **[P3-Green]** 实现 `MarkdownViewerPlugin`：消费 `RenderService` 渲染 Markdown 页面与 `?view=preview` 片段，图片自适应宽度并支持点击直连原图 | `C24` | `A23`–`A25`, `A28` |
-| `C26` | [ ] | `D18` / `Q08`, `Q11`, `Q12` | `crates/components/viewer-code/src/lib.rs` | **[P3-Green]** 实现 `CodeViewerPlugin`：消费 `RenderService` 为源码/配置/Org/纯文本提供白底服务端词法高亮或干净等宽视图 | `C24` | `A26`, `A28` |
-| `C27` | [ ] | `D19` / `Q12`, `Q13` | `crates/components/viewer-media/src/lib.rs`, `app-files/src/dir.rs` | **[P3-Green]** 实现 `MediaViewerPlugin` 与目录链接策略：裸路径永远直出原始流；目录页对图片/音视频生成 `?view=viewer` 查看页链接（页面直连裸路径流）与下载入口 | `C24` | `A27`, `A28`, `A29` |
-| `C28` | [ ] | `D14` / `Q02`, `Q13`, `Q14` | `Cargo.toml`, `src/lib.rs` | **[P3-Green]** 在根装配包 `d` 中注册 `DocRenderPlugin`、`MarkdownViewerPlugin`、`CodeViewerPlugin`、`MediaViewerPlugin` 接线 | `C25`–`C27` | `A23`–`A30` |
-| `C29` | [ ] | `D21` / `Q09`, `Q10`, `Q13` | `examples/docs/{guide.md,diagram.svg}`, `examples/README.md` | **[P3-Green]** 在 `examples/docs/` 补充含原生嵌入式 HTML（`<details>`, `<figure>`, `<img>`, `<table>`）与本地相对图片引用的真实示例并更新 `examples/README.md` | `C28` | `A24`, `A31` |
-| `C30` | [ ] | `D20`, `D22` / `Q08`–`Q14` | `scripts/acceptance.sh` | **[P3-Refactor & Verify]** 更新 `scripts/acceptance.sh` 追加阶段 3 端到端断言；跑通全部单测、集成测试与端到端脚本并成批修完真实问题 | `C29` | `A23`–`A31` |
-| `C31` | [ ] | `D23` / `Q14` | `README.md`, `docs/construction.md` | **[P3-Refactor & Verify]** 同步 `README.md` 特性与参数说明；验证 `frame`、`contracts/*`、`doc-render`、`ext-cors`、`viewer-*` 均零外部依赖，且无第三方项目命名泄露 | `C30` | `A32` |
+| `C21` | [x] | `D07`, `D16` / `Q08`–`Q11` | `crates/contracts/render-api/`, `crates/components/doc-render/` | **[P3-Red]** 完善 `render-api` 契约，并在 `doc-render`（无任何外部依赖）按 `T-M01`–`T-M06` 编写纯 Rust Markdown 解析、嵌入式 HTML 透传、图片、锚点与词法高亮的 TDD 测试源码，确认红灯基线 | `C20` | `A23`–`A26` |
+| `C22` | [x] | `D17`–`D20` / `Q08`, `Q12`, `Q13` | `tests/http.rs` | **[P3-Red]** 按 `T-M07`–`T-M10` 在 `tests/http.rs` 与展示插件测试中添加白底 UI、零外链/零黑底/零 emoji、裸路径媒体原流与 `?view=viewer`、禁用 JS 退化链路测试，确认红灯基线 | `C21` | `A27`–`A30` |
+| `C23` | [x] | `D16` / `Q09`–`Q11` | `crates/components/doc-render/src/{markdown,inline,highlight,style,lib}.rs` | **[P3-Green]** 纯 `std` 实现完整两阶段 Markdown 引擎（CommonMark + GFM + 原生块级/行内 HTML 透传 + 中英文锚点 + 脚注 + 表格 + 可选清洗钩子）与多语言词法高亮器 + 内置浅色高亮 CSS | `C22` | `A23`–`A26` |
+| `C24` | [x] | `D12`, `D17`–`D19` / `Q08`, `Q12` | `files-api/src/shell.rs`, `viewer-{markdown,code,media}/Cargo.toml` | **[P3-Green]** 抽取共享极简白底 HTML Shell（纯白 `#ffffff`、单行面包屑/工具栏、`max-width: 820px` 阅读排版、零 emoji、零彩色徽标、零外部 CDN），创建三个零外依赖展示组件包 | `C23` | `A28`–`A30` |
+| `C25` | [x] | `D17` / `Q08`–`Q10`, `Q13` | `crates/components/viewer-markdown/src/lib.rs` | **[P3-Green]** 实现 `MarkdownViewerPlugin`：消费 `RenderService` 渲染 Markdown 页面与 `?view=preview` 片段，图片自适应宽度并支持点击直连原图 | `C24` | `A23`–`A25`, `A28` |
+| `C26` | [x] | `D18` / `Q08`, `Q11`, `Q12` | `crates/components/viewer-code/src/lib.rs` | **[P3-Green]** 实现 `CodeViewerPlugin`：消费 `RenderService` 为源码/配置/Org/纯文本提供白底服务端词法高亮或干净等宽视图 | `C24` | `A26`, `A28` |
+| `C27` | [x] | `D19` / `Q12`, `Q13` | `crates/components/viewer-media/src/lib.rs`, `app-files/src/dir.rs` | **[P3-Green]** 实现 `MediaViewerPlugin` 与目录链接策略：裸路径永远直出原始流；目录页对图片/音视频生成 `?view=viewer` 查看页链接（页面直连裸路径流）与下载入口 | `C24` | `A27`, `A28`, `A29` |
+| `C28` | [x] | `D14` / `Q02`, `Q13`, `Q14` | `Cargo.toml`, `src/lib.rs` | **[P3-Green]** 在根装配包 `d` 中注册 `DocRenderPlugin`、`MarkdownViewerPlugin`、`CodeViewerPlugin`、`MediaViewerPlugin` 接线 | `C25`–`C27` | `A23`–`A30` |
+| `C29` | [x] | `D21` / `Q09`, `Q10`, `Q13` | `examples/docs/{guide.md,diagram.svg}`, `examples/README.md` | **[P3-Green]** 在 `examples/docs/` 补充含原生嵌入式 HTML（`<details>`, `<figure>`, `<img>`, `<table>`）与本地相对图片引用的真实示例并更新 `examples/README.md` | `C28` | `A24`, `A31` |
+| `C30` | [x] | `D20`, `D22` / `Q08`–`Q14` | `scripts/acceptance.sh` | **[P3-Refactor & Verify]** 更新 `scripts/acceptance.sh` 追加阶段 3 端到端断言；跑通全部单测、集成测试与端到端脚本并成批修完真实问题 | `C29` | `A23`–`A31` |
+| `C31` | [x] | `D23` / `Q14` | `README.md`, `docs/construction.md` | **[P3-Refactor & Verify]** 同步 `README.md` 特性与参数说明；验证 `frame`、`contracts/*`、`doc-render`、`ext-cors`、`viewer-*` 均零外部依赖，且无第三方项目命名泄露 | `C30` | `A32` |
 | `C32` | [ ] | 交付门禁 | 全工作区 | **[P3-Verify & Deliver]** 执行隔离干净重建（`cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test --workspace`、`scripts/acceptance.sh`），清理临时产物，逐条填写实测证据并勾选 `A01`–`A32`，签名提交并推送 `master` | `C31` | `A01`–`A32` |
 
 ---
@@ -583,7 +583,7 @@ flowchart LR
 | `A08` | [x] | `Q01` / `C05,C07` / `T-F08` | `frame` 编译通过 | `cargo test -p frame -- --exact f08_config_validation_and_update_veto` | 校验不可绕过、否决保留原有效配置、各插件更新钩子互相隔离 | 已实测：`f08_config_validation_and_update_veto` 通过 |
 | `A09` | [x] | `Q01` / `C06,C07` / `T-F09` | `frame` 编译通过 | `cargo test -p frame -- --exact f09_loader_preflight_patch_and_nested` | 预检失败零变动、补丁连续插引准确、仅配置改走热更、嵌套树逆序卸载 | 已实测：`f09_loader_preflight_patch_and_nested` 与 `loader::tests`（3 项）通过 |
 | `A10` | [x] | `Q01` / `C02,C07` / `T-F10` | `frame` 编译通过 | `cargo test -p frame -- --exact f10_inspect_settle_root_and_dispose` | `inspect()` 脱敏截断 512 字节、`Pending` 下 `settle()` 不阻塞、根可重置与终态关停 | 已实测：`f10_inspect_settle_root_and_dispose` 与 `inspect::tests` 通过 |
-| `A11` | [ ] | `Q02` / `C08,C10,C20` / `T-H01` | 阶段 2 包构建完成 | 核对 `Cargo.toml` 依赖清单并执行 `cargo tree -p frame -p net-api -p http-api -p files-api -p render-api -p doc-render -p ext-cors` | 上述核心与纯内建包外部第三方依赖数为 0，组件间无直接实现耦合 | 阶段 2 核验通过：`frame`/`contracts/*`/`ext-cors`/`d-cli` 均零外部依赖；待 `P3` 补齐 `doc-render` 后完整勾 `[x]` |
+| `A11` | [x] | `Q02` / `C08,C10,C20` / `T-H01` | 阶段 2 包构建完成 | 核对 `Cargo.toml` 依赖清单并执行 `cargo tree -p frame -p net-api -p http-api -p files-api -p render-api -p doc-render -p ext-cors` | 上述核心与纯内建包外部第三方依赖数为 0，组件间无直接实现耦合 | 已实测：`cargo tree`（含 `viewer-*` 与 `d-cli` 共 11 包）与 `tests/http::workspace_dependency_purity_and_legacy_removed` 均确认零外部第三方依赖 |
 | `A12` | [x] | `Q03` / `C11,C20` / `T-H02` | `l4-transport` 完成 | `cargo test -p l4-transport` | 停接新连、短连正常完成后退出、长连收到 `DrainSignal` 收尾或超时回收 | 已实测：`l4-transport` 2 项排空测试全通过（0.08s） |
 | `A13` | [x] | `Q04` / `C12,C20` / `T-H03` | `proto-http` 完成 | `cargo test -p proto-http -- parser` | Keep-Alive、Chunked、`Content-Length` 与 `400`/`413`/`414`/`431`/`505` 防御全准确 | 已实测：`parser_keep_alive_chunked_and_malformed_defense` 通过 |
 | `A14` | [x] | `Q04` / `C12,C20` / `T-H04` | `proto-http` 完成 | `cargo test -p proto-http -- streaming` | `streaming: true` 响应首块在流关闭前即时到达对端，无整包缓冲 | 已实测：`streaming_response_flushes_chunks_before_close` 通过 |
@@ -595,15 +595,15 @@ flowchart LR
 | `A20` | [x] | `Q06,Q14` / `C15–C18,C20` / `T-H09,H11` | `tests/http.rs` + CLI 编译 | `cargo test --test http` 与 `scripts/acceptance.sh`（Phase 0–1） | Range(206/416)、ETag/Last-Modified/304、HEAD、RFC 5987、CLI/ENV 与 SIGTERM 全通过 | 已实测：`tests/http` 36 项、`d-cli` 2 项、`acceptance.sh` 36 项全通过 |
 | `A21` | [x] | `Q06` / `C16,C20` / `T-H10` | `app-files` 完成 | `cargo test --test http index listing hidden sort` | `index.html` 托管、`?listing=true` 切回、排序与 `--hidden` 权限开关全部通过 | 已实测：`app-files` 与 `tests/http` 相关测试及 `acceptance.sh` 全通过 |
 | `A22` | [x] | `Q06` / `C16,C20` / `T-H08–H10` | `app-files` 完成 | `cargo test -p app-files` | 内建 MIME、百分号编解码与 IMF-fixdate 单元测试全部通过 | 已实测：`app-files` 7 unit + 3 integration 全部通过 |
-| `A23` | [ ] | `Q09` / `C23,C25,C30` / `T-M01` | `doc-render` + `viewer-markdown` | `cargo test -p doc-render -- markdown` | CommonMark + GFM（对齐表/任务列表/删除线/脚注/自动链接）及中英文去重锚点通过 | 待施工验收 |
-| `A24` | [ ] | `Q10` / `C23,C25,C29,C30` / `T-M02,M03` | `doc-render` + `examples/docs/` | `cargo test --test http markdown_html markdown_images` + `scripts/acceptance.sh` | 原生块级/行内 HTML（`<details>`/`<figure>`/`<img>`/`<table>`/`<kbd>`）未转义透传；相对图片路径 `200` 正常加载 | 待施工验收 |
-| `A25` | [ ] | `Q08,Q13` / `C24,C25,C30` / `T-M04,M06` | `viewer-markdown` | `cargo test --test http viewer_modes no_external_cdn` | `?view=raw`/`preview`/`download` 准确，无外网 CDN，禁用 JS 链接切换可用 | 待施工验收 |
-| `A26` | [ ] | `Q08,Q11` / `C23,C26,C30` / `T-M05` | `doc-render` + `viewer-code` | `cargo test -p doc-render -- highlight` + `cargo test -p viewer-code` | 服务端直接输出语义高亮 `hl-*` 类与内建浅色样式，零外部 JS | 待施工验收 |
-| `A27` | [ ] | `Q13` / `C27,C30` / `T-M07` | `viewer-media` + `app-files` | `cargo test --test http media_raw_and_viewer` | 图片/音视频裸路径直出原流、`?view=viewer` 打开白底查看页内嵌媒体标签 | 待施工验收 |
-| `A28` | [ ] | `Q12` / `C24–C28,C30` / `T-M08` | 全站 HTML Shell 完成 | `cargo test --test http white_minimal_ui` + `scripts/acceptance.sh` | 全站背景 `#ffffff`、含 `#f6f8fa`/`#0969da`，零 `#0d1117`/`#161b22`/彩色胶囊/emoji | 待施工验收 |
-| `A29` | [ ] | `Q07,Q13` / `C15,C27,C30` / `T-H08,M03,M07` | `app-files` + `viewer-media` | `scripts/acceptance.sh`（真实 `d` + `curl`） | 端到端访问 `/docs` → `301 /docs/` → `/docs/guide.md` → `./diagram.svg` 与媒体 `?view=viewer` 全通 | 待施工验收 |
-| `A30` | [ ] | `Q08–Q13` / `C30` / `T-M04–M08` | 完整构建产物 | `PORT=18099 scripts/acceptance.sh` | 所有端到端检查输出 `PASS`、失败数为 `0`，末尾打印 `All acceptance checks passed ✔` | 待施工验收 |
-| `A31` | [ ] | `Q09,Q10,Q13` / `C29` / `T-M09` | `examples/` 更新完成 | 启动 `target/debug/d -r examples/docs` 验证重点样例并返回 `0` 后正常关闭 | `examples/docs/guide.md` 与相对图 `diagram.svg` 可完整端到端加载 | 待施工验收 |
+| `A23` | [x] | `Q09` / `C23,C25,C30` / `T-M01` | `doc-render` + `viewer-markdown` | `cargo test -p doc-render -- markdown` | CommonMark + GFM（对齐表/任务列表/删除线/脚注/自动链接）及中英文去重锚点通过 | 已实测：`doc-render` `markdown_commonmark_gfm_tables_tasks_footnotes_and_cjk_anchors` 与 `viewer-markdown` 单测通过 |
+| `A24` | [x] | `Q10` / `C23,C25,C29,C30` / `T-M02,M03` | `doc-render` + `examples/docs/` | `cargo test --test http markdown_html markdown_images` + `scripts/acceptance.sh` | 原生块级/行内 HTML（`<details>`/`<figure>`/`<img>`/`<table>`/`<kbd>`）未转义透传；相对图片路径 `200` 正常加载 | 已实测：`doc-render` 与 `tests/http::markdown_html_passthrough_and_relative_images` 及 `acceptance.sh` 全通过 |
+| `A25` | [x] | `Q08,Q13` / `C24,C25,C30` / `T-M04,M06` | `viewer-markdown` | `cargo test --test http viewer_modes no_external_cdn` | `?view=raw`/`preview`/`download` 准确，无外网 CDN，禁用 JS 链接切换可用 | 已实测：`viewer_modes_and_no_external_cdn` 及 `acceptance.sh` 无外链断言全通过 |
+| `A26` | [x] | `Q08,Q11` / `C23,C26,C30` / `T-M05` | `doc-render` + `viewer-code` | `cargo test -p doc-render -- highlight` + `cargo test -p viewer-code` | 服务端直接输出语义高亮 `hl-*` 类与内建浅色样式，零外部 JS | 已实测：`lexical_highlighter_covers_core_languages_and_light_css`、`viewer-code` 及 `tests/http::code_viewer_server_side_highlighting` 全通过 |
+| `A27` | [x] | `Q13` / `C27,C30` / `T-M07` | `viewer-media` + `app-files` | `cargo test --test http media_raw_and_viewer` | 图片/音视频裸路径直出原流、`?view=viewer` 打开白底查看页内嵌媒体标签 | 已实测：`viewer-media` 与 `tests/http::media_raw_and_viewer` 及 `acceptance.sh` 媒体检查全通过 |
+| `A28` | [x] | `Q12` / `C24–C28,C30` / `T-M08` | 全站 HTML Shell 完成 | `cargo test --test http white_minimal_ui` + `scripts/acceptance.sh` | 全站背景 `#ffffff`、含 `#f6f8fa`/`#0969da`，零 `#0d1117`/`#161b22`/彩色胶囊/emoji | 已实测：`tests/http::white_minimal_ui` 与 `acceptance.sh` 4 路由页面扫描全通过 |
+| `A29` | [x] | `Q07,Q13` / `C15,C27,C30` / `T-H08,M03,M07` | `app-files` + `viewer-media` | `scripts/acceptance.sh`（真实 `d` + `curl`） | 端到端访问 `/docs` → `301 /docs/` → `/docs/guide.md` → `./diagram.svg` 与媒体 `?view=viewer` 全通 | 已实测：`PORT=18099 scripts/acceptance.sh` 全链路端到端验证通过 |
+| `A30` | [x] | `Q08–Q13` / `C30` / `T-M04–M08` | 完整构建产物 | `PORT=18099 scripts/acceptance.sh` | 所有端到端检查输出 `PASS`、失败数为 `0`，末尾打印 `All acceptance checks passed ✔` | 已实测：`PORT=18099 scripts/acceptance.sh` 输出 `57 passed, 0 failed` 与 `All acceptance checks passed ✔` |
+| `A31` | [x] | `Q09,Q10,Q13` / `C29` / `T-M09` | `examples/` 更新完成 | 启动 `target/debug/d -r examples/docs` 验证重点样例并返回 `0` 后正常关闭 | `examples/docs/guide.md` 与相对图 `diagram.svg` 可完整端到端加载 | 已实测：`target/debug/d -p 18105 -r examples/docs` 实跑返回 `200`（`EXAMPLES_DOCS_LIVE_PASS`）并优雅退场 |
 | `A32` | [ ] | `Q02,Q14` / `C19,C31,C32` / `T-H12,M10` | 全部代码与文档修改提交前 | 在隔离干净重建副本中依次执行 `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test --workspace`、`scripts/acceptance.sh` 并随后清理临时副本 | 干净构建与全部校验 100% 绿灯；无 `src/httpd/` 残留；无绝对路径/秘密；工作区无未清理垃圾 | 待施工验收 |
 
 ---
@@ -616,8 +616,8 @@ flowchart LR
 - **里程碑与完成度**：
   - `P0` 设计与施工准备：**已完成 100%**（`architecture.md`、`frame.md`、`construction.md` 已写入；不计入实现/验收率）。
   - `P1`（`C01`–`C07` / `A01`–`A10`）：代码实现 `7 / 7`（100%），实测验收 `10 / 10`（100%）——零外部依赖，7 个单元测试 + 10 个 BDD 契约测试全部绿灯。
-  - `P2`（`C08`–`C20` / `A11`–`A22`）：代码实现 `13 / 13`（100%），阶段 2 实测验收 `A12`–`A22` 通过（`A11` 待 `P3` 补齐 `doc-render` 后终验勾出）。
-  - `P3`（`C21`–`C32` / `A23`–`A32`）：代码实现 `0 / 12`（0%），实测验收 `0 / 10`（0%）。
+  - `P2`（`C08`–`C20` / `A11`–`A22`）：代码实现 `13 / 13`（100%），实测验收 `12 / 12`（100%）。
+  - `P3`（`C21`–`C32` / `A23`–`A32`）：代码实现 `11 / 12`（91.7%），实测验收 `9 / 10`（90%）；正在执行最终隔离干净重建门禁 `C32` / `A32`。
 - **卡点与风险**：无阻塞卡点；进入 `P3` 重点确保纯 Rust `doc-render` 嵌入式 HTML 原样透传与全站极简白色 UI 无外链/无黑底/无 emoji。
 
 ### 交付与善后协议
@@ -632,7 +632,7 @@ flowchart LR
 
 - **唯一施工入口**：`docs/construction.md`（本文件）
 - **配套设计规范**：`docs/architecture.md`、`docs/frame.md`
-- **当前待执行起点**：`P3 / C21`（创建零依赖 `doc-render` 与 `T-M01`–`T-M08` TDD Red 契约测试）
+- **当前待执行起点**：`P3 / C32`（提交阶段 3 实现并执行隔离干净重建验证 `A32`，完成后签名推送 `master`）
 - **变更记录**：
   - `2026-11-24`：创建唯一施工手册与 `/goal` 驱动文案，完成前置资料核对（基线 `master @ eb012ac`）。
   - `2026-11-24`：完成 `P1`（`C01`–`C07`），`crates/frame` 零外部依赖通过 `A01`–`A10`、工作区测试、`cargo fmt --check` 与 `clippy --all-targets -- -D warnings`。

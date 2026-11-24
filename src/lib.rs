@@ -2,6 +2,7 @@
 //! L4 transport, HTTP/1.1 engine, extensions, and file application plugins.
 
 use app_files::{FilesAppPlugin, FilesConfig};
+use doc_render::DocRenderPlugin;
 use ext_compression::CompressionPlugin;
 use ext_cors::CorsPlugin;
 use frame::{BoxFuture, ConfigValue, Context, FrameError, FrameOptions};
@@ -13,6 +14,9 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::sync::Arc;
+use viewer_code::CodeViewerPlugin;
+use viewer_markdown::MarkdownViewerPlugin;
+use viewer_media::MediaViewerPlugin;
 
 /// Configuration toggles for assembling the `d` HTTP server runtime.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -93,6 +97,11 @@ pub async fn build_runtime(
         FilesAppPlugin::new(FilesConfig::new(root, options.allow_hidden)),
         ConfigValue::Null,
     )?;
+
+    ctx.plugin(DocRenderPlugin, ConfigValue::Null)?;
+    ctx.plugin(MarkdownViewerPlugin, ConfigValue::Null)?;
+    ctx.plugin(CodeViewerPlugin, ConfigValue::Null)?;
+    ctx.plugin(MediaViewerPlugin, ConfigValue::Null)?;
 
     ctx.settle().await;
 

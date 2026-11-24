@@ -1,0 +1,11 @@
+[package]
+name = "doc-render"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license-file = "../../../LICENSE"
+description = "Zero-dependency pure-Rust CommonMark+GFM renderer and lexical code highlighter"
+
+[dependencies]
+frame = { path = "../../frame" }
+render-api = { path = "../../contracts/render-api" }
