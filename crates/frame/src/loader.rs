@@ -151,6 +151,7 @@ struct LoaderState {
 struct LoaderInner {
     ctx: Context,
     resolver: Arc<dyn Resolver>,
+    managed_children: bool,
     queue: SerialQueue,
     state: Mutex<LoaderState>,
 }
@@ -184,7 +185,7 @@ impl Plugin for GroupPlugin {
             if let Some(p) = inner_plugin {
                 p.apply(ctx.clone(), config).await?;
             }
-            let child_loader = Loader::new(ctx.clone(), resolver);
+            let child_loader = Loader::new_managed(ctx.clone(), resolver);
             let closer = child_loader.clone();
             ctx.effect("child-loader", move |scope| {
                 Box::pin(async move {
@@ -339,10 +340,23 @@ fn apply_patches_to_entries(
 
 impl Loader {
     pub fn new(ctx: Context, resolver: Arc<dyn Resolver>) -> Self {
+        Self::with_mode(ctx, resolver, false)
+    }
+
+    fn new_managed(ctx: Context, resolver: Arc<dyn Resolver>) -> Self {
+        Self::with_mode(ctx, resolver, true)
+    }
+
+    fn with_mode(
+        ctx: Context,
+        resolver: Arc<dyn Resolver>,
+        managed_children: bool,
+    ) -> Self {
         Self {
             inner: Arc::new(LoaderInner {
                 ctx,
                 resolver,
+                managed_children,
                 queue: SerialQueue::new(),
                 state: Mutex::new(LoaderState {
                     closed: false,
@@ -507,10 +521,17 @@ impl LoaderInner {
                 for key in &row.entry.isolate {
                     scope_ctx = scope_ctx.isolate_key(*key);
                 }
-                let fiber = scope_ctx.plugin_arc(
-                    Arc::clone(&plugin),
-                    row.entry.config.clone(),
-                )?;
+                let fiber = if self.managed_children {
+                    scope_ctx.plugin_arc_detached(
+                        Arc::clone(&plugin),
+                        row.entry.config.clone(),
+                    )?
+                } else {
+                    scope_ctx.plugin_arc(
+                        Arc::clone(&plugin),
+                        row.entry.config.clone(),
+                    )?
+                };
                 fiber.wait().await?;
                 active_ids.push(id);
                 next_records.push(LoaderRecord {

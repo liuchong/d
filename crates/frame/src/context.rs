@@ -432,6 +432,23 @@ impl Context {
         plugin: Arc<dyn Plugin>,
         config: ConfigValue,
     ) -> Result<FiberHandle, FrameError> {
+        self.plugin_arc_linked(plugin, config, true)
+    }
+
+    pub(crate) fn plugin_arc_detached(
+        &self,
+        plugin: Arc<dyn Plugin>,
+        config: ConfigValue,
+    ) -> Result<FiberHandle, FrameError> {
+        self.plugin_arc_linked(plugin, config, false)
+    }
+
+    fn plugin_arc_linked(
+        &self,
+        plugin: Arc<dyn Plugin>,
+        config: ConfigValue,
+        link_parent_effect: bool,
+    ) -> Result<FiberHandle, FrameError> {
         let record = {
             let mut eng = self.engine.state.lock().expect("engine lock");
             let parent = eng
@@ -489,12 +506,14 @@ impl Context {
         let child_handle = FiberHandle {
             record: Arc::clone(&record),
         };
-        let dispose_child = child_handle.clone();
-        let link_effect = self.register_child_plugin_effect(dispose_child);
-        if let Err(err) = link_effect {
-            let mut eng = self.engine.state.lock().expect("engine lock");
-            eng.fibers.remove(&record.id);
-            return Err(err);
+        if link_parent_effect {
+            let dispose_child = child_handle.clone();
+            let link_effect = self.register_child_plugin_effect(dispose_child);
+            if let Err(err) = link_effect {
+                let mut eng = self.engine.state.lock().expect("engine lock");
+                eng.fibers.remove(&record.id);
+                return Err(err);
+            }
         }
 
         request_drive(&record);
@@ -506,26 +525,10 @@ impl Context {
         child: FiberHandle,
     ) -> Result<EffectHandle, FrameError> {
         let label = format!("plugin:{}", child.name());
-        let fut = create_effect(
-            Arc::clone(&self.engine),
-            self.fiber_id,
-            label,
-            move |scope| {
-                Box::pin(async move {
-                    scope.defer_async(move || child.dispose());
-                    Ok(())
-                })
-            },
-        );
-        let mut pinned = fut;
-        let waker = std::task::Waker::noop();
-        let mut cx = std::task::Context::from_waker(waker);
-        match std::future::Future::poll(pinned.as_mut(), &mut cx) {
-            std::task::Poll::Ready(res) => res,
-            std::task::Poll::Pending => {
-                unreachable!("child plugin effect setup cannot suspend")
-            }
-        }
+        self.effect_sync(label, move |scope| {
+            scope.defer_async(move || child.dispose());
+            Ok(())
+        })
     }
 
     pub fn inject<F>(
