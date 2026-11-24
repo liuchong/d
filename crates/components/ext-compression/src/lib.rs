@@ -3,7 +3,9 @@
 use brotli::CompressorWriter;
 use flate2::Compression;
 use flate2::write::{GzEncoder, ZlibEncoder};
-use frame::{BoxFuture, ConfigValue, Context, Deps, FrameError, Plugin};
+use frame::{
+    BoxFuture, ConfigValue, Context, Deps, FrameError, Plugin, ValidationIssue,
+};
 use http_api::{
     AsyncByteStream, BodyKind, FilterOutcome, HttpFilter, HttpRequest,
     HttpResponse, RequestMeta, RouterService, StatusCode,
@@ -476,6 +478,48 @@ impl CompressionPlugin {
     }
 }
 
+fn resolve_compression_config(
+    base: &CompressionConfig,
+    raw: &ConfigValue,
+) -> Result<CompressionConfig, FrameError> {
+    let mut cfg = base.clone();
+    match raw {
+        ConfigValue::Null => Ok(cfg),
+        ConfigValue::Map(map) => {
+            let mut issues = Vec::new();
+            for (k, v) in map {
+                match k.as_str() {
+                    "min_size" => match v {
+                        ConfigValue::Int(n) if *n >= 0 => {
+                            cfg.min_size = *n as usize;
+                        }
+                        _ => issues.push(ValidationIssue {
+                            path: k.clone(),
+                            message: "min_size must be a non-negative integer"
+                                .to_string(),
+                        }),
+                    },
+                    _ => issues.push(ValidationIssue {
+                        path: k.clone(),
+                        message: format!(
+                            "unknown ext-compression option `{k}`"
+                        ),
+                    }),
+                }
+            }
+            if issues.is_empty() {
+                Ok(cfg)
+            } else {
+                Err(FrameError::validation(issues))
+            }
+        }
+        _ => Err(FrameError::validation(vec![ValidationIssue {
+            path: "".to_string(),
+            message: "ext-compression config must be Null or Map".to_string(),
+        }])),
+    }
+}
+
 impl Plugin for CompressionPlugin {
     fn name(&self) -> &str {
         "ext-compression"
@@ -485,20 +529,26 @@ impl Plugin for CompressionPlugin {
         Deps::empty().with::<RouterService>()
     }
 
+    fn validate_config(
+        &self,
+        raw: &ConfigValue,
+    ) -> Result<ConfigValue, FrameError> {
+        let _ = resolve_compression_config(&self.config, raw)?;
+        Ok(raw.clone())
+    }
+
     fn apply(
         &self,
         ctx: Context,
-        _config: ConfigValue,
+        config: ConfigValue,
     ) -> BoxFuture<'static, Result<(), FrameError>> {
-        let min_size = self.config.min_size;
+        let base = self.config.clone();
         Box::pin(async move {
-            let router = ctx.require::<RouterService>()?;
-            let filter_handle = router
-                .mount_filter(Arc::new(CompressionFilter { min_size }))?;
-            let _ = ctx.effect_sync("ext-compression-mount", move |scope| {
-                scope.defer_async(move || filter_handle.dispose());
-                Ok(())
-            })?;
+            let cfg = resolve_compression_config(&base, &config)?;
+            let router = ctx.use_service::<RouterService>()?;
+            let _ = router.mount_filter(Arc::new(CompressionFilter {
+                min_size: cfg.min_size,
+            }))?;
             Ok(())
         })
     }

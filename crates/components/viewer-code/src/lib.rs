@@ -7,7 +7,9 @@ use files_api::shell::{
 use files_api::{
     FileCategory, FileViewer, ViewMode, ViewerInput, ViewerRegistryService,
 };
-use frame::{BoxFuture, ConfigValue, Context, Deps, FrameError, Plugin};
+use frame::{
+    BoxFuture, ConfigValue, Context, Deps, FrameError, Plugin, ValidationIssue,
+};
 use http_api::{HttpResponse, StatusCode};
 use render_api::RenderService;
 use std::path::Path;
@@ -124,19 +126,38 @@ impl Plugin for CodeViewerPlugin {
             .with::<RenderService>()
     }
 
+    fn validate_config(
+        &self,
+        raw: &ConfigValue,
+    ) -> Result<ConfigValue, FrameError> {
+        match raw {
+            ConfigValue::Null => Ok(ConfigValue::Null),
+            ConfigValue::Map(m) if m.is_empty() => Ok(raw.clone()),
+            ConfigValue::Map(m) => Err(FrameError::validation(
+                m.keys()
+                    .map(|k| ValidationIssue {
+                        path: k.clone(),
+                        message: format!("unknown viewer-code option `{k}`"),
+                    })
+                    .collect(),
+            )),
+            _ => Err(FrameError::validation(vec![ValidationIssue {
+                path: "".to_string(),
+                message: "viewer-code config must be Null or empty Map"
+                    .to_string(),
+            }])),
+        }
+    }
+
     fn apply(
         &self,
         ctx: Context,
         _config: ConfigValue,
     ) -> BoxFuture<'static, Result<(), FrameError>> {
         Box::pin(async move {
-            let registry = ctx.require::<ViewerRegistryService>()?;
+            let registry = ctx.use_service::<ViewerRegistryService>()?;
             let render = ctx.require::<RenderService>()?;
-            let handle = registry.register(Arc::new(CodeViewer { render }))?;
-            let _ = ctx.effect_sync("viewer-code-mount", move |scope| {
-                scope.defer_async(move || handle.dispose());
-                Ok(())
-            })?;
+            let _ = registry.register(Arc::new(CodeViewer { render }))?;
             Ok(())
         })
     }

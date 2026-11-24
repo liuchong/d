@@ -2,7 +2,7 @@
 
 use frame::{
     BoxFuture, ConfigValue, Context, Deps, EffectHandle, ErrorKind, FrameError,
-    Plugin, Spawner,
+    Plugin, Spawner, ValidationIssue,
 };
 use net_api::{
     AsyncByteIo, BoxStreamIo, ConnectionHandler, ConnectionKind,
@@ -203,17 +203,15 @@ impl DrainSignal for ConnectionDrainSignal {
 
 /// Layer 1 [`Transport`] service implementation.
 pub struct DefaultTransportService {
-    ctx: Context,
     config: TransportConfig,
     next_conn_id: Arc<AtomicU64>,
     global_active: Arc<AtomicUsize>,
 }
 
 impl DefaultTransportService {
-    /// Construct a standalone transport service bound to `ctx`.
-    pub fn new(ctx: Context, config: TransportConfig) -> Arc<Self> {
+    /// Construct a standalone transport service.
+    pub fn new(config: TransportConfig) -> Arc<Self> {
         Arc::new(Self {
-            ctx,
             config,
             next_conn_id: Arc::new(AtomicU64::new(1)),
             global_active: Arc::new(AtomicUsize::new(0)),
@@ -224,11 +222,12 @@ impl DefaultTransportService {
 impl Transport for DefaultTransportService {
     fn listen(
         &self,
+        caller: &Context,
         addr: SocketAddr,
         handler: Arc<dyn ConnectionHandler>,
     ) -> BoxFuture<'static, Result<(SocketAddr, EffectHandle), FrameError>>
     {
-        let ctx = self.ctx.clone();
+        let ctx = caller.clone();
         let config = self.config.clone();
         let next_conn_id = Arc::clone(&self.next_conn_id);
         let global_active = Arc::clone(&self.global_active);
@@ -343,6 +342,60 @@ impl TransportPlugin {
     }
 }
 
+fn resolve_transport_config(
+    base: &TransportConfig,
+    raw: &ConfigValue,
+) -> Result<TransportConfig, FrameError> {
+    let mut cfg = base.clone();
+    match raw {
+        ConfigValue::Null => Ok(cfg),
+        ConfigValue::Map(map) => {
+            let mut issues = Vec::new();
+            for (k, v) in map {
+                match k.as_str() {
+                    "short_drain_ms" => match v {
+                        ConfigValue::Int(ms) if *ms >= 0 => {
+                            cfg.short_drain_timeout =
+                                Duration::from_millis(*ms as u64);
+                        }
+                        _ => issues.push(ValidationIssue {
+                            path: k.clone(),
+                            message:
+                                "short_drain_ms must be a non-negative integer"
+                                    .to_string(),
+                        }),
+                    },
+                    "long_drain_ms" => match v {
+                        ConfigValue::Int(ms) if *ms >= 0 => {
+                            cfg.long_drain_timeout =
+                                Duration::from_millis(*ms as u64);
+                        }
+                        _ => issues.push(ValidationIssue {
+                            path: k.clone(),
+                            message:
+                                "long_drain_ms must be a non-negative integer"
+                                    .to_string(),
+                        }),
+                    },
+                    _ => issues.push(ValidationIssue {
+                        path: k.clone(),
+                        message: format!("unknown l4-transport option `{k}`"),
+                    }),
+                }
+            }
+            if issues.is_empty() {
+                Ok(cfg)
+            } else {
+                Err(FrameError::validation(issues))
+            }
+        }
+        _ => Err(FrameError::validation(vec![ValidationIssue {
+            path: "".to_string(),
+            message: "l4-transport config must be Null or Map".to_string(),
+        }])),
+    }
+}
+
 impl Plugin for TransportPlugin {
     fn name(&self) -> &str {
         "l4-transport"
@@ -352,14 +405,24 @@ impl Plugin for TransportPlugin {
         Deps::empty()
     }
 
+    fn validate_config(
+        &self,
+        raw: &ConfigValue,
+    ) -> Result<ConfigValue, FrameError> {
+        let _ = resolve_transport_config(&self.config, raw)?;
+        Ok(raw.clone())
+    }
+
     fn apply(
         &self,
         ctx: Context,
-        _config: ConfigValue,
+        config: ConfigValue,
     ) -> BoxFuture<'static, Result<(), FrameError>> {
-        let cfg = self.config.clone();
+        let base = self.config.clone();
         Box::pin(async move {
-            let svc = DefaultTransportService::new(ctx.clone(), cfg);
+            let merged = ctx.resolve_intercept::<TransportService>(config);
+            let cfg = resolve_transport_config(&base, &merged)?;
+            let svc = DefaultTransportService::new(cfg);
             let _handle =
                 ctx.provide(Arc::new(TransportService::new(svc))).await?;
             Ok(())

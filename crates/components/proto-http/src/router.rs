@@ -36,7 +36,6 @@ struct ControlState {
 }
 
 struct RouterInner {
-    ctx: Context,
     next_seq: AtomicU64,
     control: Mutex<ControlState>,
     snapshot: RwLock<Arc<RoutingSnapshot>>,
@@ -81,11 +80,10 @@ pub struct HttpRouter {
 }
 
 impl HttpRouter {
-    /// Construct a router bound to plugin [`Context`].
-    pub fn new(ctx: Context) -> Arc<Self> {
+    /// Construct a stateless snapshot router whose route/filter effects belong to callers.
+    pub fn new() -> Arc<Self> {
         Arc::new(Self {
             inner: Arc::new(RouterInner {
-                ctx,
                 next_seq: AtomicU64::new(1),
                 control: Mutex::new(ControlState::default()),
                 snapshot: RwLock::new(Arc::new(RoutingSnapshot::default())),
@@ -125,6 +123,7 @@ fn route_matches(entry: &RouteEntry, req: &HttpRequest) -> bool {
 impl Router for HttpRouter {
     fn mount_route(
         &self,
+        caller: &Context,
         spec: RouteSpec,
         handler: Arc<dyn HttpHandler>,
     ) -> Result<EffectHandle, FrameError> {
@@ -132,7 +131,7 @@ impl Router for HttpRouter {
         let label = format!("http-route:{}", spec.id);
         let inner_add = Arc::clone(&self.inner);
         let inner_del = Arc::clone(&self.inner);
-        self.inner.ctx.effect_sync(label, move |scope| {
+        caller.effect_sync(label, move |scope| {
             {
                 let mut guard =
                     inner_add.control.lock().unwrap_or_else(|e| e.into_inner());
@@ -151,6 +150,7 @@ impl Router for HttpRouter {
 
     fn mount_filter(
         &self,
+        caller: &Context,
         filter: Arc<dyn HttpFilter>,
     ) -> Result<EffectHandle, FrameError> {
         let seq = self.inner.next_seq.fetch_add(1, Ordering::Relaxed);
@@ -158,7 +158,7 @@ impl Router for HttpRouter {
         let priority = filter.priority();
         let inner_add = Arc::clone(&self.inner);
         let inner_del = Arc::clone(&self.inner);
-        self.inner.ctx.effect_sync(label, move |scope| {
+        caller.effect_sync(label, move |scope| {
             {
                 let mut guard =
                     inner_add.control.lock().unwrap_or_else(|e| e.into_inner());

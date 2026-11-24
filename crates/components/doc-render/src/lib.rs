@@ -6,7 +6,9 @@ pub mod inline;
 pub mod markdown;
 pub mod style;
 
-use frame::{BoxFuture, ConfigValue, Context, Deps, FrameError, Plugin};
+use frame::{
+    BoxFuture, ConfigValue, Context, Deps, FrameError, Plugin, ValidationIssue,
+};
 use render_api::{MarkdownOptions, RenderService, RenderedDocument, Renderer};
 use std::sync::Arc;
 
@@ -43,6 +45,29 @@ impl Plugin for DocRenderPlugin {
 
     fn deps(&self) -> Deps {
         Deps::empty()
+    }
+
+    fn validate_config(
+        &self,
+        raw: &ConfigValue,
+    ) -> Result<ConfigValue, FrameError> {
+        match raw {
+            ConfigValue::Null => Ok(ConfigValue::Null),
+            ConfigValue::Map(m) if m.is_empty() => Ok(raw.clone()),
+            ConfigValue::Map(m) => Err(FrameError::validation(
+                m.keys()
+                    .map(|k| ValidationIssue {
+                        path: k.clone(),
+                        message: format!("unknown doc-render option `{k}`"),
+                    })
+                    .collect(),
+            )),
+            _ => Err(FrameError::validation(vec![ValidationIssue {
+                path: "".to_string(),
+                message: "doc-render config must be Null or empty Map"
+                    .to_string(),
+            }])),
+        }
     }
 
     fn apply(

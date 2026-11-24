@@ -20,22 +20,20 @@ struct Entry {
 }
 
 struct RegistryInner {
-    ctx: Context,
     next_seq: AtomicU64,
     viewers: Mutex<Vec<Entry>>,
 }
 
-/// Default thread-safe [`ViewerRegistry`] managed by `frame` effects.
+/// Default thread-safe [`ViewerRegistry`] whose viewer effects belong to callers.
 pub struct DefaultViewerRegistry {
     inner: Arc<RegistryInner>,
 }
 
 impl DefaultViewerRegistry {
-    /// Construct a viewer registry anchored to `ctx`.
-    pub fn new(ctx: Context) -> Arc<Self> {
+    /// Construct a stateless viewer registry.
+    pub fn new() -> Arc<Self> {
         Arc::new(Self {
             inner: Arc::new(RegistryInner {
-                ctx,
                 next_seq: AtomicU64::new(1),
                 viewers: Mutex::new(Vec::new()),
             }),
@@ -46,6 +44,7 @@ impl DefaultViewerRegistry {
 impl ViewerRegistry for DefaultViewerRegistry {
     fn register(
         &self,
+        caller: &Context,
         viewer: Arc<dyn FileViewer>,
     ) -> Result<EffectHandle, FrameError> {
         let seq = self.inner.next_seq.fetch_add(1, Ordering::Relaxed);
@@ -53,7 +52,7 @@ impl ViewerRegistry for DefaultViewerRegistry {
         let priority = viewer.priority();
         let inner_add = Arc::clone(&self.inner);
         let inner_del = Arc::clone(&self.inner);
-        self.inner.ctx.effect_sync(label, move |scope| {
+        caller.effect_sync(label, move |scope| {
             {
                 let mut guard =
                     inner_add.viewers.lock().unwrap_or_else(|e| e.into_inner());

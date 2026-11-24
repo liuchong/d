@@ -7,7 +7,9 @@ use files_api::shell::{
 use files_api::{
     FileCategory, FileViewer, ViewMode, ViewerInput, ViewerRegistryService,
 };
-use frame::{BoxFuture, ConfigValue, Context, Deps, FrameError, Plugin};
+use frame::{
+    BoxFuture, ConfigValue, Context, Deps, FrameError, Plugin, ValidationIssue,
+};
 use http_api::{HttpResponse, StatusCode};
 use std::sync::Arc;
 
@@ -89,18 +91,37 @@ impl Plugin for MediaViewerPlugin {
         Deps::empty().with::<ViewerRegistryService>()
     }
 
+    fn validate_config(
+        &self,
+        raw: &ConfigValue,
+    ) -> Result<ConfigValue, FrameError> {
+        match raw {
+            ConfigValue::Null => Ok(ConfigValue::Null),
+            ConfigValue::Map(m) if m.is_empty() => Ok(raw.clone()),
+            ConfigValue::Map(m) => Err(FrameError::validation(
+                m.keys()
+                    .map(|k| ValidationIssue {
+                        path: k.clone(),
+                        message: format!("unknown viewer-media option `{k}`"),
+                    })
+                    .collect(),
+            )),
+            _ => Err(FrameError::validation(vec![ValidationIssue {
+                path: "".to_string(),
+                message: "viewer-media config must be Null or empty Map"
+                    .to_string(),
+            }])),
+        }
+    }
+
     fn apply(
         &self,
         ctx: Context,
         _config: ConfigValue,
     ) -> BoxFuture<'static, Result<(), FrameError>> {
         Box::pin(async move {
-            let registry = ctx.require::<ViewerRegistryService>()?;
-            let handle = registry.register(Arc::new(MediaViewer))?;
-            let _ = ctx.effect_sync("viewer-media-mount", move |scope| {
-                scope.defer_async(move || handle.dispose());
-                Ok(())
-            })?;
+            let registry = ctx.use_service::<ViewerRegistryService>()?;
+            let _ = registry.register(Arc::new(MediaViewer))?;
             Ok(())
         })
     }

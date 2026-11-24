@@ -99,7 +99,7 @@ async fn drain_stops_new_connections_waits_short_then_signals_long_lived() {
 
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
     let (bound_addr, listener_handle) =
-        transport.listen(addr, handler).await.expect("listen");
+        transport.listen(&ctx, addr, handler).await.expect("listen");
 
     let mut conn_a = TcpStream::connect(bound_addr).await.expect("conn A");
     conn_a.write_all(b"S").await.expect("write S");
@@ -188,6 +188,7 @@ async fn drain_timeout_recovers_stalled_long_lived_connection() {
     let ready = Arc::new(Notify::new());
     let (_addr, listener_handle) = transport
         .listen(
+            &ctx,
             "127.0.0.1:0".parse().unwrap(),
             Arc::new(StalledHandler {
                 ready: Arc::clone(&ready),
@@ -208,6 +209,59 @@ async fn drain_timeout_recovers_stalled_long_lived_connection() {
         started.elapsed() < Duration::from_millis(400),
         "stalled drain must bound exit time: {:?}",
         started.elapsed()
+    );
+
+    ctx.dispose().await.expect("ctx dispose");
+}
+
+#[tokio::test]
+async fn caller_fiber_disposal_stops_scoped_listener_and_validates_config() {
+    use frame::{ConfigValue, Deps, ErrorKind, Plugin};
+
+    let bad = TransportPlugin::default()
+        .validate_config(&ConfigValue::Int(5))
+        .expect_err("invalid type rejected");
+    assert_eq!(bad.kind, ErrorKind::ValidationFailed);
+
+    let ctx = Context::new(FrameOptions::new(Arc::new(TokioSpawner)));
+    ctx.plugin(TransportPlugin::default(), ConfigValue::Null)
+        .expect("transport");
+    ctx.settle().await;
+
+    let bound_addr = Arc::new(Mutex::new(None::<SocketAddr>));
+    let bound_w = Arc::clone(&bound_addr);
+    let caller = ctx
+        .inject(
+            "listener-caller",
+            Deps::empty().with::<TransportService>(),
+            move |c| {
+                let bound_w = Arc::clone(&bound_w);
+                Box::pin(async move {
+                    let transport = c.use_service::<TransportService>()?;
+                    let events = Arc::new(Mutex::new(Vec::new()));
+                    let (addr, _h) = transport
+                        .listen(
+                            "127.0.0.1:0".parse().unwrap(),
+                            Arc::new(TwoPhaseHandler {
+                                events,
+                                short_ready: Arc::new(Notify::new()),
+                                long_ready: Arc::new(Notify::new()),
+                            }),
+                        )
+                        .await?;
+                    *bound_w.lock().expect("lock") = Some(addr);
+                    Ok(())
+                })
+            },
+        )
+        .expect("mount caller");
+    caller.wait().await.expect("caller active");
+
+    let addr = bound_addr.lock().expect("lock").expect("bound addr");
+    caller.dispose().await.expect("dispose caller");
+    assert!(
+        TcpStream::connect(addr).await.is_err(),
+        "listener must close automatically when caller fiber disposes"
     );
 
     ctx.dispose().await.expect("ctx dispose");

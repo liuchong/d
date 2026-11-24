@@ -1,0 +1,11 @@
+[package]
+name = "doc-render-plain"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license-file = "../../../LICENSE"
+description = "Zero-dependency plain-text escaped alternative implementation of render-api for d"
+
+[dependencies]
+frame = { path = "../../frame" }
+render-api = { path = "../../contracts/render-api" }

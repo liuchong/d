@@ -3,7 +3,7 @@
 
 pub mod shell;
 
-use frame::{EffectHandle, FrameError, Service};
+use frame::{Context, EffectHandle, FrameError, ScopedService, Service};
 use http_api::HttpResponse;
 use std::path::Path;
 use std::sync::Arc;
@@ -157,9 +157,10 @@ pub trait FileViewer: Send + Sync + 'static {
 
 /// Registry contract allowing presentation plugins to register and revoke viewers.
 pub trait ViewerRegistry: Send + Sync + 'static {
-    /// Register a [`FileViewer`], returning an [`EffectHandle`] that revokes it.
+    /// Register a [`FileViewer`] owned by `caller`, returning an [`EffectHandle`] that revokes it.
     fn register(
         &self,
+        caller: &Context,
         viewer: Arc<dyn FileViewer>,
     ) -> Result<EffectHandle, FrameError>;
 
@@ -177,12 +178,13 @@ impl ViewerRegistryService {
         Self(inner)
     }
 
-    /// Delegate [`ViewerRegistry::register`].
+    /// Delegate [`ViewerRegistry::register`] with explicit caller ownership.
     pub fn register(
         &self,
+        caller: &Context,
         viewer: Arc<dyn FileViewer>,
     ) -> Result<EffectHandle, FrameError> {
-        self.0.register(viewer)
+        self.0.register(caller, viewer)
     }
 
     /// Delegate [`ViewerRegistry::resolve_response`].
@@ -194,6 +196,42 @@ impl ViewerRegistryService {
     }
 }
 
+/// Caller-bound [`ViewerRegistryService`] view obtained via `ctx.use_service::<ViewerRegistryService>()`.
+#[derive(Clone)]
+pub struct ScopedViewerRegistry {
+    inner: Arc<ViewerRegistryService>,
+    caller: Context,
+}
+
+impl ScopedViewerRegistry {
+    /// Register a viewer whose lifetime is owned directly by the caller fiber.
+    pub fn register(
+        &self,
+        viewer: Arc<dyn FileViewer>,
+    ) -> Result<EffectHandle, FrameError> {
+        self.inner.register(&self.caller, viewer)
+    }
+
+    /// Evaluate registered viewers in priority order.
+    pub fn resolve_response(
+        &self,
+        input: ViewerInput<'_>,
+    ) -> Option<HttpResponse> {
+        self.inner.resolve_response(input)
+    }
+}
+
 impl Service for ViewerRegistryService {
     const NAME: &'static str = "files.viewer_registry";
+}
+
+impl ScopedService for ViewerRegistryService {
+    type View = ScopedViewerRegistry;
+
+    fn bind(self: Arc<Self>, caller: Context) -> Self::View {
+        ScopedViewerRegistry {
+            inner: self,
+            caller,
+        }
+    }
 }

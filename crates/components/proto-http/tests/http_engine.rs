@@ -45,6 +45,7 @@ async fn parser_keep_alive_chunked_and_malformed_defense() {
 
     let _a = router
         .mount_route(
+            &ctx,
             RouteSpec::new("a", RouteMatch::Exact("/a".to_string())),
             fn_handler(|_req| async {
                 HttpResponse::text(StatusCode::OK, "alpha")
@@ -54,6 +55,7 @@ async fn parser_keep_alive_chunked_and_malformed_defense() {
 
     let _b = router
         .mount_route(
+            &ctx,
             RouteSpec::new("b", RouteMatch::Exact("/b".to_string())),
             fn_handler(|req| async move {
                 let bytes = req.body.into_bytes().await.unwrap_or_default();
@@ -139,6 +141,7 @@ async fn streaming_response_flushes_chunks_before_close() {
 
     let _sse = router
         .mount_route(
+            &ctx,
             RouteSpec::new("sse", RouteMatch::Exact("/sse".to_string())),
             fn_handler(move |_req| {
                 let ack = Arc::clone(&ack_route);
@@ -257,9 +260,12 @@ async fn router_effect_lifecycle_and_snapshot_isolation() {
 
     // Filter short-circuit + disposal
     let filter_h = router
-        .mount_filter(Arc::new(DenyFilter {
-            prefix: "/secret".to_string(),
-        }))
+        .mount_filter(
+            &ctx,
+            Arc::new(DenyFilter {
+                prefix: "/secret".to_string(),
+            }),
+        )
         .expect("mount filter");
     let blocked = router
         .dispatch(HttpRequest::new(Method::Get, "/secret/x"))
@@ -286,6 +292,7 @@ async fn router_effect_lifecycle_and_snapshot_isolation() {
     for _ in 0..200 {
         let route_h = router
             .mount_route(
+                &ctx,
                 RouteSpec::new("dyn", RouteMatch::Exact("/dyn".to_string())),
                 fn_handler(|_req| async {
                     HttpResponse::text(StatusCode::OK, "ok")
@@ -298,6 +305,45 @@ async fn router_effect_lifecycle_and_snapshot_isolation() {
     reader_task.await.expect("reader");
     let after = router.dispatch(HttpRequest::new(Method::Get, "/dyn")).await;
     assert_eq!(after.status, StatusCode::NOT_FOUND);
+
+    // Caller-bound route automatically revokes when caller fiber disposes.
+    let route_caller = ctx
+        .inject(
+            "route-caller",
+            frame::Deps::empty().with::<RouterService>(),
+            |c| {
+                Box::pin(async move {
+                    let r = c.use_service::<RouterService>()?;
+                    let _ = r.mount_route(
+                        RouteSpec::new(
+                            "scoped",
+                            RouteMatch::Exact("/scoped".to_string()),
+                        ),
+                        fn_handler(|_| async {
+                            HttpResponse::text(StatusCode::OK, "scoped")
+                        }),
+                    )?;
+                    Ok(())
+                })
+            },
+        )
+        .expect("mount route caller");
+    route_caller.wait().await.expect("caller active");
+    assert_eq!(
+        router
+            .dispatch(HttpRequest::new(Method::Get, "/scoped"))
+            .await
+            .status,
+        StatusCode::OK
+    );
+    route_caller.dispose().await.expect("dispose route caller");
+    assert_eq!(
+        router
+            .dispatch(HttpRequest::new(Method::Get, "/scoped"))
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
 
     ctx.dispose().await.expect("dispose");
 }

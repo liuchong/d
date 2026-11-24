@@ -5,9 +5,10 @@ pub mod router;
 pub mod writer;
 
 use frame::{
-    BoxFuture, ConfigValue, Context, Deps, EffectHandle, ErrorKind, FrameError,
-    Plugin, Service,
+    BoxFuture, ConfigValue, Context, Deps, ErrorKind, FrameError, Plugin,
+    ValidationIssue,
 };
+pub use http_api::BoundServerInfo;
 use http_api::{
     HttpHandler, HttpRequest, HttpResponse, RouterService, Version,
 };
@@ -45,16 +46,6 @@ impl Default for HttpConfig {
             idle_timeout: Duration::from_secs(30),
         }
     }
-}
-
-/// Bound listener metadata published once [`HttpEnginePlugin`] opens a socket.
-#[derive(Debug, Clone)]
-pub struct BoundServerInfo {
-    pub local_addr: SocketAddr,
-}
-
-impl Service for BoundServerInfo {
-    const NAME: &'static str = "http.bound_info";
 }
 
 struct FnHandler<F>(F);
@@ -190,6 +181,102 @@ impl HttpEnginePlugin {
     }
 }
 
+fn parse_positive_usize(
+    k: &str,
+    v: &ConfigValue,
+    issues: &mut Vec<ValidationIssue>,
+) -> Option<usize> {
+    match v {
+        ConfigValue::Int(n) if *n > 0 => Some(*n as usize),
+        _ => {
+            issues.push(ValidationIssue {
+                path: k.to_string(),
+                message: format!("{k} must be a positive integer"),
+            });
+            None
+        }
+    }
+}
+
+fn resolve_http_config(
+    base: &HttpConfig,
+    raw: &ConfigValue,
+) -> Result<HttpConfig, FrameError> {
+    let mut cfg = base.clone();
+    match raw {
+        ConfigValue::Null => Ok(cfg),
+        ConfigValue::Map(map) => {
+            let mut issues = Vec::new();
+            for (k, v) in map {
+                match k.as_str() {
+                    "bind_addr" => match v {
+                        ConfigValue::Null => cfg.bind_addr = None,
+                        ConfigValue::Str(s) => match s.parse::<SocketAddr>() {
+                            Ok(addr) => cfg.bind_addr = Some(addr),
+                            Err(e) => issues.push(ValidationIssue {
+                                path: k.clone(),
+                                message: format!("invalid bind_addr `{s}`: {e}"),
+                            }),
+                        },
+                        _ => issues.push(ValidationIssue {
+                            path: k.clone(),
+                            message: "bind_addr must be a socket address string or null"
+                                .to_string(),
+                        }),
+                    },
+                    "max_request_line_bytes" => {
+                        if let Some(n) = parse_positive_usize(k, v, &mut issues)
+                        {
+                            cfg.max_request_line_bytes = n;
+                        }
+                    }
+                    "max_headers" => {
+                        if let Some(n) = parse_positive_usize(k, v, &mut issues)
+                        {
+                            cfg.max_headers = n;
+                        }
+                    }
+                    "max_header_bytes" => {
+                        if let Some(n) = parse_positive_usize(k, v, &mut issues)
+                        {
+                            cfg.max_header_bytes = n;
+                        }
+                    }
+                    "max_body_bytes" => {
+                        if let Some(n) = parse_positive_usize(k, v, &mut issues)
+                        {
+                            cfg.max_body_bytes = n;
+                        }
+                    }
+                    "idle_timeout_ms" => match v {
+                        ConfigValue::Int(ms) if *ms > 0 => {
+                            cfg.idle_timeout = Duration::from_millis(*ms as u64);
+                        }
+                        _ => issues.push(ValidationIssue {
+                            path: k.clone(),
+                            message: "idle_timeout_ms must be a positive integer"
+                                .to_string(),
+                        }),
+                    },
+                    _ => issues.push(ValidationIssue {
+                        path: k.clone(),
+                        message: format!("unknown proto-http option `{k}`"),
+                    }),
+                }
+            }
+            if issues.is_empty() {
+                Ok(cfg)
+            } else {
+                Err(FrameError::validation(issues))
+            }
+        }
+        _ => Err(FrameError::validation(vec![ValidationIssue {
+            path: "".to_string(),
+            message: "proto-http config must be Null or Map".to_string(),
+        }])),
+    }
+}
+
 impl Plugin for HttpEnginePlugin {
     fn name(&self) -> &str {
         "proto-http"
@@ -199,47 +286,49 @@ impl Plugin for HttpEnginePlugin {
         if self.config.bind_addr.is_some() {
             Deps::empty().with::<TransportService>()
         } else {
-            Deps::empty()
+            Deps::empty().with_optional::<TransportService>()
         }
+    }
+
+    fn validate_config(
+        &self,
+        raw: &ConfigValue,
+    ) -> Result<ConfigValue, FrameError> {
+        let _ = resolve_http_config(&self.config, raw)?;
+        Ok(raw.clone())
     }
 
     fn apply(
         &self,
         ctx: Context,
-        _config: ConfigValue,
+        config: ConfigValue,
     ) -> BoxFuture<'static, Result<(), FrameError>> {
-        let config = self.config.clone();
+        let base = self.config.clone();
         Box::pin(async move {
-            let router = HttpRouter::new(ctx.clone());
+            let merged = ctx.resolve_intercept::<RouterService>(config);
+            let config = resolve_http_config(&base, &merged)?;
+
+            let router = HttpRouter::new();
             ctx.provide(Arc::new(RouterService::new(
                 Arc::clone(&router) as Arc<dyn http_api::Router>
             )))
             .await?;
 
             if let Some(bind_addr) = config.bind_addr {
-                let transport = ctx.require::<TransportService>()?;
+                let transport =
+                    ctx.try_use_service::<TransportService>().ok_or_else(|| {
+                        FrameError::new(
+                            ErrorKind::MissingDependency,
+                            "TransportService is required when bind_addr is set",
+                        )
+                    })?;
                 let driver: Arc<dyn ConnectionHandler> =
                     Arc::new(HttpConnectionDriver {
                         router: Arc::clone(&router),
                         config: config.clone(),
                     });
-                let (local_addr, listener_handle) =
+                let (local_addr, _listener_handle) =
                     transport.listen(bind_addr, driver).await?;
-                let _: EffectHandle = ctx
-                    .effect("http-listener", move |scope| {
-                        Box::pin(async move {
-                            scope.defer_async(move || {
-                                Box::pin(async move {
-                                    listener_handle.dispose().await
-                                })
-                            });
-                            Ok(())
-                        })
-                    })
-                    .await
-                    .map_err(|e| {
-                        FrameError::new(ErrorKind::ActivationFailed, e.message)
-                    })?;
                 ctx.provide(Arc::new(BoundServerInfo { local_addr }))
                     .await?;
             }

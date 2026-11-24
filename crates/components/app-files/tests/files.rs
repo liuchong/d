@@ -244,5 +244,23 @@ async fn index_html_listing_sort_and_hidden_toggle() {
     assert!(bypass_html.contains("Index of"));
     assert!(bypass_html.contains("nested.txt"));
 
+    use frame::{ErrorKind, Plugin};
+    let err = FilesAppPlugin::default()
+        .validate_config(&ConfigValue::Null)
+        .expect_err("default plugin with empty root must reject Null config");
+    assert_eq!(err.kind, ErrorKind::ValidationFailed);
+
+    let mut cfg = std::collections::BTreeMap::new();
+    cfg.insert(
+        "root".to_string(),
+        ConfigValue::Str(dir.path().to_string_lossy().into_owned()),
+    );
+    cfg.insert("allow_hidden".to_string(), ConfigValue::Bool(false));
+    assert!(
+        FilesAppPlugin::default()
+            .validate_config(&ConfigValue::Map(cfg))
+            .is_ok()
+    );
+
     ctx.dispose().await.expect("dispose");
 }

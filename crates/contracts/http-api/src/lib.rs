@@ -1,7 +1,10 @@
 //! Layer 2 HTTP contracts: protocol values, streaming body primitives,
 //! request/response filters, and the snapshot router interface.
 
-use frame::{BoxFuture, EffectHandle, FrameError, Service};
+use frame::{
+    BoxFuture, Context as FrameContext, EffectHandle, FrameError,
+    ScopedService, Service,
+};
 use std::collections::VecDeque;
 use std::fmt;
 use std::future::poll_fn;
@@ -765,19 +768,31 @@ pub trait HttpFilter: Send + Sync + 'static {
     ) -> BoxFuture<'static, HttpResponse>;
 }
 
+/// Bound HTTP listener metadata published when a listener starts serving.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoundServerInfo {
+    pub local_addr: SocketAddr,
+}
+
+impl Service for BoundServerInfo {
+    const NAME: &'static str = "http.bound_info";
+}
+
 /// Layer 2 router contract trait separating control-plane mutations from
 /// snapshot dispatch on the data plane.
 pub trait Router: Send + Sync + 'static {
-    /// Mount a route, returning an [`EffectHandle`] whose disposal removes it.
+    /// Mount a route owned by `caller`, returning an [`EffectHandle`] whose disposal removes it.
     fn mount_route(
         &self,
+        caller: &FrameContext,
         spec: RouteSpec,
         handler: Arc<dyn HttpHandler>,
     ) -> Result<EffectHandle, FrameError>;
 
-    /// Mount a bidirectional filter, returning an [`EffectHandle`] whose disposal removes it.
+    /// Mount a bidirectional filter owned by `caller`, returning an [`EffectHandle`] whose disposal removes it.
     fn mount_filter(
         &self,
+        caller: &FrameContext,
         filter: Arc<dyn HttpFilter>,
     ) -> Result<EffectHandle, FrameError>;
 
@@ -795,21 +810,23 @@ impl RouterService {
         Self(inner)
     }
 
-    /// Delegate [`Router::mount_route`].
+    /// Delegate [`Router::mount_route`] with explicit caller ownership.
     pub fn mount_route(
         &self,
+        caller: &FrameContext,
         spec: RouteSpec,
         handler: Arc<dyn HttpHandler>,
     ) -> Result<EffectHandle, FrameError> {
-        self.0.mount_route(spec, handler)
+        self.0.mount_route(caller, spec, handler)
     }
 
-    /// Delegate [`Router::mount_filter`].
+    /// Delegate [`Router::mount_filter`] with explicit caller ownership.
     pub fn mount_filter(
         &self,
+        caller: &FrameContext,
         filter: Arc<dyn HttpFilter>,
     ) -> Result<EffectHandle, FrameError> {
-        self.0.mount_filter(filter)
+        self.0.mount_filter(caller, filter)
     }
 
     /// Delegate [`Router::dispatch`].
@@ -821,6 +838,51 @@ impl RouterService {
     }
 }
 
+/// Caller-bound [`RouterService`] view obtained via `ctx.use_service::<RouterService>()`.
+#[derive(Clone)]
+pub struct ScopedRouter {
+    inner: Arc<RouterService>,
+    caller: FrameContext,
+}
+
+impl ScopedRouter {
+    /// Mount a route whose lifetime is bound directly to the caller's fiber.
+    pub fn mount_route(
+        &self,
+        spec: RouteSpec,
+        handler: Arc<dyn HttpHandler>,
+    ) -> Result<EffectHandle, FrameError> {
+        self.inner.mount_route(&self.caller, spec, handler)
+    }
+
+    /// Mount a filter whose lifetime is bound directly to the caller's fiber.
+    pub fn mount_filter(
+        &self,
+        filter: Arc<dyn HttpFilter>,
+    ) -> Result<EffectHandle, FrameError> {
+        self.inner.mount_filter(&self.caller, filter)
+    }
+
+    /// Dispatch a request against the current immutable snapshot.
+    pub fn dispatch(
+        &self,
+        req: HttpRequest,
+    ) -> BoxFuture<'static, HttpResponse> {
+        self.inner.dispatch(req)
+    }
+}
+
 impl Service for RouterService {
     const NAME: &'static str = "http.router";
+}
+
+impl ScopedService for RouterService {
+    type View = ScopedRouter;
+
+    fn bind(self: Arc<Self>, caller: FrameContext) -> Self::View {
+        ScopedRouter {
+            inner: self,
+            caller,
+        }
+    }
 }

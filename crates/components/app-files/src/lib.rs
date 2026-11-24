@@ -15,7 +15,9 @@ use files_api::{
     FileCategory, FileViewer, ViewMode, ViewerInput, ViewerRegistry,
     ViewerRegistryService,
 };
-use frame::{BoxFuture, ConfigValue, Context, Deps, FrameError, Plugin};
+use frame::{
+    BoxFuture, ConfigValue, Context, Deps, FrameError, Plugin, ValidationIssue,
+};
 use http_api::{
     HttpHandler, HttpRequest, HttpResponse, Method, RequestMeta, RouteMatch,
     RouteSpec, RouterService, StatusCode,
@@ -32,7 +34,7 @@ use viewer::{DefaultViewerRegistry, FallbackTextViewer};
 const MAX_VIEWER_TEXT_BYTES: u64 = 4 * 1024 * 1024;
 
 /// Configuration for [`FilesAppPlugin`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct FilesConfig {
     pub root: PathBuf,
     pub allow_hidden: bool,
@@ -46,7 +48,7 @@ impl FilesConfig {
 }
 
 /// Layer 4 plugin mounting the file serving router and [`ViewerRegistryService`].
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct FilesAppPlugin {
     config: FilesConfig,
 }
@@ -55,6 +57,62 @@ impl FilesAppPlugin {
     /// Create a file application plugin for `config`.
     pub fn new(config: FilesConfig) -> Self {
         Self { config }
+    }
+}
+
+fn resolve_files_config(
+    base: &FilesConfig,
+    raw: &ConfigValue,
+) -> Result<FilesConfig, FrameError> {
+    let mut cfg = base.clone();
+    let mut issues = Vec::new();
+    match raw {
+        ConfigValue::Null => {}
+        ConfigValue::Map(map) => {
+            for (k, v) in map {
+                match k.as_str() {
+                    "root" => match v {
+                        ConfigValue::Str(s) if !s.trim().is_empty() => {
+                            cfg.root = PathBuf::from(s);
+                        }
+                        _ => issues.push(ValidationIssue {
+                            path: k.clone(),
+                            message: "root must be a non-empty path string"
+                                .to_string(),
+                        }),
+                    },
+                    "allow_hidden" => match v {
+                        ConfigValue::Bool(b) => cfg.allow_hidden = *b,
+                        _ => issues.push(ValidationIssue {
+                            path: k.clone(),
+                            message: "allow_hidden must be a boolean"
+                                .to_string(),
+                        }),
+                    },
+                    _ => issues.push(ValidationIssue {
+                        path: k.clone(),
+                        message: format!("unknown app-files option `{k}`"),
+                    }),
+                }
+            }
+        }
+        _ => {
+            return Err(FrameError::validation(vec![ValidationIssue {
+                path: "".to_string(),
+                message: "app-files config must be Null or Map".to_string(),
+            }]));
+        }
+    }
+    if cfg.root.as_os_str().is_empty() {
+        issues.push(ValidationIssue {
+            path: "root".to_string(),
+            message: "root directory must be configured".to_string(),
+        });
+    }
+    if issues.is_empty() {
+        Ok(cfg)
+    } else {
+        Err(FrameError::validation(issues))
     }
 }
 
@@ -67,27 +125,36 @@ impl Plugin for FilesAppPlugin {
         Deps::empty().with::<RouterService>()
     }
 
+    fn validate_config(
+        &self,
+        raw: &ConfigValue,
+    ) -> Result<ConfigValue, FrameError> {
+        let _ = resolve_files_config(&self.config, raw)?;
+        Ok(raw.clone())
+    }
+
     fn apply(
         &self,
         ctx: Context,
-        _config: ConfigValue,
+        config: ConfigValue,
     ) -> BoxFuture<'static, Result<(), FrameError>> {
-        let config = self.config.clone();
+        let base = self.config.clone();
         Box::pin(async move {
-            let registry = DefaultViewerRegistry::new(ctx.clone());
+            let config = resolve_files_config(&base, &config)?;
+            let registry = DefaultViewerRegistry::new();
             let fallback: Arc<dyn FileViewer> = Arc::new(FallbackTextViewer);
-            let fallback_handle = registry.register(fallback)?;
+            let _fallback_handle = registry.register(&ctx, fallback)?;
             let registry_svc = Arc::new(ViewerRegistryService::new(
                 Arc::clone(&registry) as Arc<dyn ViewerRegistry>,
             ));
             ctx.provide(Arc::clone(&registry_svc)).await?;
 
-            let router = ctx.require::<RouterService>()?;
+            let router = ctx.use_service::<RouterService>()?;
             let handler: Arc<dyn HttpHandler> = Arc::new(FilesHandler {
                 config,
                 registry: registry_svc,
             });
-            let route_handle = router.mount_route(
+            let _route_handle = router.mount_route(
                 RouteSpec {
                     id: "app-files-catchall".to_string(),
                     host: None,
@@ -97,17 +164,6 @@ impl Plugin for FilesAppPlugin {
                 },
                 handler,
             )?;
-
-            let _ = ctx.effect_sync("app-files-mount", move |scope| {
-                scope.defer_async(move || {
-                    Box::pin(async move {
-                        let _ = route_handle.dispose().await;
-                        let _ = fallback_handle.dispose().await;
-                        Ok(())
-                    })
-                });
-                Ok(())
-            })?;
 
             Ok(())
         })

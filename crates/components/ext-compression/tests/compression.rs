@@ -39,6 +39,7 @@ async fn negotiates_compression_and_exempts_streaming_range_media() {
 
     let _t = router
         .mount_route(
+            &ctx,
             RouteSpec::new("text", RouteMatch::Exact("/text".to_string())),
             fn_handler(move |_req| {
                 let s = sample_clone.clone();
@@ -49,6 +50,7 @@ async fn negotiates_compression_and_exempts_streaming_range_media() {
 
     let _tiny = router
         .mount_route(
+            &ctx,
             RouteSpec::new("tiny", RouteMatch::Exact("/tiny".to_string())),
             fn_handler(|_req| async {
                 HttpResponse::text(StatusCode::OK, "hi")
@@ -58,6 +60,7 @@ async fn negotiates_compression_and_exempts_streaming_range_media() {
 
     let _sse = router
         .mount_route(
+            &ctx,
             RouteSpec::new("sse", RouteMatch::Exact("/sse".to_string())),
             fn_handler(|_req| async {
                 let (tx, rx) = stream_channel();
@@ -80,6 +83,7 @@ async fn negotiates_compression_and_exempts_streaming_range_media() {
 
     let _r206 = router
         .mount_route(
+            &ctx,
             RouteSpec::new(
                 "partial",
                 RouteMatch::Exact("/partial".to_string()),
@@ -99,6 +103,7 @@ async fn negotiates_compression_and_exempts_streaming_range_media() {
 
     let _r304 = router
         .mount_route(
+            &ctx,
             RouteSpec::new("notmod", RouteMatch::Exact("/notmod".to_string())),
             fn_handler(|_req| async {
                 HttpResponse::empty(StatusCode::NOT_MODIFIED)
@@ -108,6 +113,7 @@ async fn negotiates_compression_and_exempts_streaming_range_media() {
 
     let _png = router
         .mount_route(
+            &ctx,
             RouteSpec::new("png", RouteMatch::Exact("/img.png".to_string())),
             fn_handler(|_req| async {
                 HttpResponse::bytes(
@@ -121,6 +127,7 @@ async fn negotiates_compression_and_exempts_streaming_range_media() {
 
     let _no_tr = router
         .mount_route(
+            &ctx,
             RouteSpec::new(
                 "notrans",
                 RouteMatch::Exact("/notrans".to_string()),

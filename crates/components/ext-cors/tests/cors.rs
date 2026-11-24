@@ -41,6 +41,7 @@ struct MockRouter {
 impl Router for MockRouter {
     fn mount_route(
         &self,
+        _caller: &Context,
         _spec: RouteSpec,
         _handler: Arc<dyn HttpHandler>,
     ) -> Result<EffectHandle, FrameError> {
@@ -52,6 +53,7 @@ impl Router for MockRouter {
 
     fn mount_filter(
         &self,
+        _caller: &Context,
         filter: Arc<dyn HttpFilter>,
     ) -> Result<EffectHandle, FrameError> {
         self.filters.lock().expect("filters").push(filter);
@@ -87,15 +89,15 @@ impl Router for MockRouter {
     }
 }
 
-/// Real `RouterService` variant where `mount_filter` returns a live EffectHandle.
+/// Real `RouterService` variant binding filter effect directly to `caller`.
 struct LiveMockRouter {
-    ctx: Context,
     filters: Arc<Mutex<Vec<Arc<dyn HttpFilter>>>>,
 }
 
 impl Router for LiveMockRouter {
     fn mount_route(
         &self,
+        _caller: &Context,
         _spec: RouteSpec,
         _handler: Arc<dyn HttpHandler>,
     ) -> Result<EffectHandle, FrameError> {
@@ -104,11 +106,12 @@ impl Router for LiveMockRouter {
 
     fn mount_filter(
         &self,
+        caller: &Context,
         filter: Arc<dyn HttpFilter>,
     ) -> Result<EffectHandle, FrameError> {
         let filters = Arc::clone(&self.filters);
         let ptr = Arc::as_ptr(&filter) as *const () as usize;
-        self.ctx.effect_sync("mock-filter", move |scope| {
+        caller.effect_sync("mock-filter", move |scope| {
             filters.lock().expect("f").push(filter);
             let cleanup_list = Arc::clone(&filters);
             scope.defer(move || {
@@ -131,9 +134,14 @@ impl Router for LiveMockRouter {
 
 #[test]
 fn cors_disabled_by_default_and_allows_when_mounted() {
+    use frame::Plugin;
+    let err = CorsPlugin
+        .validate_config(&ConfigValue::Bool(true))
+        .expect_err("reject invalid cors config");
+    assert_eq!(err.kind, ErrorKind::ValidationFailed);
+
     let ctx = Context::new(FrameOptions::new(Arc::new(SyncSpawner)));
     let router_impl = Arc::new(LiveMockRouter {
-        ctx: ctx.clone(),
         filters: Arc::new(Mutex::new(Vec::new())),
     });
     let svc = Arc::new(RouterService::new(router_impl));
