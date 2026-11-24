@@ -3,6 +3,7 @@ use crate::effect::EffectHandle;
 use crate::error::FrameError;
 use crate::fiber::{Engine, FiberId, FiberState};
 use crate::loader::ConfigValue;
+use crate::service::ScopeToken;
 use crate::sync::{BoxFuture, join_all};
 use std::any::{Any, TypeId};
 use std::marker::PhantomData;
@@ -22,6 +23,50 @@ pub trait WaterfallEvent: Send + Sync + 'static {
     const NAME: &'static str;
     type Payload: Send + 'static;
     type Output: Send + 'static;
+}
+
+/// Lifecycle action reported in [`ServiceChanged`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ServiceAction {
+    Provided,
+    Updated,
+    Removed,
+}
+
+/// Built-in kernel event emitted outside locks when a service changes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ServiceChanged {
+    pub service: &'static str,
+    pub scope: ScopeToken,
+    pub owner: FiberId,
+    pub action: ServiceAction,
+}
+
+impl Event for ServiceChanged {
+    const NAME: &'static str = "internal/service";
+}
+
+/// Built-in kernel event emitted outside locks on fiber state transitions.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FiberStateChanged {
+    pub fiber_id: FiberId,
+    pub parent_id: Option<FiberId>,
+    pub name: String,
+    pub from: FiberState,
+    pub to: FiberState,
+    pub error: Option<String>,
+}
+
+impl Event for FiberStateChanged {
+    const NAME: &'static str = "internal/fiber-state";
+}
+
+/// Built-in kernel event emitted via [`Context::mark_ready`] once startup converges.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RuntimeReady;
+
+impl Event for RuntimeReady {
+    const NAME: &'static str = "internal/ready";
 }
 
 pub type WaterfallFinal<E> = Box<
@@ -247,6 +292,7 @@ pub(crate) fn register_hook(
 pub(crate) fn snapshot_hooks(
     engine: &Arc<Engine>,
     key: EventKey,
+    emitter: Option<&Context>,
     filter: Option<&EventFilter>,
 ) -> Vec<Arc<HookEntry>> {
     let list = {
@@ -255,8 +301,19 @@ pub(crate) fn snapshot_hooks(
     };
     list.into_iter()
         .filter(|h| {
-            !h.removed.load(Ordering::Acquire)
-                && (h.global || filter.is_none_or(|pred| pred(&h.ctx)))
+            if h.removed.load(Ordering::Acquire) {
+                return false;
+            }
+            if h.global {
+                return true;
+            }
+            let emitter_ok = filter.is_none_or(|pred| pred(&h.ctx));
+            let listener_ok = match (h.ctx.selector(), emitter) {
+                (Some(sel), Some(em)) => sel(em),
+                (Some(_), None) => false,
+                (None, _) => true,
+            };
+            emitter_ok && listener_ok
         })
         .collect()
 }
@@ -310,11 +367,12 @@ fn consume_once(hook: &Arc<HookEntry>) -> bool {
 
 pub(crate) fn dispatch_emit<E: Event>(
     engine: &Arc<Engine>,
+    emitter: Option<&Context>,
     event: &E,
     filter: Option<&EventFilter>,
 ) {
     let key = EventKey::of::<E>(E::NAME);
-    let hooks = snapshot_hooks(engine, key, filter);
+    let hooks = snapshot_hooks(engine, key, emitter, filter);
     for hook in hooks {
         if let Some(kind) = hook.callback.downcast_ref::<ListenerKind<E>>() {
             match kind {
@@ -334,11 +392,12 @@ pub(crate) fn dispatch_emit<E: Event>(
 
 pub(crate) fn dispatch_parallel<E: Event>(
     engine: &Arc<Engine>,
+    emitter: Option<&Context>,
     event: &E,
     filter: Option<&EventFilter>,
 ) -> BoxFuture<'static, Result<(), FrameError>> {
     let key = EventKey::of::<E>(E::NAME);
-    let hooks = snapshot_hooks(engine, key, filter);
+    let hooks = snapshot_hooks(engine, key, emitter, filter);
     let mut futs = Vec::new();
     for hook in hooks {
         if let Some(kind) = hook.callback.downcast_ref::<ListenerKind<E>>() {
@@ -374,11 +433,12 @@ pub(crate) fn dispatch_parallel<E: Event>(
 
 pub(crate) fn dispatch_bail<E: RequestEvent>(
     engine: &Arc<Engine>,
+    emitter: Option<&Context>,
     event: &E,
     filter: Option<&EventFilter>,
 ) -> Result<Option<E::Output>, FrameError> {
     let key = EventKey::of::<E>(E::NAME);
-    let hooks = snapshot_hooks(engine, key, filter);
+    let hooks = snapshot_hooks(engine, key, emitter, filter);
     for hook in hooks {
         if let Some(cb) = hook.callback.downcast_ref::<BailListener<E>>()
             && let Some(out) = cb(&hook.ctx, event)?
@@ -391,11 +451,12 @@ pub(crate) fn dispatch_bail<E: RequestEvent>(
 
 pub(crate) fn dispatch_serial<'a, E: RequestEvent>(
     engine: &Arc<Engine>,
+    emitter: Option<&Context>,
     event: &'a E,
     filter: Option<&EventFilter>,
 ) -> BoxFuture<'a, Result<Option<E::Output>, FrameError>> {
     let key = EventKey::of::<E>(E::NAME);
-    let hooks = snapshot_hooks(engine, key, filter);
+    let hooks = snapshot_hooks(engine, key, emitter, filter);
     Box::pin(async move {
         for hook in hooks {
             if let Some(cb) = hook.callback.downcast_ref::<SerialListener<E>>()
@@ -435,11 +496,12 @@ pub(crate) fn run_waterfall_hooks<E: WaterfallEvent>(
 
 pub(crate) fn dispatch_waterfall<E: WaterfallEvent>(
     engine: &Arc<Engine>,
+    emitter: Option<&Context>,
     payload: E::Payload,
     filter: Option<&EventFilter>,
     final_step: WaterfallFinal<E>,
 ) -> BoxFuture<'static, Result<E::Output, FrameError>> {
     let key = EventKey::of::<E>(E::NAME);
-    let hooks = snapshot_hooks(engine, key, filter);
+    let hooks = snapshot_hooks(engine, key, emitter, filter);
     run_waterfall_hooks::<E>(hooks, payload, final_step)
 }

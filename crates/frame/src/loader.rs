@@ -1,10 +1,11 @@
 use crate::context::Context;
 use crate::error::{ErrorKind, FrameError};
 use crate::fiber::{FiberHandle, FiberState};
-use crate::plugin::Plugin;
-use crate::service::ServiceKey;
+use crate::plugin::{Deps, Plugin};
+use crate::service::{Service, ServiceKey};
 use crate::sync::{BoxFuture, SerialQueue};
 use std::collections::{BTreeMap, HashSet};
+use std::fmt;
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug, PartialEq, Default)]
@@ -19,12 +20,12 @@ pub enum ConfigValue {
     Map(BTreeMap<String, ConfigValue>),
 }
 
-use std::fmt;
-
 #[derive(Clone)]
 pub enum EntryTarget {
     Name(String),
     Plugin(Arc<dyn Plugin>),
+    /// Pure structural container group holding `isolate` scopes and `children`.
+    Group,
 }
 
 impl fmt::Debug for EntryTarget {
@@ -34,6 +35,7 @@ impl fmt::Debug for EntryTarget {
             Self::Plugin(p) => {
                 f.debug_tuple("Plugin").field(&p.name()).finish()
             }
+            Self::Group => f.write_str("Group"),
         }
     }
 }
@@ -43,6 +45,7 @@ impl PartialEq for EntryTarget {
         match (self, other) {
             (Self::Name(a), Self::Name(b)) => a == b,
             (Self::Plugin(a), Self::Plugin(b)) => Arc::ptr_eq(a, b),
+            (Self::Group, Self::Group) => true,
             _ => false,
         }
     }
@@ -134,11 +137,20 @@ pub struct LoaderEntrySnapshot {
 struct PreparedEntry {
     entry: PluginEntry,
     plugin: Option<Arc<dyn Plugin>>,
+    inner_plugin: Option<Arc<dyn Plugin>>,
+    children: Vec<PreparedEntry>,
+    is_group: bool,
+    latest_children: Option<Arc<Mutex<Vec<PreparedEntry>>>>,
+    child_loader_slot: Option<Arc<Mutex<Option<Loader>>>>,
 }
 
 struct LoaderRecord {
     entry: PluginEntry,
     plugin: Arc<dyn Plugin>,
+    inner_plugin: Option<Arc<dyn Plugin>>,
+    is_group: bool,
+    latest_children: Option<Arc<Mutex<Vec<PreparedEntry>>>>,
+    child_loader_slot: Option<Arc<Mutex<Option<Loader>>>>,
     fiber: FiberHandle,
 }
 
@@ -161,16 +173,113 @@ pub struct Loader {
     inner: Arc<LoaderInner>,
 }
 
+/// Frame service handle exposing a managed [`Loader`] for dynamic topology control.
+#[derive(Clone)]
+pub struct LoaderService(pub Loader);
+
+impl LoaderService {
+    pub fn new(loader: Loader) -> Self {
+        Self(loader)
+    }
+
+    pub fn loader(&self) -> &Loader {
+        &self.0
+    }
+
+    pub fn apply(
+        &self,
+        entries: Vec<PluginEntry>,
+    ) -> BoxFuture<'static, Result<Vec<String>, FrameError>> {
+        self.0.apply(entries)
+    }
+
+    pub fn apply_patches(
+        &self,
+        patches: Vec<EntryPatch>,
+    ) -> BoxFuture<'static, Result<Vec<String>, FrameError>> {
+        self.0.apply_patches(patches)
+    }
+
+    pub fn inspect(&self) -> Vec<LoaderEntrySnapshot> {
+        self.0.inspect()
+    }
+
+    pub fn close(&self) -> BoxFuture<'static, Result<(), FrameError>> {
+        self.0.close()
+    }
+}
+
+impl Service for LoaderService {
+    const NAME: &'static str = "frame.loader";
+}
+
+/// Plugin mounting [`LoaderService`] onto a [`Context`] and closing it on disposal.
+#[derive(Clone)]
+pub struct LoaderPlugin {
+    resolver: Arc<dyn Resolver>,
+}
+
+impl LoaderPlugin {
+    pub fn new(resolver: Arc<dyn Resolver>) -> Self {
+        Self { resolver }
+    }
+}
+
+impl Plugin for LoaderPlugin {
+    fn name(&self) -> &str {
+        "frame-loader"
+    }
+
+    fn apply(
+        &self,
+        ctx: Context,
+        _config: ConfigValue,
+    ) -> BoxFuture<'static, Result<(), FrameError>> {
+        let resolver = Arc::clone(&self.resolver);
+        Box::pin(async move {
+            let loader = Loader::new(ctx.clone(), resolver);
+            let closer = loader.clone();
+            ctx.effect("loader-lifecycle", move |scope| {
+                Box::pin(async move {
+                    scope.defer_async(move || closer.close());
+                    Ok(())
+                })
+            })
+            .await?;
+            ctx.provide(Arc::new(LoaderService::new(loader))).await?;
+            Ok(())
+        })
+    }
+}
+
 struct GroupPlugin {
     name: String,
     inner_plugin: Option<Arc<dyn Plugin>>,
-    children: Vec<PreparedEntry>,
+    latest_children: Arc<Mutex<Vec<PreparedEntry>>>,
     resolver: Arc<dyn Resolver>,
+    child_loader_slot: Arc<Mutex<Option<Loader>>>,
 }
 
 impl Plugin for GroupPlugin {
     fn name(&self) -> &str {
         &self.name
+    }
+
+    fn deps(&self) -> Deps {
+        self.inner_plugin
+            .as_ref()
+            .map(|p| p.deps())
+            .unwrap_or_default()
+    }
+
+    fn validate_config(
+        &self,
+        raw: &ConfigValue,
+    ) -> Result<ConfigValue, FrameError> {
+        match &self.inner_plugin {
+            Some(p) => p.validate_config(raw),
+            None => Ok(raw.clone()),
+        }
     }
 
     fn apply(
@@ -179,22 +288,37 @@ impl Plugin for GroupPlugin {
         config: ConfigValue,
     ) -> BoxFuture<'static, Result<(), FrameError>> {
         let inner_plugin = self.inner_plugin.clone();
-        let children = self.children.clone();
+        let latest_children = Arc::clone(&self.latest_children);
         let resolver = Arc::clone(&self.resolver);
+        let child_loader_slot = Arc::clone(&self.child_loader_slot);
         Box::pin(async move {
             if let Some(p) = inner_plugin {
                 p.apply(ctx.clone(), config).await?;
             }
             let child_loader = Loader::new_managed(ctx.clone(), resolver);
+            *child_loader_slot.lock().expect("child loader slot lock") =
+                Some(child_loader.clone());
             let closer = child_loader.clone();
+            let clear_slot = Arc::clone(&child_loader_slot);
             ctx.effect("child-loader", move |scope| {
                 Box::pin(async move {
-                    scope.defer_async(move || closer.close());
+                    scope.defer_async(move || {
+                        Box::pin(async move {
+                            *clear_slot
+                                .lock()
+                                .expect("child loader slot lock") = None;
+                            closer.close().await
+                        })
+                    });
                     Ok(())
                 })
             })
             .await?;
-            child_loader.apply_prepared(children).await?;
+            let initial = latest_children
+                .lock()
+                .expect("latest children lock")
+                .clone();
+            child_loader.apply_prepared(initial).await?;
             Ok(())
         })
     }
@@ -225,10 +349,11 @@ fn validate_entries(entries: &[PluginEntry]) -> Result<(), FrameError> {
 fn resolve_target(
     target: &EntryTarget,
     resolver: &Arc<dyn Resolver>,
-) -> Result<Arc<dyn Plugin>, FrameError> {
+) -> Result<Option<Arc<dyn Plugin>>, FrameError> {
     match target {
-        EntryTarget::Name(name) => resolver.resolve(name),
-        EntryTarget::Plugin(plugin) => Ok(Arc::clone(plugin)),
+        EntryTarget::Name(name) => resolver.resolve(name).map(Some),
+        EntryTarget::Plugin(plugin) => Ok(Some(Arc::clone(plugin))),
+        EntryTarget::Group => Ok(None),
     }
 }
 
@@ -243,31 +368,64 @@ fn preflight_entries(
             prepared.push(PreparedEntry {
                 entry: entry.clone(),
                 plugin: None,
+                inner_plugin: None,
+                children: Vec::new(),
+                is_group: false,
+                latest_children: None,
+                child_loader_slot: None,
             });
             continue;
         }
-        let plugin = resolve_target(&entry.target, resolver)?;
-        if entry.children.is_empty() {
-            let _ = plugin.validate_config(&entry.config)?;
+        let inner_plugin = resolve_target(&entry.target, resolver)?;
+        if let Some(p) = &inner_plugin {
+            let _ = p.validate_config(&entry.config)?;
+        }
+        let is_group = matches!(entry.target, EntryTarget::Group)
+            || !entry.children.is_empty();
+        if !is_group {
             prepared.push(PreparedEntry {
                 entry: entry.clone(),
-                plugin: Some(plugin),
+                plugin: inner_plugin.clone(),
+                inner_plugin,
+                children: Vec::new(),
+                is_group: false,
+                latest_children: None,
+                child_loader_slot: None,
             });
         } else {
             let children = preflight_entries(&entry.children, resolver)?;
+            let latest_children = Arc::new(Mutex::new(children.clone()));
+            let child_loader_slot = Arc::new(Mutex::new(None));
             let wrapper: Arc<dyn Plugin> = Arc::new(GroupPlugin {
                 name: entry.id.clone(),
-                inner_plugin: Some(plugin),
-                children,
+                inner_plugin: inner_plugin.clone(),
+                latest_children: Arc::clone(&latest_children),
                 resolver: Arc::clone(resolver),
+                child_loader_slot: Arc::clone(&child_loader_slot),
             });
             prepared.push(PreparedEntry {
                 entry: entry.clone(),
                 plugin: Some(wrapper),
+                inner_plugin,
+                children,
+                is_group: true,
+                latest_children: Some(latest_children),
+                child_loader_slot: Some(child_loader_slot),
             });
         }
     }
     Ok(prepared)
+}
+
+fn same_opt_plugin(
+    a: &Option<Arc<dyn Plugin>>,
+    b: &Option<Arc<dyn Plugin>>,
+) -> bool {
+    match (a, b) {
+        (Some(x), Some(y)) => Arc::ptr_eq(x, y),
+        (None, None) => true,
+        _ => false,
+    }
 }
 
 fn apply_patches_to_entries(
@@ -478,13 +636,19 @@ impl LoaderInner {
                 let keep =
                     wanted_map.get(rec.entry.id.as_str()).is_some_and(|cand| {
                         !cand.entry.disabled
-                            && cand.plugin.as_ref().is_some_and(|p| {
-                                rec.entry.target == cand.entry.target
-                                    && rec.entry.isolate == cand.entry.isolate
-                                    && rec.entry.children == cand.entry.children
-                                    && (rec.entry.children.is_empty()
-                                        && Arc::ptr_eq(&rec.plugin, p))
-                            })
+                            && rec.entry.target == cand.entry.target
+                            && rec.entry.isolate == cand.entry.isolate
+                            && rec.is_group == cand.is_group
+                            && if rec.is_group {
+                                same_opt_plugin(
+                                    &rec.inner_plugin,
+                                    &cand.inner_plugin,
+                                )
+                            } else {
+                                cand.plugin.as_ref().is_some_and(|p| {
+                                    Arc::ptr_eq(&rec.plugin, p)
+                                })
+                            }
                     });
                 if keep {
                     surviving.push(rec);
@@ -497,7 +661,7 @@ impl LoaderInner {
             rec.fiber.dispose().await?;
         }
 
-        // Phase 2: forward-apply updates & new mounts.
+        // Phase 2: forward-apply updates, recursive group diffs, & new mounts.
         let mut next_records = Vec::with_capacity(prepared.len());
         let mut active_ids = Vec::new();
         for row in prepared {
@@ -508,12 +672,31 @@ impl LoaderInner {
             let plugin = row.plugin.expect("enabled entry resolved");
             if let Some(pos) = surviving.iter().position(|r| r.entry.id == id) {
                 let mut rec = surviving.swap_remove(pos);
+                if rec.is_group
+                    && let Some(latest_slot) = &rec.latest_children
+                {
+                    *latest_slot.lock().expect("latest children lock") =
+                        row.children.clone();
+                }
+
                 if rec.entry.config != row.entry.config {
                     rec.fiber.update(row.entry.config.clone()).await?;
-                    rec.entry.config = row.entry.config;
                 } else {
                     rec.fiber.wait().await?;
+                    if rec.is_group && rec.entry.children != row.entry.children
+                    {
+                        let child_loader =
+                            rec.child_loader_slot.as_ref().and_then(|s| {
+                                s.lock()
+                                    .expect("child loader slot lock")
+                                    .clone()
+                            });
+                        if let Some(loader) = child_loader {
+                            loader.apply_prepared(row.children).await?;
+                        }
+                    }
                 }
+                rec.entry = row.entry;
                 active_ids.push(id);
                 next_records.push(rec);
             } else {
@@ -537,6 +720,10 @@ impl LoaderInner {
                 next_records.push(LoaderRecord {
                     entry: row.entry,
                     plugin,
+                    inner_plugin: row.inner_plugin,
+                    is_group: row.is_group,
+                    latest_children: row.latest_children,
+                    child_loader_slot: row.child_loader_slot,
                     fiber,
                 });
             }

@@ -10,9 +10,12 @@ pub struct FrameSnapshot {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FiberSnapshot {
     pub id: FiberId,
+    pub parent: Option<FiberId>,
+    pub children: Vec<FiberId>,
     pub name: String,
     pub state: FiberState,
     pub dependencies: Vec<&'static str>,
+    pub optional_dependencies: Vec<&'static str>,
     pub provided: Vec<&'static str>,
     pub effect_count: usize,
     pub error_summary: Option<String>,

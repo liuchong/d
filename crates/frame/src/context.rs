@@ -4,10 +4,11 @@ use crate::effect::{
 use crate::error::{ErrorKind, FrameError};
 use crate::event::{
     AsyncListener, BailListener, Event, EventFilter, EventKey, ListenerKind,
-    ListenerOptions, OnceListener, RequestEvent, SerialListener, SyncListener,
-    UpdateConfig, UpdateNext, UpdatePayload, WaterfallEvent, WaterfallFinal,
-    WaterfallListener, dispatch_bail, dispatch_emit, dispatch_parallel,
-    dispatch_serial, dispatch_waterfall, register_hook,
+    ListenerOptions, OnceListener, RequestEvent, RuntimeReady, SerialListener,
+    ServiceAction, ServiceChanged, SyncListener, UpdateConfig, UpdateNext,
+    UpdatePayload, WaterfallEvent, WaterfallFinal, WaterfallListener,
+    dispatch_bail, dispatch_emit, dispatch_parallel, dispatch_serial,
+    dispatch_waterfall, register_hook,
 };
 use crate::fiber::{
     Engine, FiberHandle, FiberId, FiberInner, FiberRecord, FiberState,
@@ -17,8 +18,8 @@ use crate::inspect::FrameSnapshot;
 use crate::loader::ConfigValue;
 use crate::plugin::{Deps, FnPlugin, Plugin};
 use crate::service::{
-    ErasedReadinessCheck, ReadinessCheck, Scope, ScopeToken, Service,
-    ServiceKey, ServiceRecord,
+    ErasedReadinessCheck, ReadinessCheck, Scope, ScopeToken, ScopedService,
+    Service, ServiceKey, ServiceRecord, merge_config_values,
 };
 use crate::sync::{BoxFuture, FrameOptions, join_all};
 use std::any::TypeId;
@@ -30,17 +31,26 @@ pub struct Context {
     engine: Arc<Engine>,
     scope: Scope,
     fiber_id: FiberId,
+    meta: Arc<BTreeMap<String, ConfigValue>>,
+    intercepts: Arc<BTreeMap<TypeId, Vec<ConfigValue>>>,
+    selector: Option<EventFilter>,
 }
 
 impl Context {
     pub fn new(options: FrameOptions) -> Self {
         let engine = Engine::new(options);
         let root_id = FiberId(0);
+        let meta = Arc::new(BTreeMap::new());
+        let intercepts = Arc::new(BTreeMap::new());
         let root = Arc::new(FiberRecord {
             id: root_id,
+            parent: None,
             name: "root".to_string(),
             engine: Arc::clone(&engine),
             scope: Scope::root(),
+            meta: Arc::clone(&meta),
+            intercepts: Arc::clone(&intercepts),
+            selector: None,
             plugin: None,
             deps: Deps::empty(),
             inner: Mutex::new(FiberInner {
@@ -74,6 +84,9 @@ impl Context {
             engine,
             scope: Scope::root(),
             fiber_id: root_id,
+            meta,
+            intercepts,
+            selector: None,
         }
     }
 
@@ -81,11 +94,17 @@ impl Context {
         engine: Arc<Engine>,
         scope: Scope,
         fiber_id: FiberId,
+        meta: Arc<BTreeMap<String, ConfigValue>>,
+        intercepts: Arc<BTreeMap<TypeId, Vec<ConfigValue>>>,
+        selector: Option<EventFilter>,
     ) -> Self {
         Self {
             engine,
             scope,
             fiber_id,
+            meta,
+            intercepts,
+            selector,
         }
     }
 
@@ -95,6 +114,10 @@ impl Context {
 
     pub(crate) fn fiber_id(&self) -> FiberId {
         self.fiber_id
+    }
+
+    pub(crate) fn selector(&self) -> Option<&EventFilter> {
+        self.selector.as_ref()
     }
 
     pub fn isolate<S: Service>(&self) -> Self {
@@ -112,11 +135,105 @@ impl Context {
             engine: Arc::clone(&self.engine),
             scope: self.scope.with_isolated(key.type_id, token),
             fiber_id: self.fiber_id,
+            meta: Arc::clone(&self.meta),
+            intercepts: Arc::clone(&self.intercepts),
+            selector: self.selector.clone(),
         }
     }
 
-    pub fn extend(&self) -> Self {
-        self.clone()
+    /// Derive a new context merging `meta` keys over the current context metadata.
+    pub fn extend(&self, meta: BTreeMap<String, ConfigValue>) -> Self {
+        if meta.is_empty() {
+            return self.clone();
+        }
+        let mut next = (*self.meta).clone();
+        for (k, v) in meta {
+            next.insert(k, v);
+        }
+        Self {
+            engine: Arc::clone(&self.engine),
+            scope: self.scope.clone(),
+            fiber_id: self.fiber_id,
+            meta: Arc::new(next),
+            intercepts: Arc::clone(&self.intercepts),
+            selector: self.selector.clone(),
+        }
+    }
+
+    /// Convenience helper adding a single metadata key to a derived context.
+    pub fn with_meta(
+        &self,
+        key: impl Into<String>,
+        value: ConfigValue,
+    ) -> Self {
+        let mut next = (*self.meta).clone();
+        next.insert(key.into(), value);
+        Self {
+            engine: Arc::clone(&self.engine),
+            scope: self.scope.clone(),
+            fiber_id: self.fiber_id,
+            meta: Arc::new(next),
+            intercepts: Arc::clone(&self.intercepts),
+            selector: self.selector.clone(),
+        }
+    }
+
+    /// Read a metadata value attached to this context.
+    pub fn meta(&self, key: &str) -> Option<&ConfigValue> {
+        self.meta.get(key)
+    }
+
+    /// Borrow all metadata keys attached to this context.
+    pub fn all_meta(&self) -> &BTreeMap<String, ConfigValue> {
+        self.meta.as_ref()
+    }
+
+    /// Restrict listeners registered on the derived context so they only receive
+    /// events emitted from contexts matching `pred` (composed with parent selectors).
+    pub fn select<F>(&self, pred: F) -> Self
+    where
+        F: Fn(&Context) -> bool + Send + Sync + 'static,
+    {
+        let next_selector: EventFilter = match &self.selector {
+            Some(prev) => {
+                let prev = Arc::clone(prev);
+                Arc::new(move |em| prev(em) && pred(em))
+            }
+            None => Arc::new(pred),
+        };
+        Self {
+            engine: Arc::clone(&self.engine),
+            scope: self.scope.clone(),
+            fiber_id: self.fiber_id,
+            meta: Arc::clone(&self.meta),
+            intercepts: Arc::clone(&self.intercepts),
+            selector: Some(next_selector),
+        }
+    }
+
+    /// Attach a scoped configuration override for `S` along this context branch.
+    pub fn intercept<S: Service>(&self, patch: ConfigValue) -> Self {
+        let mut next = (*self.intercepts).clone();
+        next.entry(TypeId::of::<S>()).or_default().push(patch);
+        Self {
+            engine: Arc::clone(&self.engine),
+            scope: self.scope.clone(),
+            fiber_id: self.fiber_id,
+            meta: Arc::clone(&self.meta),
+            intercepts: Arc::new(next),
+            selector: self.selector.clone(),
+        }
+    }
+
+    /// Merge base configuration with all scoped `intercept::<S>` layers in order.
+    pub fn resolve_intercept<S: Service>(
+        &self,
+        base: ConfigValue,
+    ) -> ConfigValue {
+        let Some(patches) = self.intercepts.get(&TypeId::of::<S>()) else {
+            return base;
+        };
+        patches.iter().cloned().fold(base, merge_config_values)
     }
 
     pub fn fiber(&self) -> FiberHandle {
@@ -127,6 +244,15 @@ impl Context {
             .cloned()
             .expect("context fiber exists");
         FiberHandle { record }
+    }
+
+    /// Return the parent fiber handle when this context does not point to root.
+    pub fn parent_fiber(&self) -> Option<FiberHandle> {
+        let eng = self.engine.state.lock().expect("engine lock");
+        let record = eng.fibers.get(&self.fiber_id)?;
+        let parent_id = record.parent?;
+        let parent = eng.fibers.get(&parent_id).cloned()?;
+        Some(FiberHandle { record: parent })
     }
 
     pub fn root_fiber(&self) -> FiberHandle {
@@ -168,6 +294,7 @@ impl Context {
         let owner_id = self.fiber_id;
         let scope_token = self.scope.token_for(TypeId::of::<S>());
         let key = ServiceKey::of::<S>();
+        let emitter_ctx = self.clone();
 
         create_effect(
             Arc::clone(&engine),
@@ -210,6 +337,18 @@ impl Context {
                         rec
                     };
 
+                    dispatch_emit(
+                        &engine,
+                        Some(&emitter_ctx),
+                        &ServiceChanged {
+                            service: key.name,
+                            scope: scope_token,
+                            owner: owner_id,
+                            action: ServiceAction::Provided,
+                        },
+                        None,
+                    );
+
                     let owner_active = {
                         let eng = engine.state.lock().expect("engine lock");
                         eng.fibers.get(&owner_id).is_some_and(|owner| {
@@ -226,10 +365,11 @@ impl Context {
 
                     let clean_engine = Arc::clone(&engine);
                     let clean_record = Arc::clone(&record);
+                    let clean_emitter = emitter_ctx.clone();
                     scope.defer_async(move || {
                         Box::pin(async move {
                             let map_key = (key.type_id, scope_token);
-                            {
+                            let removed_actual = {
                                 let mut eng = clean_engine
                                     .state
                                     .lock()
@@ -249,6 +389,20 @@ impl Context {
                                             && p.1 == scope_token)
                                     });
                                 }
+                                same
+                            };
+                            if removed_actual {
+                                dispatch_emit(
+                                    &clean_engine,
+                                    Some(&clean_emitter),
+                                    &ServiceChanged {
+                                        service: key.name,
+                                        scope: scope_token,
+                                        owner: owner_id,
+                                        action: ServiceAction::Removed,
+                                    },
+                                    None,
+                                );
                             }
                             let affected = notify_scope(
                                 &clean_engine,
@@ -305,6 +459,17 @@ impl Context {
                 }
             }
         }
+        dispatch_emit(
+            &self.engine,
+            Some(self),
+            &ServiceChanged {
+                service: S::NAME,
+                scope: scope_token,
+                owner: self.fiber_id,
+                action: ServiceAction::Updated,
+            },
+            None,
+        );
         notify_scope(
             &self.engine,
             &[(TypeId::of::<S>(), scope_token, S::NAME)],
@@ -322,58 +487,134 @@ impl Context {
     }
 
     pub fn get<S: Service>(&self) -> Option<Arc<S>> {
-        let scope_token = self.scope.token_for(TypeId::of::<S>());
-        let record = {
+        let type_id = TypeId::of::<S>();
+        let scope_token = self.scope.token_for(type_id);
+        let (store_hit, declared_on_fiber, live_candidate) = {
             let eng = self.engine.state.lock().expect("engine lock");
-            eng.services
-                .get(&(TypeId::of::<S>(), scope_token))
-                .cloned()?
+            if let Some(fiber) = eng.fibers.get(&self.fiber_id) {
+                let declared =
+                    fiber.plugin.is_some() && fiber.deps.contains_type(type_id);
+                let st = fiber.inner.lock().expect("fiber lock");
+                if let Some(rec) = st.store.get(&type_id)
+                    && rec.scope == scope_token
+                {
+                    (Some(Arc::clone(rec)), declared, None)
+                } else {
+                    drop(st);
+                    let live =
+                        eng.services.get(&(type_id, scope_token)).map(|rec| {
+                            let owner_active = rec.owner == self.fiber_id
+                                || eng.fibers.get(&rec.owner).is_some_and(
+                                    |owner| {
+                                        owner
+                                            .inner
+                                            .lock()
+                                            .expect("fiber lock")
+                                            .state
+                                            == FiberState::Active
+                                    },
+                                );
+                            (Arc::clone(rec), owner_active)
+                        });
+                    (None, declared, live)
+                }
+            } else {
+                (None, false, None)
+            }
         };
-        let visible = if record.owner == self.fiber_id {
-            true
-        } else {
-            let owner_active = {
-                let eng = self.engine.state.lock().expect("engine lock");
-                eng.fibers.get(&record.owner).is_some_and(|owner| {
-                    owner.inner.lock().expect("fiber lock").state
-                        == FiberState::Active
-                })
-            };
-            owner_active && record.is_ready()
-        };
-        if visible {
-            record.downcast_arc::<S>()
-        } else {
-            None
+
+        if let Some(rec) = store_hit {
+            return rec.downcast_arc::<S>();
         }
+        if let Some((rec, owner_active)) = live_candidate {
+            // Declared dependencies stay bound to this fiber's activation snapshot
+            // except for a service owned by the fiber itself.
+            if declared_on_fiber && rec.owner != self.fiber_id {
+                return None;
+            }
+            let visible =
+                rec.owner == self.fiber_id || (owner_active && rec.is_ready());
+            if visible {
+                return rec.downcast_arc::<S>();
+            }
+        }
+        None
     }
 
     pub fn require<S: Service>(&self) -> Result<Arc<S>, FrameError> {
         let type_id = TypeId::of::<S>();
-        let eng = self.engine.state.lock().expect("engine lock");
-        let fiber = eng
-            .fibers
-            .get(&self.fiber_id)
-            .cloned()
-            .ok_or_else(FrameError::inactive_fiber)?;
-        let st = fiber.inner.lock().expect("fiber lock");
-        if let Some(rec) = st.store.get(&type_id)
+        let target_scope = self.scope.token_for(type_id);
+        let (store_hit, own_or_inherited_live) = {
+            let eng = self.engine.state.lock().expect("engine lock");
+            let mut found_store: Option<Arc<ServiceRecord>> = None;
+            let mut eligible_owners: Vec<(FiberId, bool)> = Vec::new();
+            let mut cur_id = Some(self.fiber_id);
+
+            while let Some(fid) = cur_id {
+                let Some(fiber) = eng.fibers.get(&fid) else {
+                    break;
+                };
+                if fid != self.fiber_id
+                    && fiber.scope.token_for(type_id) != target_scope
+                {
+                    break;
+                }
+                let st = fiber.inner.lock().expect("fiber lock");
+                if let Some(rec) = st.store.get(&type_id)
+                    && rec.scope == target_scope
+                {
+                    found_store = Some(Arc::clone(rec));
+                    break;
+                }
+                let is_self = fid == self.fiber_id;
+                if is_self || st.state == FiberState::Active {
+                    eligible_owners.push((fid, is_self));
+                }
+                cur_id = fiber.parent;
+            }
+
+            if found_store.is_some() {
+                (found_store, None)
+            } else {
+                let live = eng.services.get(&(type_id, target_scope)).and_then(
+                    |rec| {
+                        eligible_owners
+                            .iter()
+                            .find(|&&(owner, _)| owner == rec.owner)
+                            .map(|&(_, is_self)| (Arc::clone(rec), is_self))
+                    },
+                );
+                (None, live)
+            }
+        };
+
+        if let Some(rec) = store_hit
             && let Some(typed) = rec.downcast_arc::<S>()
         {
             return Ok(typed);
         }
-        drop(st);
-        let scope_token = self.scope.token_for(type_id);
-        if let Some(rec) = eng.services.get(&(type_id, scope_token))
-            && rec.owner == self.fiber_id
+        if let Some((rec, is_self)) = own_or_inherited_live
+            && (is_self || rec.is_ready())
             && let Some(typed) = rec.downcast_arc::<S>()
         {
             return Ok(typed);
         }
+
         Err(FrameError::new(
             ErrorKind::MissingDependency,
             format!("required service `{}` is not available", S::NAME),
         ))
+    }
+
+    /// Resolve a required [`ScopedService`] and bind its handle to this caller [`Context`].
+    pub fn use_service<S: ScopedService>(&self) -> Result<S::View, FrameError> {
+        let svc = self.require::<S>()?;
+        Ok(svc.bind(self.clone()))
+    }
+
+    /// Resolve an optional or live-ready [`ScopedService`] bound to this caller [`Context`].
+    pub fn try_use_service<S: ScopedService>(&self) -> Option<S::View> {
+        self.get::<S>().map(|svc| svc.bind(self.clone()))
     }
 
     pub fn effect<F>(
@@ -474,9 +715,13 @@ impl Context {
             let deps = plugin.deps();
             let record = Arc::new(FiberRecord {
                 id,
+                parent: Some(self.fiber_id),
                 name,
                 engine: Arc::clone(&self.engine),
                 scope: self.scope.clone(),
+                meta: Arc::clone(&self.meta),
+                intercepts: Arc::clone(&self.intercepts),
+                selector: self.selector.clone(),
                 plugin: Some(plugin),
                 deps,
                 inner: Mutex::new(FiberInner {
@@ -680,7 +925,7 @@ impl Context {
     }
 
     pub fn emit<E: Event>(&self, event: &E, filter: Option<&EventFilter>) {
-        dispatch_emit(&self.engine, event, filter);
+        dispatch_emit(&self.engine, Some(self), event, filter);
     }
 
     pub fn parallel<E: Event>(
@@ -688,7 +933,7 @@ impl Context {
         event: &E,
         filter: Option<&EventFilter>,
     ) -> BoxFuture<'static, Result<(), FrameError>> {
-        dispatch_parallel(&self.engine, event, filter)
+        dispatch_parallel(&self.engine, Some(self), event, filter)
     }
 
     pub fn bail<E: RequestEvent>(
@@ -696,7 +941,7 @@ impl Context {
         event: &E,
         filter: Option<&EventFilter>,
     ) -> Result<Option<E::Output>, FrameError> {
-        dispatch_bail(&self.engine, event, filter)
+        dispatch_bail(&self.engine, Some(self), event, filter)
     }
 
     pub fn serial<'a, E: RequestEvent>(
@@ -704,7 +949,7 @@ impl Context {
         event: &'a E,
         filter: Option<&EventFilter>,
     ) -> BoxFuture<'a, Result<Option<E::Output>, FrameError>> {
-        dispatch_serial(&self.engine, event, filter)
+        dispatch_serial(&self.engine, Some(self), event, filter)
     }
 
     pub fn waterfall<E: WaterfallEvent>(
@@ -713,7 +958,18 @@ impl Context {
         filter: Option<&EventFilter>,
         final_step: WaterfallFinal<E>,
     ) -> BoxFuture<'static, Result<E::Output, FrameError>> {
-        dispatch_waterfall::<E>(&self.engine, payload, filter, final_step)
+        dispatch_waterfall::<E>(
+            &self.engine,
+            Some(self),
+            payload,
+            filter,
+            final_step,
+        )
+    }
+
+    /// Emit [`RuntimeReady`] once top-level startup converges.
+    pub fn mark_ready(&self) {
+        self.emit(&RuntimeReady, None);
     }
 
     pub fn settle(&self) -> BoxFuture<'static, ()> {
@@ -793,7 +1049,7 @@ mod tests {
         .expect("bail 2");
         assert_eq!(ctx.bail(&SyncBailEvent, None).expect("bail"), Some(7));
 
-        let rolled_back = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let rolled_back = Arc::new(AtomicBool::new(false));
         let rolled_back_clone = Arc::clone(&rolled_back);
         let sync_err = ctx
             .effect_sync("sync-fail", move |scope| {

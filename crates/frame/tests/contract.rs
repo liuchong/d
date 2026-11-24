@@ -1,9 +1,11 @@
 use frame::{
     ConfigValue, Context, Deps, EntryPatch, EntryTarget, ErrorKind, Event,
-    EventFilter, FiberId, FiberState, FrameError, FrameOptions, InsertAnchor,
-    ListenerOptions, Loader, Plugin, PluginEntry, RequestEvent, Service,
-    ServiceKey, Spawner, StaticResolver, UpdateConfig, UpdateNext,
-    UpdatePayload, ValidationIssue, WaterfallEvent, WaterfallNext,
+    EventFilter, FiberId, FiberState, FiberStateChanged, FrameError,
+    FrameOptions, InsertAnchor, ListenerOptions, Loader, LoaderPlugin,
+    LoaderService, Plugin, PluginEntry, RequestEvent, RuntimeReady,
+    ScopedService, Service, ServiceAction, ServiceChanged, ServiceKey, Spawner,
+    StaticResolver, UpdateConfig, UpdateNext, UpdatePayload, ValidationIssue,
+    WaterfallEvent, WaterfallNext,
 };
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -1087,7 +1089,7 @@ fn f07_events_dispatch_and_teardown() {
 
         // Context filter + global bypass.
         let allowed = Arc::new(Mutex::new(Vec::new()));
-        let sub_ctx = ctx.extend();
+        let sub_ctx = ctx.extend(BTreeMap::new());
         sub_ctx
             .on::<PingEvent, _>(
                 {
@@ -1671,5 +1673,698 @@ fn f10_inspect_settle_root_and_dispose() {
             .err()
             .expect("disposed root rejects plugins");
         assert_eq!(err.kind, ErrorKind::InactiveFiber);
+    });
+}
+
+// ---------------------------------------------------------------------------
+// F11: ScopedService caller-bound effect ownership
+// ---------------------------------------------------------------------------
+
+struct RegistryState {
+    entries: Mutex<Vec<(&'static str, bool)>>,
+}
+
+#[derive(Clone)]
+struct ScopedRegistrySvc {
+    state: Arc<RegistryState>,
+}
+
+impl Service for ScopedRegistrySvc {
+    const NAME: &'static str = "test.scoped_registry";
+}
+
+struct ScopedRegistryView {
+    svc: Arc<ScopedRegistrySvc>,
+    caller: Context,
+}
+
+impl ScopedRegistryView {
+    fn register(
+        &self,
+        tag: &'static str,
+    ) -> Result<frame::EffectHandle, FrameError> {
+        let idx = {
+            let mut entries = self.svc.state.entries.lock().expect("lock");
+            entries.push((tag, true));
+            entries.len() - 1
+        };
+        let state = Arc::clone(&self.svc.state);
+        self.caller.effect_sync(format!("reg:{tag}"), move |scope| {
+            scope.defer(move || {
+                state.entries.lock().expect("lock")[idx].1 = false;
+            });
+            Ok(())
+        })
+    }
+
+    fn active_tags(&self) -> Vec<&'static str> {
+        self.svc
+            .state
+            .entries
+            .lock()
+            .expect("lock")
+            .iter()
+            .filter_map(|&(t, active)| active.then_some(t))
+            .collect()
+    }
+}
+
+impl ScopedService for ScopedRegistrySvc {
+    type View = ScopedRegistryView;
+
+    fn bind(self: Arc<Self>, caller: Context) -> Self::View {
+        ScopedRegistryView { svc: self, caller }
+    }
+}
+
+#[test]
+fn f11_scoped_service() {
+    let (ctx, _errors, _spawner) = new_ctx();
+    block_on(async {
+        let state = Arc::new(RegistryState {
+            entries: Mutex::new(Vec::new()),
+        });
+        let reg_provider = ctx
+            .inject("reg-provider", Deps::empty(), {
+                let state = Arc::clone(&state);
+                move |c| {
+                    let state = Arc::clone(&state);
+                    Box::pin(async move {
+                        c.provide(Arc::new(ScopedRegistrySvc { state }))
+                            .await?;
+                        Ok(())
+                    })
+                }
+            })
+            .expect("mount provider");
+        reg_provider.wait().await.expect("provider active");
+
+        let consumer_a = ctx
+            .inject(
+                "consumer-a",
+                Deps::empty().with::<ScopedRegistrySvc>(),
+                |c| {
+                    Box::pin(async move {
+                        let view = c.use_service::<ScopedRegistrySvc>()?;
+                        let _ = view.register("route-a")?;
+                        Ok(())
+                    })
+                },
+            )
+            .expect("mount a");
+        let consumer_b = ctx
+            .inject(
+                "consumer-b",
+                Deps::empty().with::<ScopedRegistrySvc>(),
+                |c| {
+                    Box::pin(async move {
+                        let view = c.use_service::<ScopedRegistrySvc>()?;
+                        let _ = view.register("route-b")?;
+                        Ok(())
+                    })
+                },
+            )
+            .expect("mount b");
+
+        ctx.settle().await;
+        let root_view =
+            ctx.try_use_service::<ScopedRegistrySvc>().expect("view");
+        assert_eq!(root_view.active_tags(), vec!["route-a", "route-b"]);
+
+        let snap_before = ctx.inspect();
+        let prov_snap = snap_before
+            .fibers
+            .iter()
+            .find(|f| f.id == reg_provider.id())
+            .expect("provider snap");
+        assert_eq!(prov_snap.effect_count, 1);
+
+        // Disposing consumer_a automatically revokes "route-a" without provider impact.
+        consumer_a.dispose().await.expect("dispose a");
+        assert_eq!(root_view.active_tags(), vec!["route-b"]);
+        assert_eq!(reg_provider.state(), FiberState::Active);
+        assert_eq!(consumer_b.state(), FiberState::Active);
+
+        ctx.dispose().await.expect("dispose");
+        assert!(root_view.active_tags().is_empty());
+    });
+}
+
+// ---------------------------------------------------------------------------
+// F12: Parent-child Fiber tree & same-scope inheritance
+// ---------------------------------------------------------------------------
+
+#[test]
+fn f12_parent_child_tree_and_inheritance() {
+    let (ctx, _errors, _spawner) = new_ctx();
+    block_on(async {
+        let prov = ctx
+            .plugin(SeqProvider(77), ConfigValue::Null)
+            .expect("provider");
+        prov.wait().await.expect("provider active");
+
+        let c1_seen = Arc::new(Mutex::new(None::<u64>));
+        let c1_parent = Arc::new(Mutex::new(None::<FiberId>));
+        let c2_missing = Arc::new(AtomicBool::new(false));
+        let child_ids = Arc::new(Mutex::new(Vec::<FiberId>::new()));
+
+        let c1_seen_w = Arc::clone(&c1_seen);
+        let c1_parent_w = Arc::clone(&c1_parent);
+        let c2_missing_w = Arc::clone(&c2_missing);
+        let child_ids_w = Arc::clone(&child_ids);
+
+        let parent = ctx
+            .inject("parent", Deps::empty().with::<SeqService>(), move |p_ctx| {
+                let c1_seen_w = Arc::clone(&c1_seen_w);
+                let c1_parent_w = Arc::clone(&c1_parent_w);
+                let c2_missing_w = Arc::clone(&c2_missing_w);
+                let child_ids_w = Arc::clone(&child_ids_w);
+                Box::pin(async move {
+                    let c1 = p_ctx.inject("child-inherited", Deps::empty(), move |c_ctx| {
+                        let c1_seen_w = Arc::clone(&c1_seen_w);
+                        let c1_parent_w = Arc::clone(&c1_parent_w);
+                        Box::pin(async move {
+                            *c1_parent_w.lock().expect("lock") =
+                                c_ctx.parent_fiber().map(|h| h.id());
+                            let svc = c_ctx.require::<SeqService>()?;
+                            *c1_seen_w.lock().expect("lock") = Some(svc.0);
+                            Ok(())
+                        })
+                    })?;
+
+                    let isolated = p_ctx.isolate::<SeqService>();
+                    let c2 =
+                        isolated.inject("child-isolated", Deps::empty(), move |c_ctx| {
+                            let c2_missing_w = Arc::clone(&c2_missing_w);
+                            Box::pin(async move {
+                                let err = c_ctx
+                                    .require::<SeqService>()
+                                    .err()
+                                    .expect("isolated child must not inherit across isolate");
+                                c2_missing_w.store(
+                                    err.kind == ErrorKind::MissingDependency,
+                                    Ordering::Release,
+                                );
+                                Ok(())
+                            })
+                        })?;
+
+                    c1.wait().await?;
+                    c2.wait().await?;
+                    *child_ids_w.lock().expect("lock") = vec![c1.id(), c2.id()];
+                    Ok(())
+                })
+            })
+            .expect("mount parent");
+
+        ctx.settle().await;
+        assert_eq!(parent.state(), FiberState::Active);
+        assert_eq!(*c1_seen.lock().expect("lock"), Some(77));
+        assert_eq!(*c1_parent.lock().expect("lock"), Some(parent.id()));
+        assert!(c2_missing.load(Ordering::Acquire));
+
+        let snap = ctx.inspect();
+        let parent_snap = snap
+            .fibers
+            .iter()
+            .find(|f| f.id == parent.id())
+            .expect("parent snap");
+        let expected_children = child_ids.lock().expect("lock").clone();
+        assert_eq!(parent_snap.children, expected_children);
+        assert_eq!(parent_snap.parent, Some(FiberId(0)));
+
+        ctx.dispose().await.expect("dispose");
+    });
+}
+
+// ---------------------------------------------------------------------------
+// F13: Optional dependencies & unload snapshot preservation
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+struct OptMetrics(u32);
+impl Service for OptMetrics {
+    const NAME: &'static str = "test.opt_metrics";
+}
+
+#[test]
+fn f13_optional_deps_and_unload_snapshot() {
+    let (ctx, _errors, _spawner) = new_ctx();
+    block_on(async {
+        let req = ctx
+            .plugin(SeqProvider(1), ConfigValue::Null)
+            .expect("mount seq");
+        req.wait().await.expect("seq active");
+
+        let observed = Arc::new(Mutex::new(Vec::<Option<u32>>::new()));
+        let cleanup_saw = Arc::new(Mutex::new(Vec::<Option<u32>>::new()));
+        let observed_w = Arc::clone(&observed);
+        let cleanup_w = Arc::clone(&cleanup_saw);
+
+        let worker = ctx
+            .inject(
+                "opt-worker",
+                Deps::empty()
+                    .with::<SeqService>()
+                    .with_optional::<OptMetrics>(),
+                move |c| {
+                    let observed_w = Arc::clone(&observed_w);
+                    let cleanup_w = Arc::clone(&cleanup_w);
+                    Box::pin(async move {
+                        let _ = c.require::<SeqService>()?;
+                        let current = c.get::<OptMetrics>().map(|m| m.0);
+                        observed_w.lock().expect("lock").push(current);
+                        let ctx_for_clean = c.clone();
+                        c.effect("opt-cleanup", move |scope| {
+                            Box::pin(async move {
+                                scope.defer(move || {
+                                    let held = ctx_for_clean
+                                        .get::<OptMetrics>()
+                                        .map(|m| m.0);
+                                    cleanup_w.lock().expect("lock").push(held);
+                                });
+                                Ok(())
+                            })
+                        })
+                        .await?;
+                        Ok(())
+                    })
+                },
+            )
+            .expect("mount opt worker");
+
+        ctx.settle().await;
+        assert_eq!(worker.state(), FiberState::Active);
+        assert_eq!(*observed.lock().expect("lock"), vec![None]);
+
+        // Optional service appears -> worker cleanly reloads with Some(9).
+        let opt_provider = ctx
+            .inject("opt-provider", Deps::empty(), |c| {
+                Box::pin(async move {
+                    c.provide(Arc::new(OptMetrics(9))).await?;
+                    Ok(())
+                })
+            })
+            .expect("mount opt provider");
+        ctx.settle().await;
+        assert_eq!(worker.state(), FiberState::Active);
+        assert_eq!(*observed.lock().expect("lock"), vec![None, Some(9)]);
+        assert_eq!(*cleanup_saw.lock().expect("lock"), vec![None]);
+
+        // Optional service disappears -> worker cleanup still sees Some(9) in snapshot,
+        // then worker becomes Active again with None.
+        opt_provider.dispose().await.expect("dispose opt provider");
+        ctx.settle().await;
+        assert_eq!(worker.state(), FiberState::Active);
+        assert_eq!(*observed.lock().expect("lock"), vec![None, Some(9), None]);
+        assert_eq!(*cleanup_saw.lock().expect("lock"), vec![None, Some(9)]);
+
+        ctx.dispose().await.expect("dispose");
+    });
+}
+
+// ---------------------------------------------------------------------------
+// F14: Context extend, select filtering, and scoped intercept deep merge
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+struct ScopedCfgMarker;
+impl Service for ScopedCfgMarker {
+    const NAME: &'static str = "test.scoped_cfg_marker";
+}
+
+#[derive(Clone, Debug)]
+struct ZonePing(&'static str);
+impl Event for ZonePing {
+    const NAME: &'static str = "test/zone_ping";
+}
+
+#[test]
+fn f14_context_extend_select_and_intercept() {
+    let (ctx, _errors, _spawner) = new_ctx();
+    block_on(async {
+        let mut base = BTreeMap::new();
+        base.insert("timeout".to_string(), ConfigValue::Int(1000));
+        let mut nested_base = BTreeMap::new();
+        nested_base.insert("a".to_string(), ConfigValue::Int(1));
+        nested_base.insert("b".to_string(), ConfigValue::Int(2));
+        base.insert("nested".to_string(), ConfigValue::Map(nested_base));
+
+        let mut p1 = BTreeMap::new();
+        let mut nested_p1 = BTreeMap::new();
+        nested_p1.insert("b".to_string(), ConfigValue::Int(20));
+        p1.insert("nested".to_string(), ConfigValue::Map(nested_p1));
+
+        let mut p2 = BTreeMap::new();
+        p2.insert("timeout".to_string(), ConfigValue::Int(5000));
+
+        let ctx_a = ctx
+            .with_meta("zone", ConfigValue::Str("alpha".to_string()))
+            .intercept::<ScopedCfgMarker>(ConfigValue::Map(p1))
+            .intercept::<ScopedCfgMarker>(ConfigValue::Map(p2));
+
+        let mut ext = BTreeMap::new();
+        ext.insert("zone".to_string(), ConfigValue::Str("beta".to_string()));
+        let ctx_b = ctx.extend(ext);
+
+        let merged_a = ctx_a.resolve_intercept::<ScopedCfgMarker>(
+            ConfigValue::Map(base.clone()),
+        );
+        let ConfigValue::Map(merged_map) = merged_a else {
+            panic!("expected map");
+        };
+        assert_eq!(merged_map.get("timeout"), Some(&ConfigValue::Int(5000)));
+        let Some(ConfigValue::Map(nested_res)) = merged_map.get("nested")
+        else {
+            panic!("expected nested map");
+        };
+        assert_eq!(nested_res.get("a"), Some(&ConfigValue::Int(1)));
+        assert_eq!(nested_res.get("b"), Some(&ConfigValue::Int(20)));
+
+        // Unintercepted sibling branch stays untouched.
+        assert_eq!(
+            ctx_b.resolve_intercept::<ScopedCfgMarker>(ConfigValue::Map(
+                base.clone()
+            )),
+            ConfigValue::Map(base)
+        );
+        assert_eq!(
+            ctx_a.meta("zone"),
+            Some(&ConfigValue::Str("alpha".to_string()))
+        );
+        assert_eq!(
+            ctx_b.meta("zone"),
+            Some(&ConfigValue::Str("beta".to_string()))
+        );
+
+        // Chained select() predicates require AND match on emitter metadata.
+        let alpha_received = Arc::new(Mutex::new(Vec::<&'static str>::new()));
+        let alpha_w = Arc::clone(&alpha_received);
+        let alpha_ctx = ctx
+            .select(|em| {
+                em.meta("zone") == Some(&ConfigValue::Str("alpha".to_string()))
+            })
+            .select(|em| em.meta("tier") == Some(&ConfigValue::Int(1)));
+        let _h = alpha_ctx
+            .on::<ZonePing, _>(
+                move |_, ev| {
+                    alpha_w.lock().expect("lock").push(ev.0);
+                },
+                ListenerOptions::default(),
+            )
+            .expect("register select listener");
+
+        let ctx_a_tier1 = ctx_a.with_meta("tier", ConfigValue::Int(1));
+        let ctx_a_tier2 = ctx_a.with_meta("tier", ConfigValue::Int(2));
+        ctx_b.emit(&ZonePing("from-b"), None);
+        ctx_a_tier2.emit(&ZonePing("from-a-t2"), None);
+        ctx_a_tier1.emit(&ZonePing("from-a-t1"), None);
+
+        assert_eq!(*alpha_received.lock().expect("lock"), vec!["from-a-t1"]);
+        ctx.dispose().await.expect("dispose");
+    });
+}
+
+// ---------------------------------------------------------------------------
+// F15: Built-in lifecycle events emitted outside locks (reentrant-safe)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn f15_builtin_lifecycle_events_reentrant() {
+    let (ctx, _errors, _spawner) = new_ctx();
+    block_on(async {
+        let states =
+            Arc::new(
+                Mutex::new(Vec::<(String, FiberState, FiberState)>::new()),
+            );
+        let services =
+            Arc::new(Mutex::new(Vec::<(&'static str, ServiceAction)>::new()));
+        let ready_count = Arc::new(AtomicUsize::new(0));
+
+        let states_w = Arc::clone(&states);
+        let _h1 = ctx
+            .on::<FiberStateChanged, _>(
+                move |listener_ctx, ev| {
+                    // Reentrant inspect() inside listener must never deadlock.
+                    let _ = listener_ctx.inspect();
+                    states_w.lock().expect("lock").push((
+                        ev.name.clone(),
+                        ev.from,
+                        ev.to,
+                    ));
+                },
+                ListenerOptions::default(),
+            )
+            .expect("listen fiber state");
+
+        let services_w = Arc::clone(&services);
+        let _h2 = ctx
+            .on::<ServiceChanged, _>(
+                move |listener_ctx, ev| {
+                    let _ = listener_ctx.get::<SeqService>();
+                    services_w
+                        .lock()
+                        .expect("lock")
+                        .push((ev.service, ev.action));
+                },
+                ListenerOptions::default(),
+            )
+            .expect("listen service");
+
+        let ready_w = Arc::clone(&ready_count);
+        let _h3 = ctx
+            .on::<RuntimeReady, _>(
+                move |_, _| {
+                    ready_w.fetch_add(1, Ordering::AcqRel);
+                },
+                ListenerOptions::default(),
+            )
+            .expect("listen ready");
+
+        let f = ctx
+            .plugin(SeqProvider(10), ConfigValue::Null)
+            .expect("mount provider");
+        f.wait().await.expect("active");
+        ctx.mark_ready();
+        f.dispose().await.expect("dispose provider");
+
+        ctx.dispose().await.expect("dispose");
+
+        let logged_states = states.lock().expect("lock");
+        assert!(logged_states.iter().any(|(n, from, to)| {
+            n == "seq-provider"
+                && *from == FiberState::Pending
+                && *to == FiberState::Loading
+        }));
+        assert!(logged_states.iter().any(|(n, from, to)| {
+            n == "seq-provider"
+                && *from == FiberState::Loading
+                && *to == FiberState::Active
+        }));
+        assert!(logged_states.iter().any(|(n, from, to)| {
+            n == "seq-provider"
+                && *from == FiberState::Active
+                && *to == FiberState::Unloading
+        }));
+
+        let logged_svcs = services.lock().expect("lock");
+        assert!(logged_svcs.iter().any(
+            |&(s, a)| s == SeqService::NAME && a == ServiceAction::Provided
+        ));
+        assert!(logged_svcs.iter().any(
+            |&(s, a)| s == SeqService::NAME && a == ServiceAction::Removed
+        ));
+        assert_eq!(ready_count.load(Ordering::Acquire), 1);
+    });
+}
+
+// ---------------------------------------------------------------------------
+// F16: Nested Group incremental diff & LoaderService bootstrap
+// ---------------------------------------------------------------------------
+
+type LoadLog = Arc<Mutex<Vec<(&'static str, FiberId, i64)>>>;
+type UnloadLog = Arc<Mutex<Vec<(&'static str, FiberId)>>>;
+
+struct CountedPlugin {
+    label: &'static str,
+    loads: LoadLog,
+    unloads: UnloadLog,
+}
+
+impl Plugin for CountedPlugin {
+    fn name(&self) -> &str {
+        self.label
+    }
+
+    fn apply(
+        &self,
+        ctx: Context,
+        config: ConfigValue,
+    ) -> frame::BoxFuture<'static, Result<(), FrameError>> {
+        let label = self.label;
+        let loads = Arc::clone(&self.loads);
+        let unloads = Arc::clone(&self.unloads);
+        let fid = ctx.fiber().id();
+        Box::pin(async move {
+            let v = match config {
+                ConfigValue::Map(m) => match m.get("v") {
+                    Some(ConfigValue::Int(n)) => *n,
+                    _ => 0,
+                },
+                _ => 0,
+            };
+            loads.lock().expect("lock").push((label, fid, v));
+            ctx.effect("counted", move |scope| {
+                Box::pin(async move {
+                    scope.defer(move || {
+                        unloads.lock().expect("lock").push((label, fid));
+                    });
+                    Ok(())
+                })
+            })
+            .await?;
+            Ok(())
+        })
+    }
+}
+
+#[test]
+fn f16_nested_group_incremental_diff_and_service() {
+    let (ctx, _errors, _spawner) = new_ctx();
+    block_on(async {
+        let loads = Arc::new(Mutex::new(Vec::new()));
+        let unloads = Arc::new(Mutex::new(Vec::new()));
+        let resolver: Arc<dyn frame::Resolver> = Arc::new(
+            StaticResolver::new()
+                .register(
+                    "a",
+                    CountedPlugin {
+                        label: "a",
+                        loads: Arc::clone(&loads),
+                        unloads: Arc::clone(&unloads),
+                    },
+                )
+                .register(
+                    "b",
+                    CountedPlugin {
+                        label: "b",
+                        loads: Arc::clone(&loads),
+                        unloads: Arc::clone(&unloads),
+                    },
+                )
+                .register(
+                    "c",
+                    CountedPlugin {
+                        label: "c",
+                        loads: Arc::clone(&loads),
+                        unloads: Arc::clone(&unloads),
+                    },
+                ),
+        );
+
+        let loader_fiber = ctx
+            .plugin(LoaderPlugin::new(Arc::clone(&resolver)), ConfigValue::Null)
+            .expect("mount loader plugin");
+        loader_fiber.wait().await.expect("loader plugin active");
+
+        let loader_svc = ctx.get::<LoaderService>().expect("loader service");
+
+        let mk_group = |b_val: i64, include_c: bool| {
+            let mut children = vec![
+                PluginEntry {
+                    id: "ca".to_string(),
+                    target: EntryTarget::Name("a".to_string()),
+                    config: map_i64("v", 1),
+                    disabled: false,
+                    isolate: Vec::new(),
+                    children: Vec::new(),
+                },
+                PluginEntry {
+                    id: "cb".to_string(),
+                    target: EntryTarget::Name("b".to_string()),
+                    config: map_i64("v", b_val),
+                    disabled: false,
+                    isolate: Vec::new(),
+                    children: Vec::new(),
+                },
+            ];
+            if include_c {
+                children.push(PluginEntry {
+                    id: "cc".to_string(),
+                    target: EntryTarget::Name("c".to_string()),
+                    config: map_i64("v", 3),
+                    disabled: false,
+                    isolate: Vec::new(),
+                    children: Vec::new(),
+                });
+            }
+            vec![PluginEntry {
+                id: "web".to_string(),
+                target: EntryTarget::Group,
+                config: ConfigValue::Null,
+                disabled: false,
+                isolate: vec![ServiceKey::of::<SeqService>()],
+                children,
+            }]
+        };
+
+        loader_svc
+            .apply(mk_group(2, false))
+            .await
+            .expect("initial apply");
+        let group_fid_1 = ctx
+            .inspect()
+            .fibers
+            .iter()
+            .find(|f| f.name == "web")
+            .expect("web group fiber")
+            .id;
+        assert_eq!(loads.lock().expect("lock").len(), 2);
+
+        // Incremental nested update: change cb config and insert cc.
+        // Neither parent "web" nor sibling "a" may unload/reload!
+        loader_svc
+            .apply(mk_group(20, true))
+            .await
+            .expect("incremental nested update");
+        let group_fid_2 = ctx
+            .inspect()
+            .fibers
+            .iter()
+            .find(|f| f.name == "web")
+            .expect("web group fiber kept")
+            .id;
+        assert_eq!(group_fid_1, group_fid_2);
+
+        let a_loads: Vec<_> = loads
+            .lock()
+            .expect("lock")
+            .iter()
+            .filter(|(l, _, _)| *l == "a")
+            .cloned()
+            .collect();
+        let b_loads: Vec<_> = loads
+            .lock()
+            .expect("lock")
+            .iter()
+            .filter(|(l, _, _)| *l == "b")
+            .cloned()
+            .collect();
+        let c_loads: Vec<_> = loads
+            .lock()
+            .expect("lock")
+            .iter()
+            .filter(|(l, _, _)| *l == "c")
+            .cloned()
+            .collect();
+        assert_eq!(a_loads.len(), 1);
+        assert_eq!(b_loads.len(), 2);
+        assert_eq!(b_loads[0].1, b_loads[1].1);
+        assert_eq!(b_loads[1].2, 20);
+        assert_eq!(c_loads.len(), 1);
+
+        // LoaderPlugin disposal cleanly tears down managed entries.
+        ctx.dispose().await.expect("dispose");
+        assert!(unloads.lock().expect("lock").iter().any(|(l, _)| *l == "a"));
     });
 }

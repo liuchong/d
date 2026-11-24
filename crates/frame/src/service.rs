@@ -1,10 +1,43 @@
+use crate::context::Context;
 use crate::fiber::FiberId;
+use crate::loader::ConfigValue;
 use std::any::{Any, TypeId};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
 pub trait Service: Send + Sync + 'static {
     const NAME: &'static str;
+}
+
+/// Service exposing a caller-bound view whose registered effects belong to
+/// the calling plugin's [`Context`] rather than the provider's.
+pub trait ScopedService: Service {
+    type View;
+
+    fn bind(self: Arc<Self>, caller: Context) -> Self::View;
+}
+
+/// Deep-merge `patch` onto `base` for [`ConfigValue::Map`], replacing non-map variants.
+pub fn merge_config_values(
+    base: ConfigValue,
+    patch: ConfigValue,
+) -> ConfigValue {
+    match (base, patch) {
+        (ConfigValue::Map(mut base_map), ConfigValue::Map(patch_map)) => {
+            for (k, v) in patch_map {
+                match base_map.remove(&k) {
+                    Some(existing) => {
+                        base_map.insert(k, merge_config_values(existing, v));
+                    }
+                    None => {
+                        base_map.insert(k, v);
+                    }
+                }
+            }
+            ConfigValue::Map(base_map)
+        }
+        (_, patch) => patch,
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -77,5 +110,45 @@ impl ServiceRecord {
 
     pub(crate) fn downcast_arc<S: Service>(&self) -> Option<Arc<S>> {
         Arc::clone(&self.value).downcast::<S>().ok()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn merge_config_values_deep_merges_maps_and_replaces_scalars() {
+        let mut base = BTreeMap::new();
+        base.insert("a".to_string(), ConfigValue::Int(1));
+        let mut nested = BTreeMap::new();
+        nested.insert("x".to_string(), ConfigValue::Bool(true));
+        nested.insert("y".to_string(), ConfigValue::Int(10));
+        base.insert("nested".to_string(), ConfigValue::Map(nested));
+
+        let mut patch = BTreeMap::new();
+        let mut nested_patch = BTreeMap::new();
+        nested_patch.insert("y".to_string(), ConfigValue::Int(20));
+        patch.insert("nested".to_string(), ConfigValue::Map(nested_patch));
+        patch.insert("b".to_string(), ConfigValue::Str("ok".into()));
+
+        let merged = merge_config_values(
+            ConfigValue::Map(base),
+            ConfigValue::Map(patch),
+        );
+        let ConfigValue::Map(out) = merged else {
+            panic!("expected map");
+        };
+        assert_eq!(out.get("a"), Some(&ConfigValue::Int(1)));
+        assert_eq!(out.get("b"), Some(&ConfigValue::Str("ok".into())));
+        let Some(ConfigValue::Map(nested_out)) = out.get("nested") else {
+            panic!("expected nested map");
+        };
+        assert_eq!(nested_out.get("x"), Some(&ConfigValue::Bool(true)));
+        assert_eq!(nested_out.get("y"), Some(&ConfigValue::Int(20)));
+        assert_eq!(
+            merge_config_values(ConfigValue::Int(1), ConfigValue::Bool(false)),
+            ConfigValue::Bool(false)
+        );
     }
 }
