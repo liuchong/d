@@ -368,7 +368,7 @@ flowchart LR
 | `P0` | [x] | 已准备 | 补齐 `architecture.md`、`frame.md` 与 `construction.md` | 当前对话授权 | 文档齐备，无第三方名称，未启动代码实现 |
 | `P1` | [x] | 已完成 | 阶段 1：`crates/frame/` 契约实现（Red `C01` → Green `C02–C06` → Refactor/Verify `C07`） | `P0` | `A01`–`A10` 全部实测通过，零外部依赖 |
 | `P2` | [x] | 已完成 | 阶段 2：Workspace + 契约 + L4 + 自建 HTTP/1.1 + 扩展 + `app-files` + `cli`（Red `C08–C09` → Green `C10–C19` → Refactor/Verify `C20`） | `P1` | `A12`–`A22` 与工作区门禁、`acceptance.sh`（36 项）通过，旧 `src/httpd/` 已移除 |
-| `P3` | [ ] | 待施工 | 阶段 3：`doc-render` + `viewer-*` + 极简白色 UI + 示例 + 全量端到端与干净重建（Red `C21–C22` → Green `C23–C29` → Refactor/Verify `C30–C32`） | `P2` | `A01`–`A32` 全部实测通过，CI 门禁与干净重建绿灯，文档更新并签名交付 |
+| `P3` | [x] | 已完成 | 阶段 3：`doc-render` + `viewer-*` + 极简白色 UI + 示例 + 全量端到端与干净重建（Red `C21–C22` → Green `C23–C29` → Refactor/Verify `C30–C32`） | `P2` | `A01`–`A32` 全部实测通过，CI 门禁与干净重建绿灯，文档更新并签名交付 |
 
 ### 唯一施工清单（`C01`–`C32`，写完一项即勾一项）
 
@@ -417,7 +417,7 @@ flowchart LR
 | `C29` | [x] | `D21` / `Q09`, `Q10`, `Q13` | `examples/docs/{guide.md,diagram.svg}`, `examples/README.md` | **[P3-Green]** 在 `examples/docs/` 补充含原生嵌入式 HTML（`<details>`, `<figure>`, `<img>`, `<table>`）与本地相对图片引用的真实示例并更新 `examples/README.md` | `C28` | `A24`, `A31` |
 | `C30` | [x] | `D20`, `D22` / `Q08`–`Q14` | `scripts/acceptance.sh` | **[P3-Refactor & Verify]** 更新 `scripts/acceptance.sh` 追加阶段 3 端到端断言；跑通全部单测、集成测试与端到端脚本并成批修完真实问题 | `C29` | `A23`–`A31` |
 | `C31` | [x] | `D23` / `Q14` | `README.md`, `docs/construction.md` | **[P3-Refactor & Verify]** 同步 `README.md` 特性与参数说明；验证 `frame`、`contracts/*`、`doc-render`、`ext-cors`、`viewer-*` 均零外部依赖，且无第三方项目命名泄露 | `C30` | `A32` |
-| `C32` | [ ] | 交付门禁 | 全工作区 | **[P3-Verify & Deliver]** 执行隔离干净重建（`cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test --workspace`、`scripts/acceptance.sh`），清理临时产物，逐条填写实测证据并勾选 `A01`–`A32`，签名提交并推送 `master` | `C31` | `A01`–`A32` |
+| `C32` | [x] | 交付门禁 | 全工作区 | **[P3-Verify & Deliver]** 执行隔离干净重建（`cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test --workspace`、`scripts/acceptance.sh`），清理临时产物，逐条填写实测证据并勾选 `A01`–`A32`，签名提交并推送 `master` | `C31` | `A01`–`A32` |
 
 ---
 
@@ -604,7 +604,7 @@ flowchart LR
 | `A29` | [x] | `Q07,Q13` / `C15,C27,C30` / `T-H08,M03,M07` | `app-files` + `viewer-media` | `scripts/acceptance.sh`（真实 `d` + `curl`） | 端到端访问 `/docs` → `301 /docs/` → `/docs/guide.md` → `./diagram.svg` 与媒体 `?view=viewer` 全通 | 已实测：`PORT=18099 scripts/acceptance.sh` 全链路端到端验证通过 |
 | `A30` | [x] | `Q08–Q13` / `C30` / `T-M04–M08` | 完整构建产物 | `PORT=18099 scripts/acceptance.sh` | 所有端到端检查输出 `PASS`、失败数为 `0`，末尾打印 `All acceptance checks passed ✔` | 已实测：`PORT=18099 scripts/acceptance.sh` 输出 `57 passed, 0 failed` 与 `All acceptance checks passed ✔` |
 | `A31` | [x] | `Q09,Q10,Q13` / `C29` / `T-M09` | `examples/` 更新完成 | 启动 `target/debug/d -r examples/docs` 验证重点样例并返回 `0` 后正常关闭 | `examples/docs/guide.md` 与相对图 `diagram.svg` 可完整端到端加载 | 已实测：`target/debug/d -p 18105 -r examples/docs` 实跑返回 `200`（`EXAMPLES_DOCS_LIVE_PASS`）并优雅退场 |
-| `A32` | [ ] | `Q02,Q14` / `C19,C31,C32` / `T-H12,M10` | 全部代码与文档修改提交前 | 在隔离干净重建副本中依次执行 `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test --workspace`、`scripts/acceptance.sh` 并随后清理临时副本 | 干净构建与全部校验 100% 绿灯；无 `src/httpd/` 残留；无绝对路径/秘密；工作区无未清理垃圾 | 待施工验收 |
+| `A32` | [x] | `Q02,Q14` / `C19,C31,C32` / `T-H12,M10` | 全部代码与文档修改提交前 | 在隔离干净重建副本中依次执行 `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test --workspace`、`scripts/acceptance.sh` 并随后清理临时副本 | 干净构建与全部校验 100% 绿灯；无 `src/httpd/` 残留；无绝对路径/秘密；工作区无未清理垃圾 | 已实测（提交 `d5b47d4`）：严格 `set -euo pipefail` 下于全新 `mktemp` 导出树完成干净重建，全工作区测试、`clippy`、`fmt` 与 `acceptance.sh`（57 passed, 0 failed）全部绿灯，临时目录已清理（`TRUE_CLEAN_REBUILD_PASS`） |
 
 ---
 
@@ -617,8 +617,8 @@ flowchart LR
   - `P0` 设计与施工准备：**已完成 100%**（`architecture.md`、`frame.md`、`construction.md` 已写入；不计入实现/验收率）。
   - `P1`（`C01`–`C07` / `A01`–`A10`）：代码实现 `7 / 7`（100%），实测验收 `10 / 10`（100%）——零外部依赖，7 个单元测试 + 10 个 BDD 契约测试全部绿灯。
   - `P2`（`C08`–`C20` / `A11`–`A22`）：代码实现 `13 / 13`（100%），实测验收 `12 / 12`（100%）。
-  - `P3`（`C21`–`C32` / `A23`–`A32`）：代码实现 `11 / 12`（91.7%），实测验收 `9 / 10`（90%）；正在执行最终隔离干净重建门禁 `C32` / `A32`。
-- **卡点与风险**：无阻塞卡点；进入 `P3` 重点确保纯 Rust `doc-render` 嵌入式 HTML 原样透传与全站极简白色 UI 无外链/无黑底/无 emoji。
+  - `P3`（`C21`–`C32` / `A23`–`A32`）：代码实现 `12 / 12`（100%），实测验收 `10 / 10`（100%）；阶段 1–3 总计 `C01`–`C32`（32/32）与 `A01`–`A32`（32/32）**全部 100% 闭环通过**。
+- **卡点与风险**：阶段 1–3 无任何残留卡点；阶段 4 与阶段 5 保持按独立后续里程碑清晰隔离。
 
 ### 交付与善后协议
 
@@ -632,11 +632,12 @@ flowchart LR
 
 - **唯一施工入口**：`docs/construction.md`（本文件）
 - **配套设计规范**：`docs/architecture.md`、`docs/frame.md`
-- **当前待执行起点**：`P3 / C32`（提交阶段 3 实现并执行隔离干净重建验证 `A32`，完成后签名推送 `master`）
+- **当前待执行起点**：已完成阶段 1–3 全部闭环交付（后续可选规划阶段 4/5）
 - **变更记录**：
   - `2026-11-24`：创建唯一施工手册与 `/goal` 驱动文案，完成前置资料核对（基线 `master @ eb012ac`）。
   - `2026-11-24`：完成 `P1`（`C01`–`C07`），`crates/frame` 零外部依赖通过 `A01`–`A10`、工作区测试、`cargo fmt --check` 与 `clippy --all-targets -- -D warnings`。
   - `2026-11-24`：完成 `P2`（`C08`–`C20`），重构为分层工作区、移除旧 `src/httpd/` 与重型外置依赖、通过全工作区测试、`clippy`、`cargo tree` 零外依赖核查与 `scripts/acceptance.sh`（36 项）。
+  - `2026-11-24`：完成 `P3`（`C21`–`C32`）及 `GroupPlugin` 嵌套逆序卸载竞态修复（`d5b47d4`），严格隔离干净重建通过全部校验、`cargo tree` 11 个纯净包零外依赖、57 项端到端验收全过，全量 `A01`–`A32` 闭环交付。
 
 ---
 
