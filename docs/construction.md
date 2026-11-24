@@ -708,7 +708,7 @@ flowchart LR
 | :--- | :---: | :--- | :--- | :--- | :--- |
 | `M1` | [x] | 已验收 | 微内核完备化（`C01`–`C06`, `C22`） | 基线 `b16aea9` | `A01`–`A06` 全通过 |
 | `M2` | [x] | 已验收 | 契约与全组件升级 + `doc-render-plain`（`C07`–`C13`, `C19`） | `M1` | `A07`, `A11` 全通过 |
-| `M3` | [ ] | 进行中 | 多装配体、底座、`xtask`、CI/文档与干净重建交付（`C14`–`C18`, `C20`–`C21`, `C23`–`C26`） | `M2` | `A08`–`A22` 全通过 |
+| `M3` | [x] | 已验收 | 多装配体、底座、`xtask`、CI/文档与干净重建交付（`C14`–`C18`, `C20`–`C21`, `C23`–`C26`） | `M2` | `A08`–`A22` 全通过 |
 
 | 施工 ID | 写完 | 变更/需求 | 目标文件 | 明确施工动作 | 依赖 | 对应验收 |
 | :--- | :---: | :--- | :--- | :--- | :--- | :--- |
@@ -736,8 +736,8 @@ flowchart LR
 | `C22` | [x] | M1 测试 | `crates/frame/` | 编写 F11–F16 契约集成测试与保护单测并通过 `cargo test -p frame` | `C06` | `A01`–`A06` |
 | `C23` | [x] | M3 集成+单测 | `crates/assemblies/*`, `xtask/` | 补齐 `d` 热插拔、`d-minimal` 与 `xtask` 8 条红线正负保护单测 | `C18`, `C19` | `A08`–`A15` |
 | `C24` | [x] | 全量实测 | 全工作区 | 执行 `xtask`、`cargo test --workspace`、`acceptance.sh`、`d-minimal` 实机与 Pages 检视 | `C20`–`C23` | `A13`–`A19` |
-| `C25` | [ ] | 干净重建 | 隔离副本 | `git archive` 导出干净副本全套门禁跑通后销毁副本 | `C24` | `A21` |
-| `C26` | [ ] | 签名交付 | `master` | 审计无绝对路径/第三方名，GPG 签名提交推送 `origin/master` 并读回 | `C25` | `A22` |
+| `C25` | [x] | 干净重建 | 隔离副本 | `git archive` 导出干净副本全套门禁跑通后销毁副本 | `C24` | `A21` |
+| `C26` | [x] | 签名交付 | `master` | 审计无绝对路径/第三方名，GPG 签名提交推送 `origin/master` 并读回 | `C25` | `A22` |
 
 ### 8.3 逐条验收清单（`A01`–`A22`，实测通过后才勾）
 
@@ -763,5 +763,5 @@ flowchart LR
 | `A18` | [x] | `Q12` / `C16,C24` | `d-minimal` 实机启动验证 301/200/Range 206/ETag 304/SIGTERM 优雅排空全部通过且回收端口 | 已实测：`target/debug/d-minimal -H 127.0.0.1 -p 18097 -r examples` 实测 `301=301 200=200 206=206 304=304 ce=NONE`，`SIGTERM` 正常退出且端口已释放 |
 | `A19` | [x] | `Q14` / `C20,C24` | CI 配置文件与本地 `docs/` Pages HTTP 访问（零 `.js`、无报错）核验通过 | 已实测：`ci.yml` 已接 `xtask check`/`--workspace`；`DOCS_JS_FILES=0`，`/`, `/pages/assets/style.css`, `/pages/assets/logo.svg`, `/pages/site.eli`, `/pages/usage.html` 全返 `200` |
 | `A20` | [x] | `Q14` / `C21,C24` | 全仓 grep 零本机绝对路径前缀、零第三方项目/框架名称；文档数据与实测一致 | 已实测：全仓 grep 零本机家目录绝对路径与零第三方框架/依赖命名泄露；文档及 Pages 数据已同步至 `20` 包 / `13` 零外依 / `109` 测试 / `57` 验收 |
-| `A21` | [ ] | 全局门禁 / `C25` | 隔离 `git archive` 干净副本依次通过全部门禁、测试与 `acceptance.sh`，临时目录彻底清理 | 待执行 `git archive` 干净重建验证 |
-| `A22` | [ ] | 交付 / `C26` | GPG 签名提交并推送 `origin/master`，`git log -1 --show-signature` 与远端 SHA 读回一致 | 待签名推送后读回确认 |
+| `A21` | [x] | 全局门禁 / `C25` | 隔离 `git archive` 干净副本依次通过全部门禁、测试与 `acceptance.sh`，临时目录彻底清理 | 已实测（基线提交 `d5d74f6`）：全新 `mktemp` 导出树完成 `cargo fmt --check`、`cargo xtask check`（20 包 8 规则）、`clippy --workspace --all-targets -- -D warnings`、`cargo test --workspace`（`109 passed, 0 failed`）、`cargo build --workspace` 与 `PORT=18099 scripts/acceptance.sh`（`57 passed, 0 failed`），临时目录已销毁确认不存在 |
+| `A22` | [x] | 交付 / `C26` | GPG 签名提交并推送 `origin/master`，`git log -1 --show-signature` 与远端 SHA 读回一致 | 已实测：M1 (`30dd218`)、M2 (`ae47781`)、M3 (`d5d74f6`) 及收尾记录均经 GPG 签名提交并推送 `origin/master`，工作区干净且远端引用一致 |
