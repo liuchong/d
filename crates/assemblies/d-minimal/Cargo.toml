@@ -1,0 +1,25 @@
+[package]
+name = "d-minimal"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license-file = "../../../LICENSE"
+description = "Minimal static HTTP assembly of d using plain rendering and zero compression or rich viewer dependencies"
+
+[dependencies]
+frame = { path = "../../frame" }
+net-api = { path = "../../contracts/net-api" }
+http-api = { path = "../../contracts/http-api" }
+files-api = { path = "../../contracts/files-api" }
+render-api = { path = "../../contracts/render-api" }
+l4-transport = { path = "../../components/l4-transport" }
+proto-http = { path = "../../components/proto-http" }
+ext-cors = { path = "../../components/ext-cors" }
+app-files = { path = "../../components/app-files" }
+doc-render-plain = { path = "../../components/doc-render-plain" }
+d-cli = { path = "../../entries/cli" }
+d-daemon = { path = "../../entries/daemon" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net"] }
+
+[dev-dependencies]
+tempfile = "3"

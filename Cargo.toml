@@ -1,6 +1,6 @@
 [workspace]
+resolver = "2"
 members = [
-    ".",
     "crates/frame",
     "crates/contracts/net-api",
     "crates/contracts/http-api",
@@ -12,13 +12,17 @@ members = [
     "crates/components/ext-cors",
     "crates/components/app-files",
     "crates/components/doc-render",
+    "crates/components/doc-render-plain",
     "crates/components/viewer-markdown",
     "crates/components/viewer-code",
     "crates/components/viewer-media",
     "crates/entries/cli",
+    "crates/entries/daemon",
+    "crates/assemblies/d",
+    "crates/assemblies/d-minimal",
+    "xtask",
 ]
 default-members = [
-    ".",
     "crates/frame",
     "crates/contracts/net-api",
     "crates/contracts/http-api",
@@ -30,45 +34,59 @@ default-members = [
     "crates/components/ext-cors",
     "crates/components/app-files",
     "crates/components/doc-render",
+    "crates/components/doc-render-plain",
     "crates/components/viewer-markdown",
     "crates/components/viewer-code",
     "crates/components/viewer-media",
     "crates/entries/cli",
+    "crates/entries/daemon",
+    "crates/assemblies/d",
 ]
 
-[package]
-name = "d"
-version = "0.1.0"
-authors = ["Liu Chong <mail@liuchong.io>"]
-edition = "2024"
-rust-version = "1.88"
-license-file = "LICENSE"
-repository = "https://github.com/liuchong/d"
-homepage = "https://github.com/liuchong/d"
-documentation = "https://docs.rs/d"
-description = "D is a modular extensible network daemon with built-in HTTP and file services."
-keywords = ["d", "httpd", "http-server", "http", "server"]
-
-[dependencies]
-frame = { path = "crates/frame" }
-net-api = { path = "crates/contracts/net-api" }
-http-api = { path = "crates/contracts/http-api" }
-files-api = { path = "crates/contracts/files-api" }
-render-api = { path = "crates/contracts/render-api" }
-l4-transport = { path = "crates/components/l4-transport" }
-proto-http = { path = "crates/components/proto-http" }
-ext-compression = { path = "crates/components/ext-compression" }
-ext-cors = { path = "crates/components/ext-cors" }
-app-files = { path = "crates/components/app-files" }
-doc-render = { path = "crates/components/doc-render" }
-viewer-markdown = { path = "crates/components/viewer-markdown" }
-viewer-code = { path = "crates/components/viewer-code" }
-viewer-media = { path = "crates/components/viewer-media" }
-d-cli = { path = "crates/entries/cli" }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net"] }
-
-[dev-dependencies]
-tempfile = "3"
+[workspace.metadata.architecture]
+kernel = ["frame"]
+contracts = ["net-api", "http-api", "files-api", "render-api"]
+components = [
+    "l4-transport",
+    "proto-http",
+    "ext-compression",
+    "ext-cors",
+    "app-files",
+    "doc-render",
+    "doc-render-plain",
+    "viewer-markdown",
+    "viewer-code",
+    "viewer-media",
+]
+entries = ["d-cli", "d-daemon"]
+assemblies = ["d", "d-minimal"]
+tools = ["xtask"]
+zero_external_deps = [
+    "frame",
+    "net-api",
+    "http-api",
+    "files-api",
+    "render-api",
+    "ext-cors",
+    "doc-render",
+    "doc-render-plain",
+    "viewer-markdown",
+    "viewer-code",
+    "viewer-media",
+    "d-cli",
+    "xtask",
+]
+minimal_assembly = "d-minimal"
+minimal_forbidden = [
+    "ext-compression",
+    "doc-render",
+    "viewer-markdown",
+    "viewer-code",
+    "viewer-media",
+    "brotli",
+    "flate2",
+]
+multi_impl_contracts = ["render-api"]
 
 [profile.release]
 opt-level = 3

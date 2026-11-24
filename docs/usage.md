@@ -116,7 +116,7 @@ d -r . -p 8080
 
 - 浏览器访问 `/README.md` 或 `/docs/usage.md` 即见纯净白底阅读页（主画布 `#ffffff`、代码块与表头 `#f6f8fa`、强调蓝 `#0969da`）。
 - 文档中的相对图片（如 `![架构图](./diagram.svg)` 或 `assets/logo.png`）随裸路径自动直出；访问 `/docs` 会自动 `301` 规范化到 `/docs/`，避免相对路径偏移。
-- 点击任意代码文件（如 `/src/lib.rs`）即享纯 Rust 服务端词法高亮，零客户端脚本依赖，内网/离线环境秒开。
+- 点击任意代码文件（如 `/crates/frame/src/lib.rs`）即享纯 Rust 服务端词法高亮，零客户端脚本依赖，内网/离线环境秒开。
 
 ### 2. 托管静态站点与本地 Pages 预览
 
@@ -255,9 +255,12 @@ curl -s -D - -o /dev/null -X OPTIONS \
   -H "Access-Control-Request-Method: GET" \
   "http://localhost:8080/data.bin"
 
-# 运行全套工作区测试与端到端验收脚本
+# 运行架构门禁与全套工作区测试、端到端验收脚本
+cargo xtask check
+cargo xtask info
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+cargo build -p d-minimal
 scripts/acceptance.sh
 ```

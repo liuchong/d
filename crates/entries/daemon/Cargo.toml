@@ -1,0 +1,16 @@
+[package]
+name = "d-daemon"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license-file = "../../../LICENSE"
+description = "Component-agnostic daemon host runtime and lifecycle harness for d assemblies"
+
+[dependencies]
+frame = { path = "../../frame" }
+net-api = { path = "../../contracts/net-api" }
+http-api = { path = "../../contracts/http-api" }
+files-api = { path = "../../contracts/files-api" }
+render-api = { path = "../../contracts/render-api" }
+d-cli = { path = "../cli" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net"] }

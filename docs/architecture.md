@@ -157,34 +157,37 @@
 
 ```text
 workspace/
-├── Cargo.toml                      # 统一工作区与基础依赖锁定
+├── Cargo.toml                      # 纯 Virtual Workspace 与 [workspace.metadata.architecture]
 ├── crates/
-│   ├── <framework-core>/           # 第 0 层：独立框架层包（零网络/业务依赖，可独立成仓发布）
-│   ├── contracts/                  # 纯接口契约包集合（Trait、消息与共享数据类型）
+│   ├── frame/                      # 第 0 层：独立微内核包（纯 std 零外部依赖）
+│   ├── contracts/                  # 纯接口契约包集合（Trait、ScopedService 视图与共享数据类型）
 │   │   ├── net-api/                #   L4 传输与连接生命周期契约
 │   │   ├── http-api/               #   HTTP 请求/响应/流式体/路由/过滤器契约
-│   │   ├── ws-api/                 #   WebSocket 帧与会话契约
+│   │   ├── ws-api/                 #   （规划预留）WebSocket 帧与会话契约
 │   │   ├── files-api/              #   文件存储、路径解析与视图扩展契约
-│   │   └── render-api/             #   文档与代码高亮渲染契约
+│   │   └── render-api/             #   文档与代码高亮渲染契约（多实现可互换）
 │   ├── components/                 # 各层独立实现组件（仅依赖 contracts/*，禁止组件间直连实现）
-│   │   ├── l4-transport/           #   第 1 层实现：监听、TLS 接线、连接台账与优雅排空
+│   │   ├── l4-transport/           #   第 1 层实现：监听、连接台账与优雅排空
 │   │   ├── proto-http/             #   第 2 层实现：自建底层 HTTP 状态机、快照路由与过滤管线
-│   │   ├── proto-ws/               #   第 2 层实现：WebSocket 升级与帧引擎
-│   │   ├── proto-tcp/              #   第 2 层实现：原生 TCP 流处理底座
-│   │   ├── ext-proxy/              #   第 3 层实现：L7/L4 反向代理、上游池与健康检查
+│   │   ├── proto-ws/               #   （规划预留）第 2 层实现：WebSocket 升级与帧引擎
+│   │   ├── proto-tcp/              #   （规划预留）第 2 层实现：原生 TCP 流处理底座
+│   │   ├── ext-proxy/              #   （规划预留）第 3 层实现：L7/L4 反向代理、上游池与健康检查
 │   │   ├── ext-compression/        #   第 3 层实现：流式感知压缩过滤器
 │   │   ├── ext-cors/               #   第 3 层实现：CORS 过滤器
-│   │   ├── ext-dev-kit/            #   第 3 层实现：本地 HTTPS、实时刷新、模拟接口、流式检视器
-│   │   ├── doc-render/             #   独立内建文档与轻量词法高亮实现
+│   │   ├── ext-dev-kit/            #   （规划预留）第 3 层实现：本地 HTTPS、实时刷新、Mock 与检视器
+│   │   ├── doc-render/             #   第 4 层实现：独立内建 GFM/HTML 与轻量词法高亮实现
+│   │   ├── doc-render-plain/       #   第 4 层替代实现：零外依纯文本转义渲染器
 │   │   ├── app-files/              #   第 4 层实现：文件服务、安全沙箱与目录索引
 │   │   ├── viewer-markdown/        #   第 4 层实现：Markdown 展示器
 │   │   ├── viewer-code/            #   第 4 层实现：源码与纯文本展示器
 │   │   └── viewer-media/           #   第 4 层实现：图片、音频、视频白底展示器
-│   ├── entries/                    # 极薄外部入口壳（无核心业务逻辑）
-│   │   ├── cli/                    #   命令行参数、环境变量、日志与配置入口
-│   │   └── daemon/                 #   守护进程启动、信号接入与后台协调
-│   └── assemblies/                 # 最终可交付二进制装配清单
-│       └── d/                      #   主产物 `d`（按配置/编译特性选择装配集合）
+│   ├── entries/                    # 极薄外部入口壳与守护底座（零 components/* 依赖）
+│   │   ├── cli/                    #   命令行参数、环境变量、日志与配置入口（d-cli）
+│   │   └── daemon/                 #   组件无关守护底座、Loader 引导与信号优雅排空（d-daemon）
+│   └── assemblies/                 # 多装配体最终可交付产物
+│       ├── d/                      #   主产物 `d`（声明式 Loader 装配全栈组件）
+│       └── d-minimal/              #   轻量静态托管版 `d-minimal`（装配 doc-render-plain，零压缩/富渲染）
+├── xtask/                          # 纯 std 架构门禁、装配矩阵检视与受影响闭包测试工具
 ├── examples/                       # 各类典型使用示例集
 ├── scripts/                        # 端到端 HTTP 验收脚本
 └── docs/                           # 精简设计文档与项目主页源码
@@ -197,10 +200,10 @@ workspace/
 1. **框架层微内核包（当前命名待定）**：纯 Rust 响应式插件与异步资源生命周期微内核，适用于守护进程、桌面后端、CLI 插件宿主机及各类动态组合系统。
 2. **守护进程传输与排空包（`l4-transport` + `net-api`）**：通用的多地址监听、连接计数跟踪、分阶段优雅排空与信号协调核心。
 3. **底层 HTTP/WS 引擎包（`proto-http` + `proto-ws` + `http-api`）**：控制面与数据面分离、无锁不可变快照路由、流式零缓冲优先的轻量底层协议引擎。
-4. **内建文档与词法高亮包（`doc-render` + `render-api`）**：零外部脚本、零网络请求、静态编译内建的 Markdown（含嵌入式 HTML）与多语言轻量语法高亮库。
+4. **内建文档与词法高亮包（`doc-render` / `doc-render-plain` + `render-api`）**：零外部脚本、零网络请求、静态编译内建的 Markdown（含嵌入式 HTML）与多语言轻量语法高亮库，并附带纯文本安全转义替代实现 `doc-render-plain` 实证同契约可互换。
 5. **文件与展示引擎包（`app-files` + `viewer-*`）**：即插即用的白底安全静态文件托管与可插拔内容浏览套件。
-6. **通用反向代理与开发提效包（`ext-proxy`、`ext-dev-kit`）**：面向现代 AI 流式与本地联调痛点的代理及开发增强套件。
-7. **`d` 宿主发行版**：将上述积木装配成开箱即用的单一可执行守护进程。
+6. **通用反向代理与开发提效包（`ext-proxy`、`ext-dev-kit`）**：面向现代 AI 流式与本地联调痛点的代理及开发增强套件（阶段 4/5 规划）。
+7. **`d` 与 `d-minimal` 宿主发行版及 `xtask` 工具链**：基于组件无关 `d-daemon` 底座与 `Loader` 声明式装配出全栈 `d` 与轻量静态托管版 `d-minimal`，并由纯 `std` `cargo xtask check/info/test` 在编译器与 CI 层强制验证架构隔离。
 
 ---
 

@@ -1,39 +1,54 @@
-//! Root assembly for `d`: wires Layer 0 microkernel (`frame`) together with
-//! L4 transport, HTTP/1.1 engine, extensions, and file application plugins.
+//! Component-agnostic daemon runtime host for `d` assemblies.
+//!
+//! Coordinates Layer 0 (`frame`), contract crates, CLI parsing, and signal
+//! lifecycle without depending directly on any concrete plugin components.
 
-use app_files::{FilesAppPlugin, FilesConfig};
-use doc_render::DocRenderPlugin;
-use ext_compression::CompressionPlugin;
-use ext_cors::CorsPlugin;
-use frame::{BoxFuture, ConfigValue, Context, FrameError, FrameOptions};
-use http_api::{HttpRequest, HttpResponse, RouterService};
-use l4_transport::{TokioSpawner, TransportPlugin};
-use proto_http::{BoundServerInfo, HttpConfig, HttpEnginePlugin};
+use d_cli::ParseOutcome;
+use frame::{
+    BoxFuture, Context, ErrorKind, FrameError, FrameOptions, FrameSnapshot,
+    Loader, PluginEntry, Resolver, Spawner,
+};
+use http_api::{BoundServerInfo, HttpRequest, HttpResponse, RouterService};
 use std::io::Write;
 use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::exit;
 use std::sync::Arc;
-use viewer_code::CodeViewerPlugin;
-use viewer_markdown::MarkdownViewerPlugin;
-use viewer_media::MediaViewerPlugin;
 
-/// Configuration toggles for assembling the `d` HTTP server runtime.
+/// Tokio-backed task spawner for the microkernel runtime.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct DaemonSpawner;
+
+impl Spawner for DaemonSpawner {
+    fn spawn(&self, fut: BoxFuture<'static, ()>) {
+        tokio::spawn(fut);
+    }
+}
+
+/// Shared configuration toggles passed from entry shells into assemblies.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Options {
+pub struct DaemonOptions {
     pub allow_hidden: bool,
     pub cors: bool,
 }
 
-/// Live assembled `d` runtime handle supporting in-memory dispatch and shutdown.
+/// Declarative assembly blueprint built by a concrete binary or test harness.
+pub struct AssemblySpec {
+    pub resolver: Arc<dyn Resolver>,
+    pub entries: Vec<PluginEntry>,
+}
+
+/// Live assembled daemon handle supporting in-memory dispatch, inspection,
+/// incremental `Loader` patching, and graceful shutdown.
 pub struct AppHandle {
     ctx: Context,
+    loader: Loader,
     router: RouterService,
     local_addr: Option<SocketAddr>,
 }
 
 impl AppHandle {
-    /// Borrow the underlying Layer 2 [`RouterService`].
+    /// Borrow the Layer 2 [`RouterService`].
     pub fn router(&self) -> &RouterService {
         &self.router
     }
@@ -41,6 +56,16 @@ impl AppHandle {
     /// Borrow the Layer 0 plugin [`Context`].
     pub fn context(&self) -> &Context {
         &self.ctx
+    }
+
+    /// Borrow the declarative [`Loader`] managing this assembly's plugin tree.
+    pub fn loader(&self) -> &Loader {
+        &self.loader
+    }
+
+    /// Capture a diagnostic runtime snapshot from the microkernel.
+    pub fn inspect(&self) -> FrameSnapshot {
+        self.ctx.inspect()
     }
 
     /// Return the actual bound TCP socket address when network listening is enabled.
@@ -56,72 +81,46 @@ impl AppHandle {
         self.router.dispatch(req)
     }
 
-    /// Gracefully dispose the plugin tree and drain any active transport listeners.
+    /// Gracefully close the loader, dispose the plugin tree, and drain transport listeners.
     pub async fn dispose(self) -> Result<(), FrameError> {
+        let _ = self.loader.close().await;
         self.ctx.dispose().await
     }
 }
 
-/// Assemble the `d` plugin tree for `root` with optional TCP listener binding.
-pub async fn build_runtime(
-    root: PathBuf,
-    options: Options,
-    bind_addr: Option<SocketAddr>,
+/// Instantiate and settle an [`AppHandle`] from a declarative [`AssemblySpec`].
+pub async fn build_from_spec(
+    spec: AssemblySpec,
+    expect_listener: bool,
 ) -> Result<AppHandle, FrameError> {
-    let opts = FrameOptions::new(Arc::new(TokioSpawner)).with_on_error(
+    let opts = FrameOptions::new(Arc::new(DaemonSpawner)).with_on_error(
         Arc::new(|err| {
             d_cli::log_error(&format!("runtime frame error: {err}"));
         }),
     );
     let ctx = Context::new(opts);
-
-    if bind_addr.is_some() {
-        ctx.plugin(TransportPlugin::default(), ConfigValue::Null)?;
-    }
-
-    ctx.plugin(
-        HttpEnginePlugin::new(HttpConfig {
-            bind_addr,
-            ..HttpConfig::default()
-        }),
-        ConfigValue::Null,
-    )?;
-
-    ctx.plugin(CompressionPlugin::default(), ConfigValue::Null)?;
-
-    if options.cors {
-        ctx.plugin(CorsPlugin, ConfigValue::Null)?;
-    }
-
-    ctx.plugin(
-        FilesAppPlugin::new(FilesConfig::new(root, options.allow_hidden)),
-        ConfigValue::Null,
-    )?;
-
-    ctx.plugin(DocRenderPlugin, ConfigValue::Null)?;
-    ctx.plugin(MarkdownViewerPlugin, ConfigValue::Null)?;
-    ctx.plugin(CodeViewerPlugin, ConfigValue::Null)?;
-    ctx.plugin(MediaViewerPlugin, ConfigValue::Null)?;
-
+    let loader = Loader::new(ctx.clone(), spec.resolver);
+    loader.apply(spec.entries).await?;
     ctx.settle().await;
+    ctx.mark_ready();
 
     let router = ctx
         .get::<RouterService>()
         .ok_or_else(|| {
             FrameError::new(
-                frame::ErrorKind::MissingDependency,
+                ErrorKind::MissingDependency,
                 "failed to initialize HTTP router service",
             )
         })?
         .as_ref()
         .clone();
 
-    let local_addr = if bind_addr.is_some() {
+    let local_addr = if expect_listener {
         Some(
             ctx.get::<BoundServerInfo>()
                 .ok_or_else(|| {
                     FrameError::new(
-                        frame::ErrorKind::MissingDependency,
+                        ErrorKind::MissingDependency,
                         "failed to bind HTTP listener",
                     )
                 })?
@@ -133,49 +132,22 @@ pub async fn build_runtime(
 
     Ok(AppHandle {
         ctx,
+        loader,
         router,
         local_addr,
     })
 }
 
-/// Construct an in-memory HTTP application serving `root` with default options.
-pub async fn create_app(
-    root: impl AsRef<Path>,
-    allow_hidden: bool,
-) -> AppHandle {
-    create_app_with_options(
-        root,
-        Options {
-            allow_hidden,
-            cors: false,
-        },
-    )
-    .await
-}
-
-/// Construct an in-memory HTTP application serving `root` with explicit [`Options`].
-pub async fn create_app_with_options(
-    root: impl AsRef<Path>,
-    options: Options,
-) -> AppHandle {
-    let path = root.as_ref().to_path_buf();
-    let canonical = path.canonicalize().unwrap_or(path);
-    build_runtime(canonical, options, None)
-        .await
-        .expect("in-memory d runtime assembly must succeed")
-}
-
-/// Start the HTTP server on `addr` serving `root` with default options.
-pub async fn start(addr: &SocketAddr, root: &str) {
-    start_with_options(addr, root, Options::default()).await;
-}
-
-/// Start the HTTP server on `addr` serving `root` until `SIGINT` or `SIGTERM`.
-pub async fn start_with_options(
+/// Start a daemon from an assembly builder on `addr` serving `root` until
+/// `SIGINT` or `SIGTERM`.
+pub async fn start_from_spec<F>(
     addr: &SocketAddr,
     root: &str,
-    options: Options,
-) {
+    options: DaemonOptions,
+    build_spec: F,
+) where
+    F: FnOnce(PathBuf, DaemonOptions, Option<SocketAddr>) -> AssemblySpec,
+{
     let canonical = match std::fs::canonicalize(root) {
         Ok(p) => p,
         Err(e) => {
@@ -184,8 +156,8 @@ pub async fn start_with_options(
         }
     };
 
-    let app = match build_runtime(canonical.clone(), options, Some(*addr)).await
-    {
+    let spec = build_spec(canonical.clone(), options, Some(*addr));
+    let app = match build_from_spec(spec, true).await {
         Ok(app) => app,
         Err(e) => {
             d_cli::log_error(&format!("Failed to start server on {addr}: {e}"));
@@ -213,6 +185,57 @@ pub async fn start_with_options(
             "Graceful shutdown finished with errors: {e}"
         ));
     }
+}
+
+/// Parse CLI/environment options, initialize stderr logging, and run a daemon assembly.
+pub async fn run_cli_daemon<F>(banner: &str, build_spec: F)
+where
+    F: FnOnce(PathBuf, DaemonOptions, Option<SocketAddr>) -> AssemblySpec,
+{
+    let cfg = match d_cli::parse_from_env() {
+        ParseOutcome::Run(cfg) => cfg,
+        ParseOutcome::ExitOk(msg) => {
+            print!("{msg}");
+            return;
+        }
+        ParseOutcome::ExitErr(err) => {
+            eprintln!("Error: {err}");
+            exit(2);
+        }
+    };
+
+    d_cli::init_log_level(cfg.log_level);
+
+    let root_str = cfg.root.to_string_lossy().to_string();
+    d_cli::log_info(banner);
+    d_cli::log_info("Configuration:");
+    d_cli::log_info(&format!("  Host: {}", cfg.host));
+    d_cli::log_info(&format!("  Port: {}", cfg.port));
+    d_cli::log_info(&format!("  Root: {root_str}"));
+    d_cli::log_info(&format!("  Log:  {}", cfg.log_level.as_str()));
+    d_cli::log_info(&format!(
+        "  Hidden files: {}",
+        if cfg.allow_hidden {
+            "allowed"
+        } else {
+            "disabled"
+        }
+    ));
+    d_cli::log_info(&format!(
+        "  CORS: {}",
+        if cfg.cors { "permissive" } else { "disabled" }
+    ));
+
+    start_from_spec(
+        &cfg.addr,
+        &root_str,
+        DaemonOptions {
+            allow_hidden: cfg.allow_hidden,
+            cors: cfg.cors,
+        },
+        build_spec,
+    )
+    .await;
 }
 
 async fn wait_for_shutdown_signal() {

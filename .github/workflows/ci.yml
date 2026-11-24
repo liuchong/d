@@ -24,14 +24,17 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Architecture Check
+        run: cargo xtask check
+
       - name: Format
         run: cargo fmt --check
 
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test
+        run: cargo test --workspace
 
   acceptance:
     name: end-to-end acceptance
@@ -64,7 +67,7 @@ jobs:
         run: cargo install cargo-semver-checks --locked
 
       - name: Check semver
-        run: cargo semver-checks
+        run: cargo semver-checks --package d
 
   audit:
     name: security audit

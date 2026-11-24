@@ -1,0 +1,34 @@
+[package]
+name = "d"
+version = "0.1.0"
+authors = ["Liu Chong <mail@liuchong.io>"]
+edition = "2024"
+rust-version = "1.88"
+license-file = "../../../LICENSE"
+repository = "https://github.com/liuchong/d"
+homepage = "https://github.com/liuchong/d"
+documentation = "https://docs.rs/d"
+description = "D is a modular extensible network daemon with built-in HTTP and file services."
+keywords = ["d", "httpd", "http-server", "http", "server"]
+
+[dependencies]
+frame = { path = "../../frame" }
+net-api = { path = "../../contracts/net-api" }
+http-api = { path = "../../contracts/http-api" }
+files-api = { path = "../../contracts/files-api" }
+render-api = { path = "../../contracts/render-api" }
+l4-transport = { path = "../../components/l4-transport" }
+proto-http = { path = "../../components/proto-http" }
+ext-compression = { path = "../../components/ext-compression" }
+ext-cors = { path = "../../components/ext-cors" }
+app-files = { path = "../../components/app-files" }
+doc-render = { path = "../../components/doc-render" }
+viewer-markdown = { path = "../../components/viewer-markdown" }
+viewer-code = { path = "../../components/viewer-code" }
+viewer-media = { path = "../../components/viewer-media" }
+d-cli = { path = "../../entries/cli" }
+d-daemon = { path = "../../entries/daemon" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net"] }
+
+[dev-dependencies]
+tempfile = "3"

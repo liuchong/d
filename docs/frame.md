@@ -20,14 +20,14 @@ crates/frame/
     ├── lib.rs          # 公开 API 重导出与包级文档
     ├── error.rs        # FrameError、ErrorKind 与 ValidationIssue
     ├── sync.rs         # BoxFuture、Spawner、内部一次性/屏障/任务计数原语
-    ├── service.rs      # Service trait、ServiceKey、ScopeToken、Scope 与 ReadinessCheck
+    ├── service.rs      # Service、ScopedService、ServiceKey、ScopeToken 与 merge_config_values
     ├── effect.rs       # EffectHandle、EffectScope、逆序/并发释放与回滚引擎
-    ├── event.rs        # Event / RequestEvent / WaterfallEvent、过滤器与派发语义
-    ├── plugin.rs       # Deps、Plugin trait、插件运行时元数据
-    ├── fiber.rs        # FiberState、ActivationKey、纤程驱动循环与级联刷新
-    ├── context.rs      # Context 统一编程表面、作用域派生与方法入口
-    ├── loader.rs       # ConfigValue、PluginEntry、EntryPatch、Resolver 与 Loader
-    └── inspect.rs      # FrameSnapshot 与脱敏 FiberSnapshot
+    ├── event.rs        # 内置生命周期事件（FiberStateChanged/ServiceChanged/RuntimeReady）与双向过滤派发
+    ├── plugin.rs       # Deps（必选/可选依赖）、Plugin trait、插件运行时元数据
+    ├── fiber.rs        # FiberState、ActivationKey、父子纤程树、驱动循环与级联刷新
+    ├── context.rs      # Context 编程表面、extend/meta/select/intercept 与 use_service
+    ├── loader.rs       # ConfigValue、EntryTarget::Group、嵌套增量 Loader 与 LoaderService/Plugin
+    └── inspect.rs      # FrameSnapshot 与拓扑父子脱敏检视结构体
 ```
 
 ---
@@ -121,17 +121,21 @@ pub struct ScopeToken(pub u64);
 
 /// 可选服务就绪探针：仅当返回 true 时，该服务才对下游依赖方可见。
 pub type ReadinessCheck<S> = Arc<dyn Fn(&S) -> bool + Send + Sync>;
+
+/// 调用方绑定服务视图：将资源句柄寿命直接绑定到调用方 `Context` 的 `EffectScope`。
+pub trait ScopedService: Service {
+    type View: Send + Sync + 'static;
+    fn bind(self: Arc<Self>, caller: Context) -> Self::View;
+}
+
+pub fn merge_config_values(base: &ConfigValue, patch: &ConfigValue) -> ConfigValue;
 ```
 
 **服务作用域与所有权核心不变量**：
 
-1. **作用域继承与隔离**：每个 `Context` 持有一个不可变映射链 `Scope`（`ServiceKey -> ScopeToken`）。调用 `ctx.isolate::<S>()` 产生的新 `Context` 会为 `S` 绑定新的 `ScopeToken`；未显式隔离的其他服务继续继承父作用域令牌。
-2. **单域唯一性**：同一个 `(ServiceKey, ScopeToken)` 键上同时只允许存在一个提供者；若重复调用 `provide`，直接返回 `ErrorKind::DuplicateService`。
-3. **读写边界**：
-   - `ctx.provide::<S>(value)` 将服务的所有权与生命周期绑定至当前所属纤程（通过内置 `Effect` 管理）；
-   - `ctx.update_service::<S>(next)` 校验当前调用上下文的所属纤程必须与该服务提供者一致，否则返回 `ErrorKind::NotServiceOwner`；更新后触发当前隔离域内依赖刷新；
-   - 提供者在其自身 `Loading` 期间可通过当前上下文读取自己已提供的服务，但**下游消费者仅在提供者达到 `FiberState::Active` 且通过就绪探针（若配置）后才可见**；
-   - 消费者调用 `ctx.require::<S>()` 读取的必须是当前纤程在 `deps()` 中已声明的依赖（或显式传入的服务），直接读取当前激活快照中的句柄；调用 `ctx.get::<S>()` 显式探测当前隔离域内是否存在已激活且就绪的可选服务，返回 `Option<Arc<S>>`。
+1. **作用域继承与同域父链继承**：每个 `Context` 持有一个不可变映射链 `Scope`（`ServiceKey -> ScopeToken`）及父纤程链。调用 `ctx.isolate::<S>()` 产生的新 `Context` 会为 `S` 绑定新的 `ScopeToken`；未显式隔离的其他服务沿同隔离域父链自动继承。
+2. **调用方绑定寿命**：消费方通过 `ctx.use_service::<S>()` / `ctx.try_use_service::<S>()` 获取与自身 `Context` 绑定的视图；提供者在 `caller` 上登记 `Effect`，消费方卸载时自动回收关联资源，无需手工释放包装。
+3. **单域唯一性与读写边界**：同一个 `(ServiceKey, ScopeToken)` 键上同时只允许存在一个提供者（重复返回 `DuplicateService`）；`update_service` 校验所有者（否则 `NotServiceOwner`）；当某依赖已声明在 `Deps` 中且处于卸载清理窗口时，`ctx.get::<S>()` 优先读取该纤程隔离的依存快照。
 
 ---
 
@@ -257,16 +261,20 @@ pub enum FiberState {
     Disposed,
 }
 
-/// 插件依赖集合（按注册顺序去重保存 ServiceKey）。
+/// 插件依赖集合（按注册顺序去重保存必选与可选 ServiceKey）。
 #[derive(Clone, Debug, Default)]
 pub struct Deps {
-    keys: Vec<ServiceKey>,
+    required: Vec<ServiceKey>,
+    optional: Vec<ServiceKey>,
 }
 
 impl Deps {
     pub fn empty() -> Self;
     pub fn with<S: Service>(mut self) -> Self;
+    pub fn with_optional<S: Service>(mut self) -> Self;
     pub fn keys(&self) -> &[ServiceKey];
+    pub fn optional_keys(&self) -> &[ServiceKey];
+    pub fn contains_type(&self, type_id: std::any::TypeId) -> bool;
 }
 
 /// 所有挂载到 frame 的应用、扩展或协议引擎均实现此接口。
@@ -348,11 +356,21 @@ impl Context {
 
     // --- 作用域与上下文派生 ---
     pub fn isolate<S: Service>(&self) -> Self;
-    pub fn extend(&self) -> Self;
+    pub fn isolate_key(&self, key: ServiceKey) -> Self;
+    pub fn extend(&self, meta: BTreeMap<String, ConfigValue>) -> Self;
+    pub fn with_meta(&self, key: impl Into<String>, val: ConfigValue) -> Self;
+    pub fn meta(&self, key: &str) -> Option<&ConfigValue>;
+    pub fn select(&self, filter: EventFilter) -> Self;
     pub fn fiber(&self) -> FiberHandle;
+    pub fn parent_fiber(&self) -> Option<FiberHandle>;
     pub fn root_fiber(&self) -> FiberHandle;
+    pub fn mark_ready(&self);
 
-    // --- 服务提供与解析 ---
+    // --- 配置局部拦截合并 ---
+    pub fn intercept<S: Service>(&self, patch: ConfigValue) -> EffectHandle;
+    pub fn resolve_intercept<S: Service>(&self, base: ConfigValue) -> ConfigValue;
+
+    // --- 服务提供与消费 ---
     pub fn provide<S: Service>(
         &self,
         value: Arc<S>,
@@ -367,6 +385,8 @@ impl Context {
     pub fn update_service<S: Service>(&self, value: Arc<S>) -> Result<(), FrameError>;
     pub fn get<S: Service>(&self) -> Option<Arc<S>>;
     pub fn require<S: Service>(&self) -> Result<Arc<S>, FrameError>;
+    pub fn use_service<S: ScopedService>(&self) -> Result<S::View, FrameError>;
+    pub fn try_use_service<S: ScopedService>(&self) -> Option<S::View>;
 
     // --- 资源效应与插件挂载 ---
     pub fn effect<F>(
@@ -467,6 +487,8 @@ pub enum EntryTarget {
     Name(String),
     /// 直接内嵌构造好的插件实例。
     Plugin(Arc<dyn Plugin>),
+    /// 纯结构分组容器：管理作用域 `isolate` 与嵌套 `children` 增量 Diff。
+    Group,
 }
 
 #[derive(Clone)]
@@ -505,8 +527,8 @@ pub trait Resolver: Send + Sync + 'static {
    - 若任意节点校验或解析失败，直接返回错误，**运行中的现有插件树零变更、零副作用**。
 2. **序列化变更与增量 Diff**：
    - 多次 `apply` / `apply_patches` 请求通过内置异步队列严格串行执行，避免并发交错篡改拓扑；
-   - 先**逆序**卸载已移除、已禁用或实现体/隔离配置/`children` 结构发生变化的旧节点；
-   - 再**正序**处理保留节点与新增节点：仅 `config` 变更的保留节点调用现有 `FiberHandle::update`（保留原有纤程身份并触发局部热更），新增节点派生目标隔离域后挂载新纤程（若存在 `children`，自动挂载递归子 `Loader` 并以父纤程效应绑定其生命周期）；
+   - 先**逆序**卸载已移除、已禁用或实现体/隔离配置发生变化（以及非 `Group` 节点的 `children` 结构变化）的旧节点；
+   - 再**正序**处理保留节点与新增节点：仅 `config` 变更的保留节点调用现有 `FiberHandle::update`（`Group` 节点当 `children` 变化时直接通过持久共享子 `Loader` 槽递归执行增量 Diff，绝不重建父分组或未受影响兄弟），新增节点派生目标隔离域后挂载新纤程（若启用 `LoaderPlugin`，上下文可通过 `LoaderService` 自举访问补丁与快照接口）；
    - 最后等待本轮变更涉及的纤程完成迁移收敛（不无限阻塞在缺少外部依赖的 `Pending` 纤程上）。
 3. **关闭收尾**：`Loader::close()` 拒绝后续新增变更，等待当前在途变更排空后按逆序卸载全部受管节点。
 
@@ -523,9 +545,12 @@ pub struct FrameSnapshot {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FiberSnapshot {
     pub id: FiberId,
+    pub parent: Option<FiberId>,
+    pub children: Vec<FiberId>,
     pub name: String,
     pub state: FiberState,
     pub dependencies: Vec<&'static str>,
+    pub optional_dependencies: Vec<&'static str>,
     pub provided: Vec<&'static str>,
     pub effect_count: usize,
     /// 若最近一次激活或清理出错，保留截断后最多 512 字节的错误摘要；绝不包含配置原文或凭据。
@@ -545,9 +570,9 @@ pub struct FiberSnapshot {
 
 ---
 
-## 五、核心验收契约清单（固定 10 组单元）
+## 五、核心验收契约清单（`F01`–`F16`）
 
-为保证核心行为精准可控且测试边界收敛，阶段 1 交付时以以下 10 组固定独立单元作为完整验收标准：
+阶段 1 建立核心基线（`F01`–`F10`），M1 微内核完备化进一步补齐并实测验证 `F11`–`F16`（共 16 组独立契约测试 + 9 个单元测试）：
 
 | 单元 | 验证边界与核心断言 |
 | :--- | :--- |
@@ -561,3 +586,9 @@ pub struct FiberSnapshot {
 | **F08 · 配置校验、更新拦截与否决** | `validate_config` 不可被 `waterfall` 更新钩子绕过；更新钩子否决或校验失败时保留原有效配置而不应用错误输入；插件 A 的更新钩子不拦截插件 B 的更新；`Pending` 期间的配置更新在依赖就绪激活时自动生效。 |
 | **F09 · 声明式 `Loader` 预检、补丁与嵌套树** | 候选清单中任一节点解析或校验失败，整体预检拒载且现存运行树不受任何影响；`EntryPatch` 插入的 `id` 立即可被同批后续补丁引用；仅配置变更复用原纤程走 `update`，变更实现或嵌套子树时逆序卸载后重建，停用/移除节点彻底卸载。 |
 | **F10 · 脱敏检视、根重置与终态关停** | `inspect()` 准确反映纤程标识、状态、依赖名、效应计数及截断错误摘要，且不泄露配置原文；`root_fiber().dispose()` 清空挂载体后根仍可用；`ctx.dispose()` 彻底关停并将根置为 `Disposed`。 |
+| **F11 · `ScopedService` 调用方绑定视图** | `ctx.use_service::<S>()` 将下游产生的 `Effect` 自动挂到调用方 `Context`；调用方单独卸载时关联路由/资源自动回收，提供者无残留。 |
+| **F12 · 父子 `Fiber` 拓扑与同隔离域继承** | 显式建立 `parent` / `children` 父子树、`inspect()` 反映父子连接，隔离域下同域祖先服务可被 `require()` 继承而不串入跨隔离分支。 |
+| **F13 · 可选依赖 `with_optional` 与卸载快照** | 可选依赖缺失时消费方照常激活，提供者到达/替换/下线时驱动消费方精确重组；可选依赖首轮卸载窗口内仍受卸载快照保护。 |
+| **F14 · `extend` / `with_meta` / `select` / `intercept`** | 元信息派生与反向 `select` 过滤器准确；多组 `intercept::<S>` 按声明顺序与 `merge_config_values` 合并且在卸载后自动收回。 |
+| **F15 · 内置锁外生命周期事件与重入安全** | `FiberStateChanged`、`ServiceChanged`、`RuntimeReady` 均在内核互斥锁之外派发，回调内直接调用 `inspect()` 与树操作不发生死锁。 |
+| **F16 · 嵌套 `EntryTarget::Group` 增量 Diff 与 `LoaderService`** | 修改分组内单一子项仅重建该受影响子项（父分组与兄弟子项零重建）；通过 `LoaderPlugin` 与 `LoaderService` 支持上下文内自举查询与补丁热更。 |

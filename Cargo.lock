@@ -89,6 +89,7 @@ version = "0.1.0"
 dependencies = [
  "app-files",
  "d-cli",
+ "d-daemon",
  "doc-render",
  "ext-compression",
  "ext-cors",
@@ -111,7 +112,48 @@ name = "d-cli"
 version = "0.1.0"
 
 [[package]]
+name = "d-daemon"
+version = "0.1.0"
+dependencies = [
+ "d-cli",
+ "files-api",
+ "frame",
+ "http-api",
+ "net-api",
+ "render-api",
+ "tokio",
+]
+
+[[package]]
+name = "d-minimal"
+version = "0.1.0"
+dependencies = [
+ "app-files",
+ "d-cli",
+ "d-daemon",
+ "doc-render-plain",
+ "ext-cors",
+ "files-api",
+ "frame",
+ "http-api",
+ "l4-transport",
+ "net-api",
+ "proto-http",
+ "render-api",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "doc-render"
+version = "0.1.0"
+dependencies = [
+ "frame",
+ "render-api",
+]
+
+[[package]]
+name = "doc-render-plain"
 version = "0.1.0"
 dependencies = [
  "frame",
@@ -443,3 +485,7 @@ checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
 dependencies = [
  "windows-link",
 ]
+
+[[package]]
+name = "xtask"
+version = "0.1.0"

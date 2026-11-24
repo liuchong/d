@@ -72,16 +72,16 @@
 
         <div class="metrics" aria-label="已验证工作区指标">
             <div class="metric">
-                <strong>16</strong>
-                <span>分层 Cargo Workspace 包</span>
+                <strong>20</strong>
+                <span>纯 Virtual Workspace 分层包</span>
             </div>
             <div class="metric">
-                <strong>0</strong>
-                <span><code>frame</code> / <code>doc-render</code> / <code>viewer-*</code> 外部依赖</span>
+                <strong>13</strong>
+                <span>零外部依赖核心 / 契约 / 纯组件包</span>
             </div>
             <div class="metric">
-                <strong>83 + 57</strong>
-                <span>工作区测试 + 端到端 HTTP 验收项</span>
+                <strong>109 + 57</strong>
+                <span>工作区测试 + 端到端 HTTP 验收</span>
             </div>
             <div class="metric">
                 <strong>1PL</strong>
@@ -237,8 +237,8 @@ d -r . -p 8080
         <div class="section-head">
             <div>
                 <span class="section-kicker">Architecture</span>
-                <h2 class="section-title">五层单向依赖架构与 16 个 Workspace 包</h2>
-                <p class="section-desc">上层只依赖下层契约包（<code>contracts/*</code>），实现之间零横向直接耦合，由根包 <code>d</code> 按需装配。</p>
+                <h2 class="section-title">五层单向依赖架构与 20 个 Workspace 包</h2>
+                <p class="section-desc">上层只依赖下层契约包（<code>contracts/*</code>），实现之间零横向直接耦合，由 <code>d</code> 与 <code>d-minimal</code> 按声明式 <code>Loader</code> 装配并经 <code>xtask</code> 校验。</p>
             </div>
             <a class="btn" href="https://github.com/liuchong/d/blob/master/docs/frame.md">了解 frame 微内核设计</a>
         </div>
@@ -266,8 +266,8 @@ d -r . -p 8080
                     <span>文件沙箱、Markdown、代码与媒体页</span>
                 </button>
                 <button class="arch-btn" type="button" role="tab" aria-selected="false" data-layer-btn="entry">
-                    <strong>Entries &amp; Root · d-cli / d</strong>
-                    <span>CLI/ENV 解析与全栈运行时装配</span>
+                    <strong>Entries, Assemblies &amp; xtask</strong>
+                    <span>d-cli / d-daemon · d / d-minimal · xtask</span>
                 </button>
             </div>
             <div class="arch-detail">
@@ -283,7 +283,7 @@ d -r . -p 8080
                     </div>
                 </div>
                 <p data-layer-desc>
-                    提供 Context、Scope 作用域隔离、强类型 Service、响应式 Fiber 状态机、结构化异步 EffectScope（LIFO 回滚与并发清理）、四类强类型 Event、声明式增量 Loader 与脱敏 Inspect。
+                    提供 ScopedService、Context、Scope 作用域隔离与同域继承、可选依赖 Deps、Fiber 父子树状态机、EffectScope 逆序回滚与并发清理、内置锁外生命周期事件、嵌套组增量 Loader 与 Inspect。
                 </p>
             </div>
         </div>
@@ -355,23 +355,23 @@ d -r . -p 8080
             <article class="phase done">
                 <div class="phase-head">
                     <h3>阶段 1 · 零外部依赖插件微内核（crates/frame）</h3>
-                    <span class="phase-badge">已完成 · F01–F10</span>
+                    <span class="phase-badge">已完成 · F01–F16</span>
                 </div>
-                <p>Context/Scope 隔离、强类型 Service、响应式 Fiber 级联重建、EffectScope LIFO 清理、四类 Event、预检 Loader 与脱敏 Inspect。</p>
+                <p>纯 <code>std</code> 实现 ScopedService、父子 Fiber 树与同域继承、可选依赖与卸载快照、Context 元信息/拦截器、内置锁外事件与嵌套分组增量 Loader。</p>
             </article>
             <article class="phase done">
                 <div class="phase-head">
-                    <h3>阶段 2 · 五层重构、L4 排空与自建 HTTP/1.1 引擎</h3>
-                    <span class="phase-badge">已完成 · A11–A22</span>
+                    <h3>阶段 2 · 五层重构、契约升级与双装配体演进</h3>
+                    <span class="phase-badge">已完成 · d &amp; d-minimal</span>
                 </div>
-                <p>拆分 16 包 Cargo Workspace，落地 <code>l4-transport</code>、<code>proto-http</code> 无锁快照路由、<code>ext-compression</code>/<code>ext-cors</code> 与 <code>app-files</code>。</p>
+                <p>落地 20 包纯 Virtual Workspace、自建 HTTP/1.1 引擎、零手工包装 <code>ScopedService</code> 接线、可互换 <code>doc-render-plain</code>、<code>d-daemon</code> 与纯 <code>std</code> <code>xtask</code> 治理工具。</p>
             </article>
             <article class="phase done">
                 <div class="phase-head">
                     <h3>阶段 3 · 纯内建 Markdown、词法高亮与极简白色界面</h3>
-                    <span class="phase-badge">已完成 · A23–A32</span>
+                    <span class="phase-badge">已完成 · 全栈闭环</span>
                 </div>
-                <p>交付零外部依赖 <code>doc-render</code> 与 <code>viewer-*</code>，实现无冲突媒体/文档路由、全站纯白视觉规范与 83 项测试 + 57 项端到端验收闭环。</p>
+                <p>交付零外部依赖 <code>doc-render</code> 与 <code>viewer-*</code>，实现无冲突媒体/文档路由、全站纯白视觉规范与 109 项测试 + 57 项端到端验收闭环。</p>
             </article>
             <article class="phase">
                 <div class="phase-head">

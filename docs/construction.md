@@ -667,3 +667,101 @@ flowchart LR
 
 阻塞与收敛规则：遇到同一根因失败两次未收敛时先分析根因再批量修复，严禁通过删除断言、放宽门禁、加长无意义 sleep 或保留旧实现兼容层绕过问题；出现真实无法自动解除的外部阻塞时记录已尝试路径、证据、阻塞点与解除条件后停止汇报。完成条件为 A01–A32 全部真实勾选通过、临时产物已回收且签名提交推送完成。
 ```
+
+
+---
+---
+
+# 第二部分：微内核完备化与多装配体架构升级（M1–M3）
+
+> 续接基线：`master @ b16aea984922477fb6e19a741408da463baf9898`（前阶段 P1–P3 共 32 项施工与 A01–A32 验收均已闭环保留）。
+> 纪律：严格按 `bulk-development` / R39 执行，每阶段 **完整业务实现 → 完整集成验收 → 关键保护性单元测试** 一次推进；遵循 R13 单一干净正式实现（不保留新旧双签名兼容层）；严禁在源码、配置文件、工具或文档中写入任何第三方项目/框架名称。
+
+## 8. 续接目标、差异表与状态机约束
+
+### 8.1 施工差异总表（`D01`–`D26`）
+
+| 变更 ID | 相对路径 | 精确目标变更 | 需求 | 施工 / 验收 |
+| :--- | :--- | :--- | :--- | :--- |
+| `D01` | `crates/frame/src/service.rs` | 新增 `ScopedService` trait（`type View; fn bind(self: Arc<Self>, caller: Context) -> Self::View`）与 `merge_config_values(base, patch)` | Q01,Q04 | `C01` / `A01,A04` |
+| `D02` | `crates/frame/src/plugin.rs` | `Deps` 拆分 `required`/`optional`，新增 `with_optional::<S>()`、`optional_keys()`、`contains_type()` | Q03 | `C02` / `A03` |
+| `D03` | `crates/frame/src/inspect.rs` | `FiberSnapshot` 新增 `parent: Option<FiberId>`、`children: Vec<FiberId>`、`optional_dependencies: Vec<&'static str>` | Q02,Q03 | `C02` / `A02,A03` |
+| `D04` | `crates/frame/src/event.rs` | 新增 `ServiceAction`/`ServiceChanged`/`FiberStateChanged`/`RuntimeReady`；派发支持发射端上下文 + 监听端 `selector` 双向过滤 | Q04,Q05 | `C03` / `A04,A05` |
+| `D05` | `crates/frame/src/fiber.rs` | `ActivationKey` 纳入 `optional_providers`；`FiberRecord` 增 `parent`/`meta`/`intercepts`/`selector`；状态跃迁锁外派发 `FiberStateChanged` | Q02,Q03,Q05 | `C04` / `A02,A03,A05` |
+| `D06` | `crates/frame/src/context.rs` | 实现 `use_service`/`try_use_service`/`extend`/`with_meta`/`meta`/`select`/`intercept`/`resolve_intercept`/`parent_fiber`/`mark_ready`；升级 `require()` 同隔离域父链继承与 `get()` 快照优先；锁外派发 `ServiceChanged` | Q01–Q05 | `C05` / `A01–A05` |
+| `D07` | `crates/frame/src/loader.rs` | 新增 `EntryTarget::Group`；嵌套分组持共享持久子 `Loader` 槽实现递归增量 Diff；新增 `LoaderService` 与 `LoaderPlugin` | Q06 | `C06` / `A06` |
+| `D08` | `crates/frame/src/lib.rs` | 重导出全部新增公开类型与事件 | Q01–Q06 | `C06` / `A01–A06` |
+| `D09`–`D11` | `crates/contracts/{net,http,files}-api/src/lib.rs` | `Transport::listen`、`Router::mount_{route,filter}`、`ViewerRegistry::register` 统一收紧为传入 `caller: &Context`，新增 `Scoped*` 视图并实现 `ScopedService`；`BoundServerInfo` 移入 `http-api` 以便 `d-daemon` 零组件耦合读取 | Q01,Q07,Q10 | `C07` / `A07,A10` |
+| `D12`–`D17` | `crates/components/*` | 所有提供者移除内部持有提供者 `ctx` 改为在 `caller` 登记 `Effect`；全部消费者改用 `use_service` 并删除手工 `effect_sync` 释放包装；全组件补齐 `ConfigValue` 校验与解析（含 `intercept` 合并） | Q07,Q08 | `C08`–`C12` / `A07,A08` |
+| `D18` | `crates/components/doc-render-plain/` | 新建零外依替代组件（纯 HTML 安全转义渲染器 + `PlainDocRenderPlugin`）实现同一 `render-api::Renderer` | Q11 | `C13` / `A11` |
+| `D19` | `crates/entries/daemon/` | 新建纯入口底座 `d-daemon`（仅依赖 `frame` + `contracts/*` + `d-cli` + `tokio`），负责 `AssemblySpec`/`Loader`/信号排空/`AppHandle` | Q08,Q10 | `C14` / `A09,A10` |
+| `D20` | `crates/assemblies/d/` | 承接全功能产物 `d`，以 `StaticResolver` + `PluginEntry` + `ConfigValue::Map` 声明式装配全套组件，完整保留公开库 API 并迁入全量集成测试与新增运行期热插拔测试 | Q08,Q12 | `C15` / `A08,A09,A12,A15` |
+| `D21` | `crates/assemblies/d-minimal/` | 新建极简静态托管产物 `d-minimal`（仅装 `l4-transport`/`proto-http`/`ext-cors`/`app-files`/`doc-render-plain`，零 `doc-render`/`brotli`/`flate2`/`viewer-*`）及独立集成测试 | Q11,Q12 | `C16` / `A11,A12` |
+| `D22` | 根 `Cargo.toml` + 删除根 `src/`、`tests/` | 转为纯 Virtual Workspace，配 `[workspace.metadata.architecture]`，保持 `default-members` 含 `d` 作为唯一默认二进制 | Q09,Q12 | `C17` / `A09,A13` |
+| `D23` | `xtask/` + `.cargo/config.toml` | 新建零外部依赖纯 `std` 工具 `xtask`（`check` 8 条红线、`info` 矩阵与映射、`test` 基于 git diff 增量影响闭包）及别名配置 | Q13 | `C18` / `A13,A14` |
+| `D24` | `crates/components/*/tests/*.rs` | 组件测试全面切至新签名并验证调用方卸载自动回收与配置校验错误路径 | Q07,Q08 | `C19` / `A07,A08,A15` |
+| `D25`–`D26` | `.github/workflows/ci.yml`、文档与 Pages | CI 接入 `cargo xtask check` 与 `--workspace`；同步更新架构/微内核/使用手册与 Pages 数据，零第三方名称 | Q14 | `C20,C21` / `A16,A19,A20` |
+
+### 8.2 阶段进度与施工清单（`M1`–`M3` / `C01`–`C26`）
+
+| 阶段 | 完成 | 状态 | 阶段目标与三段节奏 | 依赖 | 出口条件 |
+| :--- | :---: | :--- | :--- | :--- | :--- |
+| `M1` | [x] | 已验收 | 微内核完备化（`C01`–`C06`, `C22`） | 基线 `b16aea9` | `A01`–`A06` 全通过 |
+| `M2` | [x] | 已验收 | 契约与全组件升级 + `doc-render-plain`（`C07`–`C13`, `C19`） | `M1` | `A07`, `A11` 全通过 |
+| `M3` | [ ] | 进行中 | 多装配体、底座、`xtask`、CI/文档与干净重建交付（`C14`–`C18`, `C20`–`C21`, `C23`–`C26`） | `M2` | `A08`–`A22` 全通过 |
+
+| 施工 ID | 写完 | 变更/需求 | 目标文件 | 明确施工动作 | 依赖 | 对应验收 |
+| :--- | :---: | :--- | :--- | :--- | :--- | :--- |
+| `C01` | [x] | `D01` / `Q01,Q04` | `crates/frame/src/service.rs` | 新增 `ScopedService` trait 与 `merge_config_values` | — | `A01`, `A04` |
+| `C02` | [x] | `D02,D03` / `Q02,Q03` | `crates/frame/src/{plugin,inspect}.rs` | `Deps` 拆分必选/可选与 `FiberSnapshot` 父子拓扑字段 | `C01` | `A02`, `A03` |
+| `C03` | [x] | `D04` / `Q04,Q05` | `crates/frame/src/event.rs` | 三类内置事件与发射端/监听端双向上下文过滤 | `C01` | `A04`, `A05` |
+| `C04` | [x] | `D05` / `Q02,Q03,Q05` | `crates/frame/src/fiber.rs` | `ActivationKey` 可选依赖、`FiberRecord` 父链/元信息/拦截器/过滤器、锁外状态事件 | `C02`, `C03` | `A02`, `A03`, `A05` |
+| `C05` | [x] | `D06` / `Q01`–`Q05` | `crates/frame/src/context.rs` | `use_service`/`extend`/`with_meta`/`select`/`intercept`/`resolve_intercept`/`mark_ready`/同域父继承/锁外服务事件 | `C04` | `A01`–`A05` |
+| `C06` | [x] | `D07,D08` / `Q06` | `crates/frame/src/{loader,lib}.rs` | `EntryTarget::Group`、嵌套增量 Diff、`LoaderService`/`LoaderPlugin` 及 `lib.rs` 重导出 | `C05` | `A06` |
+| `C07` | [x] | `D09`–`D11` / `Q01,Q07,Q10` | `crates/contracts/{net,http,files}-api/` | `ScopedService` 视图与 `&Context` 参数迁移，及 `BoundServerInfo` 归位 `http-api` | `C06` | `A07`, `A10` |
+| `C08` | [x] | `D12` / `Q07,Q08` | `crates/components/l4-transport/` | 移除提供者 `ctx` 绑定至 `caller`；`ConfigValue` 解析与 `validate_config` | `C07` | `A07`, `A08` |
+| `C09` | [x] | `D13` / `Q07,Q08` | `crates/components/proto-http/` | `HttpRouter` 绑 `caller`、`HttpEnginePlugin` 用 `use_service` 与 `ConfigValue` | `C07` | `A07`, `A08` |
+| `C10` | [x] | `D14,D15` / `Q07,Q08` | `crates/components/ext-{compression,cors}/` | `use_service` 消除 `effect_sync` 包装 + `ConfigValue` 校验解析 | `C07` | `A07`, `A08` |
+| `C11` | [x] | `D16` / `Q07,Q08` | `crates/components/app-files/` | `DefaultViewerRegistry` 绑 `caller`、`FilesAppPlugin` 用 `use_service` + `ConfigValue` | `C07` | `A07`, `A08` |
+| `C12` | [x] | `D17` / `Q07,Q08` | `crates/components/{doc-render,viewer-*}/` | 三个 viewer 改用 `use_service` 消包装；四个插件补 `validate_config` | `C07` | `A07`, `A08` |
+| `C13` | [x] | `D18` / `Q11` | `crates/components/doc-render-plain/` | 新建零外部依赖替代渲染包实现 `render-api::Renderer` | `C07` | `A11` |
+| `C14` | [x] | `D19` / `Q08,Q10` | `crates/entries/daemon/` | 新建零组件耦合 `d-daemon` 底座 | `C08`–`C13` | `A09`, `A10` |
+| `C15` | [x] | `D20` / `Q08,Q12` | `crates/assemblies/d/` | 迁移并改用 `Loader` 声明式装配全栈插件，迁入 `tests/http.rs` | `C14` | `A08`, `A09`, `A12`, `A15` |
+| `C16` | [x] | `D21` / `Q11,Q12` | `crates/assemblies/d-minimal/` | 新建轻量装配体 `d-minimal` 与集成测试 | `C14` | `A11`, `A12` |
+| `C17` | [x] | `D22` / `Q09,Q12` | 根 `Cargo.toml` | 转为纯 Virtual Workspace 并加 `[workspace.metadata.architecture]`，删除旧 `src/` 与 `tests/` | `C15`, `C16` | `A09`, `A13` |
+| `C18` | [x] | `D23` / `Q13` | `xtask/`, `.cargo/config.toml` | 实现纯 `std` `cargo xtask check/info/test` 与 8 条红线/单测 | `C17` | `A13`, `A14` |
+| `C19` | [x] | `D24` / `Q07,Q08` | `crates/components/*/tests/` | 组件测试适配新签名、验证自动回收与 `validate_config` | `C08`–`C13` | `A07`, `A08`, `A11`, `A15` |
+| `C20` | [x] | `D25` / `Q14` | `.github/workflows/ci.yml`, `scripts/acceptance.sh` | CI 接入 `cargo xtask check` 与 `--workspace` | `C18` | `A16`, `A19` |
+| `C21` | [x] | `D26` / `Q14` | `docs/`, `README.md` | 同步微内核新原语、20 包多装配体、双实现与 `xtask` 文档 | `C18` | `A20` |
+| `C22` | [x] | M1 测试 | `crates/frame/` | 编写 F11–F16 契约集成测试与保护单测并通过 `cargo test -p frame` | `C06` | `A01`–`A06` |
+| `C23` | [x] | M3 集成+单测 | `crates/assemblies/*`, `xtask/` | 补齐 `d` 热插拔、`d-minimal` 与 `xtask` 8 条红线正负保护单测 | `C18`, `C19` | `A08`–`A15` |
+| `C24` | [x] | 全量实测 | 全工作区 | 执行 `xtask`、`cargo test --workspace`、`acceptance.sh`、`d-minimal` 实机与 Pages 检视 | `C20`–`C23` | `A13`–`A19` |
+| `C25` | [ ] | 干净重建 | 隔离副本 | `git archive` 导出干净副本全套门禁跑通后销毁副本 | `C24` | `A21` |
+| `C26` | [ ] | 签名交付 | `master` | 审计无绝对路径/第三方名，GPG 签名提交推送 `origin/master` 并读回 | `C25` | `A22` |
+
+### 8.3 逐条验收清单（`A01`–`A22`，实测通过后才勾）
+
+| 验收 ID | 通过 | 对应需求/施工 | 命令与检查标准 | 实测结果与证据 |
+| :--- | :---: | :--- | :--- | :--- |
+| `A01` | [x] | `Q01` / `C01,C05,C22` | `cargo test -p frame f11_scoped_service` 通过；调用方卸载自动回收效应，提供者无残留 | 已实测：`f11_scoped_service` 通过（`clippy` 零警告，`cargo tree` 零外依） |
+| `A02` | [x] | `Q02` / `C02,C04,C05,C22` | `cargo test -p frame f12_parent_child_tree_and_inheritance` 通过；同域继承、隔离拦截、`inspect` 父子字段准确 | 已实测：`f12_parent_child_tree_and_inheritance` 通过 |
+| `A03` | [x] | `Q03` / `C02,C04,C05,C22` | `cargo test -p frame f13_optional_deps_and_unload_snapshot` 通过；可选依赖响应与卸载快照保护准确 | 已实测：`f13_optional_deps_and_unload_snapshot` 与 `deps_dedupes_and_promotes_optional_to_required` 通过 |
+| `A04` | [x] | `Q04` / `C01,C03,C05,C22` | `cargo test -p frame f14_context_extend_select_and_intercept` 通过；`meta`/`select`/`intercept` 语义准确 | 已实测：`f14_context_extend_select_and_intercept` 与 `merge_config_values_deep_merges_maps_and_replaces_scalars` 通过 |
+| `A05` | [x] | `Q05` / `C03,C04,C05,C22` | `cargo test -p frame f15_builtin_lifecycle_events_reentrant` 通过；无死锁接收全部生命周期事件 | 已实测：`f15_builtin_lifecycle_events_reentrant` 通过 |
+| `A06` | [x] | `Q06` / `C06,C22` | `cargo test -p frame f16_nested_group_incremental_diff_and_service` 通过；嵌套组增量热更零重建父与兄弟、`LoaderService` 自举 | 已实测：`f16_nested_group_incremental_diff_and_service` 通过；`frame` 全部 9 unit + 16 contract 通过 |
+| `A07` | [x] | `Q07` / `C07`–`C12,C19` | 全组件测试通过，且 `ext-*`/`viewer-*`/`app-files` 无手工 `effect_sync` 释放包装 | 已实测：14 个 M2 契约/组件包 `clippy --all-targets -- -D warnings` 零警告、`cargo test` 全绿，且 grep 输出 `ZERO_MANUAL_EFFECT_SYNC_WRAPPERS` |
+| `A08` | [x] | `Q08` / `C08`–`C12,C23` | `validate_config` 拦截非法配置 + `d` 运行期 `Loader::apply_patches` 热插拔 CORS 通过 | 已实测：`crates/assemblies/d/tests/http.rs` `loader_hot_patch_cors_and_config_without_downtime` 及全组件 `validate_config` 单测全部通过（`proto-http` `FiberId` 全程不变、零重启） |
+| `A09` | [x] | `Q09,Q10` / `C14,C15,C17` | 纯 Virtual Workspace 下 `cargo build` 生成 `target/debug/d` 且 `cargo run -- --version` 正常 | 已实测：`cargo build` 与 `cargo run -- --version` 正常输出 `d 0.1.0` |
+| `A10` | [x] | `Q10` / `C14,C18` | `cargo tree -p d-daemon` 依赖树零任何 `crates/components/*` | 已实测：`cargo tree -p d-daemon` 仅含 `frame`、`contracts/*`、`d-cli` 与 `tokio`，零 `components/*` |
+| `A11` | [x] | `Q11` / `C13,C16,C19` | `doc-render-plain` 零外部依赖并实现 `render-api::Renderer`，`cargo test -p doc-render-plain -p d-minimal` 全通过 | 已实测：`doc-render-plain` 零外依通过 1 项单测；`d-minimal` 通过 2 项集成测试确认 `RenderService` 绑定 `PlainRenderer` |
+| `A12` | [x] | `Q12` / `C15,C16` | `cargo build --workspace` 生成 `d` 与 `d-minimal`，`cargo tree -p d-minimal` 零 `doc-render`/`brotli`/`flate2`/`viewer-*` | 已实测：`cargo build --workspace` 生成两产物，`cargo tree -p d-minimal -e normal,build` 零压缩/富渲染依赖 |
+| `A13` | [x] | `Q09,Q13` / `C17,C18,C23` | `cargo xtask check` 退出 `0`，`cargo test -p xtask` 含 8 条红线负向违规测试全通过 | 已实测：`cargo xtask check` 20 包 8 条规则全过；`cargo test -p xtask` 14 项（含 `R-ARCH-1`..`R-ARCH-8` 负向用例）全通过；`cargo tree -p xtask` 零外部依赖 |
+| `A14` | [x] | `Q13` / `C18,C23` | `cargo xtask info` 与 `cargo xtask test --base HEAD --dry-run` 输出准确 | 已实测：`cargo xtask info` 输出 `20` 包矩阵与 `13` 纯净包 `0 violations`；`xtask test --dry-run` 准确计算闭包 |
+| `A15` | [x] | `Q01`–`Q12` / `C15,C19,C23` | `cargo test --workspace` 全 20 包 `0 failed` | 已实测：`cargo test --workspace` 汇总 `passed=109, failed=0` |
+| `A16` | [x] | `Q14` / `C20,C24` | `cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings` 零警告通过 | 已实测：`cargo fmt --check` 与 `cargo clippy --workspace --all-targets -- -D warnings` 全部零警告退出 `0` |
+| `A17` | [x] | `Q12` / `C15,C24` | `PORT=18099 scripts/acceptance.sh` 输出 `57 passed, 0 failed` | 已实测：`PORT=18099 scripts/acceptance.sh` 输出 `57 passed, 0 failed` 与 `All acceptance checks passed ✔` |
+| `A18` | [x] | `Q12` / `C16,C24` | `d-minimal` 实机启动验证 301/200/Range 206/ETag 304/SIGTERM 优雅排空全部通过且回收端口 | 已实测：`target/debug/d-minimal -H 127.0.0.1 -p 18097 -r examples` 实测 `301=301 200=200 206=206 304=304 ce=NONE`，`SIGTERM` 正常退出且端口已释放 |
+| `A19` | [x] | `Q14` / `C20,C24` | CI 配置文件与本地 `docs/` Pages HTTP 访问（零 `.js`、无报错）核验通过 | 已实测：`ci.yml` 已接 `xtask check`/`--workspace`；`DOCS_JS_FILES=0`，`/`, `/pages/assets/style.css`, `/pages/assets/logo.svg`, `/pages/site.eli`, `/pages/usage.html` 全返 `200` |
+| `A20` | [x] | `Q14` / `C21,C24` | 全仓 grep 零本机绝对路径前缀、零第三方项目/框架名称；文档数据与实测一致 | 已实测：全仓 grep 零本机家目录绝对路径与零第三方框架/依赖命名泄露；文档及 Pages 数据已同步至 `20` 包 / `13` 零外依 / `109` 测试 / `57` 验收 |
+| `A21` | [ ] | 全局门禁 / `C25` | 隔离 `git archive` 干净副本依次通过全部门禁、测试与 `acceptance.sh`，临时目录彻底清理 | 待执行 `git archive` 干净重建验证 |
+| `A22` | [ ] | 交付 / `C26` | GPG 签名提交并推送 `origin/master`，`git log -1 --show-signature` 与远端 SHA 读回一致 | 待签名推送后读回确认 |

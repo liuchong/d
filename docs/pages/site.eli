@@ -155,17 +155,17 @@
                    "listing" (route-entry "/docs/guide.md?listing=true" "200 OK" "text/html; charset=utf-8"
                                "?listing=true 仅对目录生效；文件请求保持原文件默认视图。"))
       "main.rs" (js-object
-                  "bare" (route-entry "/src/main.rs" "200 OK" "text/html; charset=utf-8"
+                  "bare" (route-entry "/crates/assemblies/d/src/main.rs" "200 OK" "text/html; charset=utf-8"
                            "服务端执行 doc-render 纯 Rust 词法高亮并输出浅色代码阅读页。")
-                  "raw" (route-entry "/src/main.rs?view=raw" "200 OK" "text/plain; charset=utf-8"
+                  "raw" (route-entry "/crates/assemblies/d/src/main.rs?view=raw" "200 OK" "text/plain; charset=utf-8"
                           "返回源码原始字节流。")
-                  "preview" (route-entry "/src/main.rs?view=preview" "200 OK" "text/html; charset=utf-8"
+                  "preview" (route-entry "/crates/assemblies/d/src/main.rs?view=preview" "200 OK" "text/html; charset=utf-8"
                               "输出无顶栏的高亮源码纯正文 HTML。")
-                  "viewer" (route-entry "/src/main.rs?view=viewer" "200 OK" "text/html; charset=utf-8"
+                  "viewer" (route-entry "/crates/assemblies/d/src/main.rs?view=viewer" "200 OK" "text/html; charset=utf-8"
                              "由 viewer-code 输出白底高亮源码查看页。")
-                  "download" (route-entry "/src/main.rs?view=download" "200 OK" "text/plain; charset=utf-8"
+                  "download" (route-entry "/crates/assemblies/d/src/main.rs?view=download" "200 OK" "text/plain; charset=utf-8"
                                "以附件形式下载源码文件。")
-                  "listing" (route-entry "/src/main.rs?listing=true" "200 OK" "text/html; charset=utf-8"
+                  "listing" (route-entry "/crates/assemblies/d/src/main.rs?listing=true" "200 OK" "text/html; charset=utf-8"
                               "?listing=true 仅作用于目录；文件仍按默认源码查看页响应。"))
       "diagram.svg" (js-object
                       "bare" (route-entry "/docs/diagram.svg" "200 OK" "image/svg+xml"
@@ -266,32 +266,32 @@
              "title" "第 0 层 · frame 插件微内核"
              "crates" "crates/frame（零外部依赖，纯 std）"
              "deps" "仅依赖 Rust 标准库 std"
-             "desc" "提供 Context、Scope 作用域隔离、强类型 Service、响应式 Fiber 状态机、结构化异步 EffectScope（LIFO 回滚与并发清理）、四类强类型 Event、声明式增量 Loader 与脱敏 Inspect。")
+             "desc" "提供 ScopedService 调用方绑定视图、Context、Scope 作用域隔离与同域继承、可选依赖 Deps、Fiber 父子树状态机、EffectScope 逆序回滚与并发清理、内置锁外生命周期事件、嵌套组增量 Loader 与 Inspect。")
       "L1" (js-object
              "title" "第 1 层 · 守护进程与传输核心层"
              "crates" "crates/components/l4-transport · 契约 crates/contracts/net-api"
              "deps" "依赖 frame、net-api 与 tokio 传输原语"
-             "desc" "封装 TCP 监听绑定与连接监管台账。收到停机或卸载信号时执行两阶段优雅排空：立即停收新连接，等待在途连接结束并在超时窗收尾，同时向 frame 服务就绪探针同步状态。")
+             "desc" "通过 ScopedTransport 在调用方 Context 绑定监听器生命周期，执行两阶段优雅排空：立即停收新连接，等待在途连接结束并在超时窗收尾，同时向 frame 服务就绪探针同步状态。")
       "L2" (js-object
              "title" "第 2 层 · 自建底层 HTTP/1.1 引擎层"
              "crates" "crates/components/proto-http · 契约 crates/contracts/http-api"
              "deps" "依赖 frame、net-api、http-api"
-             "desc" "自建边界受控 HTTP/1.1 解析器（请求行/头数量/头大小/请求体越界返回 414/431/413/400/505）、流式 chunked 零缓冲写器（streaming: true），以及基于不可变原子快照与 Effect 自动热插拔的 HttpRouter。")
+             "desc" "自建边界受控 HTTP/1.1 解析器（414/431/413/400/505）、流式 chunked 零缓冲写器（streaming: true），以及基于不可变原子快照与 ScopedRouter 调用方效应自动热插拔的 HttpRouter。")
       "L3" (js-object
              "title" "第 3 层 · 能力扩展过滤器层"
              "crates" "crates/components/ext-compression · crates/components/ext-cors"
-             "deps" "仅通过 http-api::HttpFilter 挂载，零内部耦合"
-             "desc" "ext-compression 实现 br/gzip/deflate 流式编码与自动豁免（SSE、streaming、206、304、HEAD、已压缩媒体及 <256B 小响应）；ext-cors 零外部依赖，按需启用（--cors）响应全源头与 OPTIONS 204。")
+             "deps" "通过 ScopedRouter::mount_filter 挂载，零内部耦合"
+             "desc" "ext-compression 实现 br/gzip/deflate 流式编码与自动豁免（SSE、streaming、206、304、HEAD、已压缩媒体及 <256B 小响应）；ext-cors 零外部依赖，支持 ConfigValue 校验与运行期 Loader 热插拔。")
       "L4" (js-object
              "title" "第 4 层 · 文件服务与零外链展示层"
-             "crates" "app-files · doc-render · viewer-markdown · viewer-code · viewer-media · contracts/{files,render}-api"
-             "deps" "doc-render、viewer-* 与契约包全部零外部依赖"
-             "desc" "app-files 负责 canonicalize 沙箱路径校验、目录 301 规范化、Range/ETag/304/HEAD 与 RFC 5987 下载；doc-render 服务端解析完整 CommonMark+GFM、原生嵌入式 HTML 与多语言高亮；viewer-* 输出统一极简白底界面。")
+             "crates" "app-files · doc-render · doc-render-plain · viewer-{markdown,code,media} · contracts/{files,render}-api"
+             "deps" "doc-render、doc-render-plain、viewer-* 与契约包全部零外部依赖"
+             "desc" "app-files 负责沙箱路径校验、目录 301 规范化、Range/ETag/304/HEAD 与 RFC 5987；doc-render 提供完整 GFM/HTML/高亮，doc-render-plain 提供可互换的纯文本安全实现，viewer-* 输出统一极简白底界面。")
       "entry" (js-object
-                "title" "纯入口壳与根装配层"
-                "crates" "crates/entries/cli（d-cli，纯 std）· 根包 d"
-                "deps" "d 装配五层插件；d-cli 零外部依赖"
-                "desc" "d-cli 统一解析命令行与 D_* 环境变量并输出轻量日志；根包 d 暴露 start_with_options、create_app_with_options 与 build_runtime，支持独立后台服务或零端口内存派发。")))
+                "title" "纯入口底座、多装配体与 xtask 治理层"
+                "crates" "d-cli · d-daemon · assemblies/{d,d-minimal} · xtask"
+                "deps" "纯 Virtual Workspace 20 包；d-cli / xtask 零外依；d-daemon 零组件依赖"
+                "desc" "d-daemon 提供组件无关守护底座；d 装配全栈功能，d-minimal 仅装配轻量静态服务与 doc-render-plain；cargo xtask check 静态强制 8 条架构红线。")))
 
   (defun bind-layers ()
     (let ((btns (nodes "[data-layer-btn]"))

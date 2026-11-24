@@ -173,13 +173,14 @@ async fn dispatch_once() -> Result<(), Box<dyn std::error::Error>> {
 
 | Layer | Crates | Responsibility |
 |-------|--------|----------------|
-| **Layer 0** | `crates/frame` | Pure-`std` zero-dependency plugin microkernel (`Context`, `Scope`, `Service`, `Fiber`, `Effect`, `Event`, `Loader`, `Inspect`) |
+| **Layer 0** | `crates/frame` | Pure-`std` zero-dependency plugin microkernel (`ScopedService`, `Context`, `Scope`, `Fiber`, `EffectScope`, `Event`, `Loader`, `Inspect`) |
 | **Contracts** | `crates/contracts/{net-api,http-api,files-api,render-api}` | Zero-dependency trait and wire contracts decoupling layers |
 | **Layer 1** | `crates/components/l4-transport` | TCP listener supervision and two-phase graceful connection drain |
 | **Layer 2** | `crates/components/proto-http` | Bounded HTTP/1.1 parser/writer, streaming chunk encoder, lock-free snapshot `HttpRouter` |
 | **Layer 3** | `crates/components/{ext-compression,ext-cors}` | Streaming-aware `br`/`gzip`/`deflate` compression filter and opt-in CORS filter |
-| **Layer 4** | `crates/components/{app-files,doc-render,viewer-markdown,viewer-code,viewer-media}` | Sandboxed file handler, pure-Rust Markdown/GFM/HTML/highlight engine, minimalist white viewers |
-| **Entry & Root** | `crates/entries/cli`, `.` (`d`) | Pure-`std` CLI/ENV/logging entrypoint (`d-cli`) and runtime assembly (`d`) |
+| **Layer 4** | `crates/components/{app-files,doc-render,doc-render-plain,viewer-*}` | Sandboxed file handler, full CommonMark/GFM/highlight renderer & zero-dep `doc-render-plain`, white viewers |
+| **Entries & Assemblies** | `crates/entries/{cli,daemon}`, `crates/assemblies/{d,d-minimal}` | Pure-`std` `d-cli`, component-agnostic `d-daemon`, full `d` & lightweight `d-minimal` |
+| **Tooling** | `xtask` | Pure-`std` workspace governance (`cargo xtask check`, `info`, `test`) |
 
 Ready-to-run sample directories live in [`examples/`](./examples) — see [examples/README.md](./examples/README.md) for guided tours of `demo/`, `code/`, `docs/`, `media/`, and `static-site/`.
 
@@ -188,9 +189,10 @@ Ready-to-run sample directories live in [`examples/`](./examples) — see [examp
 ## Testing & Acceptance
 
 ```bash
+cargo xtask check          # Enforce all 8 workspace architecture invariants
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace     # 83 unit, contract, and integration tests
+cargo test --workspace     # 109 unit, contract, and assembly integration tests
 scripts/acceptance.sh      # 57 end-to-end HTTP, Markdown, and UI checks
 ```
 

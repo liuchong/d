@@ -1,0 +1,670 @@
+//! Enforce the 8 architecture invariants (`R-ARCH-1` .. `R-ARCH-8`).
+
+use crate::graph::{ArchConfig, DepKind, Layer, WorkspaceGraph};
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Violation {
+    pub rule: &'static str,
+    pub package: String,
+    pub message: String,
+}
+
+impl fmt::Display for Violation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[{}] {}: {}", self.rule, self.package, self.message)
+    }
+}
+
+pub fn check_architecture(graph: &WorkspaceGraph) -> Vec<Violation> {
+    let mut violations = Vec::new();
+    let layer_map = build_layer_map(graph, &mut violations);
+
+    check_zero_external_deps(graph, &mut violations);
+    check_layer_boundaries(graph, &layer_map, &mut violations);
+    check_minimal_exclusion(graph, &mut violations);
+    check_acyclic_and_multi_impl(graph, &layer_map, &mut violations);
+
+    violations
+}
+
+pub fn run_check(graph: &WorkspaceGraph) -> i32 {
+    let violations = check_architecture(graph);
+    if violations.is_empty() {
+        println!(
+            "Architecture check passed: {} workspace packages verified across all 8 rules.",
+            graph.packages.len()
+        );
+        0
+    } else {
+        eprintln!(
+            "Architecture check FAILED with {} violation(s):",
+            violations.len()
+        );
+        for v in &violations {
+            eprintln!("  - {v}");
+        }
+        1
+    }
+}
+
+/// Build `pkg_name -> Layer` map while enforcing `R-ARCH-1`.
+pub(crate) fn build_layer_map(
+    graph: &WorkspaceGraph,
+    violations: &mut Vec<Violation>,
+) -> BTreeMap<String, Layer> {
+    let mut map = BTreeMap::new();
+    for layer in Layer::ALL {
+        for pkg_name in graph.arch.members_for(layer) {
+            if !graph.packages.contains_key(pkg_name) {
+                violations.push(Violation {
+                    rule: "R-ARCH-1",
+                    package: pkg_name.clone(),
+                    message: format!(
+                        "listed in architecture.{} but not found in workspace members",
+                        layer.label()
+                    ),
+                });
+                continue;
+            }
+            if let Some(prev) = map.insert(pkg_name.clone(), layer) {
+                violations.push(Violation {
+                    rule: "R-ARCH-1",
+                    package: pkg_name.clone(),
+                    message: format!(
+                        "assigned to multiple layers: `{}` and `{}`",
+                        prev.label(),
+                        layer.label()
+                    ),
+                });
+            }
+        }
+    }
+
+    for name in graph.packages.keys() {
+        if !map.contains_key(name) {
+            violations.push(Violation {
+                rule: "R-ARCH-1",
+                package: name.clone(),
+                message: "workspace package is missing from [workspace.metadata.architecture]"
+                    .to_string(),
+            });
+        }
+    }
+
+    map
+}
+
+/// Enforce `R-ARCH-2`: packages in `zero_external_deps` cannot depend on external crates.
+fn check_zero_external_deps(
+    graph: &WorkspaceGraph,
+    violations: &mut Vec<Violation>,
+) {
+    for pkg_name in &graph.arch.zero_external_deps {
+        let Some(pkg) = graph.packages.get(pkg_name) else {
+            violations.push(Violation {
+                rule: "R-ARCH-2",
+                package: pkg_name.clone(),
+                message:
+                    "listed in `zero_external_deps` but missing from workspace"
+                        .to_string(),
+            });
+            continue;
+        };
+        for dep in &pkg.deps {
+            if dep.kind != DepKind::Dev && dep.external {
+                violations.push(Violation {
+                    rule: "R-ARCH-2",
+                    package: pkg_name.clone(),
+                    message: format!(
+                        "declared in `zero_external_deps` but depends on external crate `{}`",
+                        dep.name
+                    ),
+                });
+            }
+        }
+    }
+}
+
+/// Enforce `R-ARCH-3` .. `R-ARCH-7` dependency direction rules.
+fn check_layer_boundaries(
+    graph: &WorkspaceGraph,
+    layer_map: &BTreeMap<String, Layer>,
+    violations: &mut Vec<Violation>,
+) {
+    for (name, pkg) in &graph.packages {
+        let Some(&src_layer) = layer_map.get(name) else {
+            continue;
+        };
+        for dep in &pkg.deps {
+            if dep.kind == DepKind::Dev {
+                continue;
+            }
+            match src_layer {
+                Layer::Kernel => {
+                    violations.push(Violation {
+                        rule: "R-ARCH-3",
+                        package: name.clone(),
+                        message: format!(
+                            "kernel crate must have zero normal/build dependencies, found `{}`",
+                            dep.name
+                        ),
+                    });
+                }
+                Layer::Contracts => {
+                    if dep.external {
+                        violations.push(Violation {
+                            rule: "R-ARCH-4",
+                            package: name.clone(),
+                            message: format!(
+                                "contract crate cannot depend on external crate `{}`",
+                                dep.name
+                            ),
+                        });
+                    } else if let Some(&dst_layer) = layer_map.get(&dep.name)
+                        && !matches!(
+                            dst_layer,
+                            Layer::Kernel | Layer::Contracts
+                        )
+                    {
+                        violations.push(Violation {
+                            rule: "R-ARCH-4",
+                            package: name.clone(),
+                            message: format!(
+                                "contract crate may only depend on kernel/contracts, found {} `{}`",
+                                dst_layer.label(),
+                                dep.name
+                            ),
+                        });
+                    }
+                }
+                Layer::Components => {
+                    if !dep.external
+                        && let Some(&dst_layer) = layer_map.get(&dep.name)
+                        && !matches!(
+                            dst_layer,
+                            Layer::Kernel | Layer::Contracts
+                        )
+                    {
+                        violations.push(Violation {
+                            rule: "R-ARCH-5",
+                            package: name.clone(),
+                            message: format!(
+                                "component crate may only depend on kernel/contracts inside workspace, found {} `{}`",
+                                dst_layer.label(),
+                                dep.name
+                            ),
+                        });
+                    }
+                }
+                Layer::Entries => {
+                    if !dep.external
+                        && let Some(&dst_layer) = layer_map.get(&dep.name)
+                        && matches!(
+                            dst_layer,
+                            Layer::Components
+                                | Layer::Assemblies
+                                | Layer::Tools
+                        )
+                    {
+                        violations.push(Violation {
+                            rule: "R-ARCH-6",
+                            package: name.clone(),
+                            message: format!(
+                                "entry crate must not depend on {} `{}`",
+                                dst_layer.label(),
+                                dep.name
+                            ),
+                        });
+                    }
+                }
+                Layer::Assemblies => {
+                    if !dep.external
+                        && let Some(&dst_layer) = layer_map.get(&dep.name)
+                        && matches!(dst_layer, Layer::Assemblies | Layer::Tools)
+                    {
+                        violations.push(Violation {
+                            rule: "R-ARCH-7",
+                            package: name.clone(),
+                            message: format!(
+                                "assembly crate must not depend on {} `{}`",
+                                dst_layer.label(),
+                                dep.name
+                            ),
+                        });
+                    }
+                }
+                Layer::Tools => {}
+            }
+        }
+    }
+}
+
+/// Enforce the `R-ARCH-7` exclusion invariant on `minimal_assembly`.
+fn check_minimal_exclusion(
+    graph: &WorkspaceGraph,
+    violations: &mut Vec<Violation>,
+) {
+    let Some(minimal_name) = &graph.arch.minimal_assembly else {
+        return;
+    };
+    if !graph.packages.contains_key(minimal_name) {
+        violations.push(Violation {
+            rule: "R-ARCH-7",
+            package: minimal_name.clone(),
+            message: "`minimal_assembly` does not exist in workspace"
+                .to_string(),
+        });
+        return;
+    }
+
+    let forbidden: BTreeSet<&str> = graph
+        .arch
+        .minimal_forbidden
+        .iter()
+        .map(String::as_str)
+        .collect();
+    let closure = forward_closure(graph, minimal_name);
+    for reachable_dep in closure {
+        if forbidden.contains(reachable_dep.as_str()) {
+            violations.push(Violation {
+                rule: "R-ARCH-7",
+                package: minimal_name.clone(),
+                message: format!(
+                    "minimal assembly `{minimal_name}` transitively includes forbidden dependency `{reachable_dep}`"
+                ),
+            });
+        }
+    }
+}
+
+/// Collect all direct and transitive non-dev dependency names of `root_pkg`.
+pub(crate) fn forward_closure(
+    graph: &WorkspaceGraph,
+    root_pkg: &str,
+) -> BTreeSet<String> {
+    let mut visited_ws = BTreeSet::new();
+    let mut reached_all = BTreeSet::new();
+    let mut stack = vec![root_pkg.to_string()];
+
+    while let Some(cur) = stack.pop() {
+        if !visited_ws.insert(cur.clone()) {
+            continue;
+        }
+        let Some(pkg) = graph.packages.get(&cur) else {
+            continue;
+        };
+        for dep in &pkg.deps {
+            if dep.kind == DepKind::Dev {
+                continue;
+            }
+            reached_all.insert(dep.name.clone());
+            if !dep.external {
+                stack.push(dep.name.clone());
+            }
+        }
+    }
+    reached_all
+}
+
+/// Enforce `R-ARCH-8`: acyclic workspace DAG & multi-implementation contracts.
+fn check_acyclic_and_multi_impl(
+    graph: &WorkspaceGraph,
+    layer_map: &BTreeMap<String, Layer>,
+    violations: &mut Vec<Violation>,
+) {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Mark {
+        Unvisited,
+        Visiting,
+        Done,
+    }
+
+    fn dfs(
+        node: &str,
+        graph: &WorkspaceGraph,
+        marks: &mut BTreeMap<String, Mark>,
+        trail: &mut Vec<String>,
+        violations: &mut Vec<Violation>,
+    ) {
+        marks.insert(node.to_string(), Mark::Visiting);
+        trail.push(node.to_string());
+        if let Some(pkg) = graph.packages.get(node) {
+            for dep in &pkg.deps {
+                if dep.kind == DepKind::Dev || dep.external {
+                    continue;
+                }
+                match marks.get(&dep.name).copied().unwrap_or(Mark::Unvisited) {
+                    Mark::Unvisited => {
+                        dfs(&dep.name, graph, marks, trail, violations);
+                    }
+                    Mark::Visiting => {
+                        violations.push(Violation {
+                            rule: "R-ARCH-8",
+                            package: node.to_string(),
+                            message: format!(
+                                "workspace dependency cycle detected involving `{}` -> `{}`",
+                                trail.join(" -> "),
+                                dep.name
+                            ),
+                        });
+                    }
+                    Mark::Done => {}
+                }
+            }
+        }
+        trail.pop();
+        marks.insert(node.to_string(), Mark::Done);
+    }
+
+    let mut marks = BTreeMap::new();
+    let mut trail = Vec::new();
+    for name in graph.packages.keys() {
+        if marks.get(name).copied().unwrap_or(Mark::Unvisited)
+            == Mark::Unvisited
+        {
+            dfs(name, graph, &mut marks, &mut trail, violations);
+        }
+    }
+
+    // Multi-implementation contract invariant.
+    for contract in &graph.arch.multi_impl_contracts {
+        let providers =
+            component_implementations_of(graph, layer_map, contract);
+        if providers.len() < 2 {
+            violations.push(Violation {
+                rule: "R-ARCH-8",
+                package: contract.clone(),
+                message: format!(
+                    "expected >= 2 distinct component implementations for `{contract}`, found {}: {:?}",
+                    providers.len(),
+                    providers
+                ),
+            });
+        }
+    }
+}
+
+pub(crate) fn component_implementations_of(
+    graph: &WorkspaceGraph,
+    layer_map: &BTreeMap<String, Layer>,
+    contract: &str,
+) -> Vec<String> {
+    let mut impls = Vec::new();
+    for (name, pkg) in &graph.packages {
+        if layer_map.get(name) != Some(&Layer::Components) {
+            continue;
+        }
+        let implements = pkg.deps.iter().any(|d| {
+            d.kind != DepKind::Dev && !d.external && d.name == contract
+        });
+        if implements {
+            impls.push(name.clone());
+        }
+    }
+    impls
+}
+
+#[allow(dead_code)]
+fn _keep_arch_referenced(_: &ArchConfig) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::graph::{ArchConfig, DepEdge, PackageInfo};
+
+    fn ws_dep(name: &str) -> DepEdge {
+        DepEdge {
+            name: name.to_string(),
+            kind: DepKind::Normal,
+            external: false,
+        }
+    }
+
+    fn ext_dep(name: &str) -> DepEdge {
+        DepEdge {
+            name: name.to_string(),
+            kind: DepKind::Normal,
+            external: true,
+        }
+    }
+
+    fn valid_synthetic_graph() -> WorkspaceGraph {
+        let mut packages = BTreeMap::new();
+        let mut add = |name: &str, dir: &str, deps: Vec<DepEdge>| {
+            packages.insert(
+                name.to_string(),
+                PackageInfo {
+                    name: name.to_string(),
+                    manifest_dir: dir.to_string(),
+                    deps,
+                },
+            );
+        };
+
+        add("frame", "crates/frame", vec![]);
+        add("net-api", "crates/contracts/net-api", vec![ws_dep("frame")]);
+        add(
+            "render-api",
+            "crates/contracts/render-api",
+            vec![ws_dep("frame")],
+        );
+        add(
+            "l4-transport",
+            "crates/components/l4-transport",
+            vec![ws_dep("frame"), ws_dep("net-api"), ext_dep("tokio")],
+        );
+        add(
+            "doc-render",
+            "crates/components/doc-render",
+            vec![ws_dep("frame"), ws_dep("render-api")],
+        );
+        add(
+            "doc-render-plain",
+            "crates/components/doc-render-plain",
+            vec![ws_dep("frame"), ws_dep("render-api")],
+        );
+        add(
+            "d-daemon",
+            "crates/entries/daemon",
+            vec![ws_dep("frame"), ws_dep("net-api"), ext_dep("tokio")],
+        );
+        add(
+            "d",
+            "crates/assemblies/d",
+            vec![
+                ws_dep("frame"),
+                ws_dep("d-daemon"),
+                ws_dep("l4-transport"),
+                ws_dep("doc-render"),
+            ],
+        );
+        add(
+            "d-minimal",
+            "crates/assemblies/d-minimal",
+            vec![
+                ws_dep("frame"),
+                ws_dep("d-daemon"),
+                ws_dep("l4-transport"),
+                ws_dep("doc-render-plain"),
+            ],
+        );
+        add("xtask", "xtask", vec![]);
+
+        WorkspaceGraph {
+            root: std::path::PathBuf::from("."),
+            arch: ArchConfig {
+                kernel: vec!["frame".into()],
+                contracts: vec!["net-api".into(), "render-api".into()],
+                components: vec![
+                    "l4-transport".into(),
+                    "doc-render".into(),
+                    "doc-render-plain".into(),
+                ],
+                entries: vec!["d-daemon".into()],
+                assemblies: vec!["d".into(), "d-minimal".into()],
+                tools: vec!["xtask".into()],
+                zero_external_deps: vec![
+                    "frame".into(),
+                    "net-api".into(),
+                    "render-api".into(),
+                    "doc-render".into(),
+                    "doc-render-plain".into(),
+                    "xtask".into(),
+                ],
+                minimal_assembly: Some("d-minimal".into()),
+                minimal_forbidden: vec!["doc-render".into(), "brotli".into()],
+                multi_impl_contracts: vec!["render-api".into()],
+            },
+            packages,
+        }
+    }
+
+    #[test]
+    fn valid_graph_passes_all_8_rules() {
+        let g = valid_synthetic_graph();
+        let v = check_architecture(&g);
+        assert!(v.is_empty(), "unexpected violations: {v:?}");
+    }
+
+    #[test]
+    fn r_arch_1_rejects_unclassified_package() {
+        let mut g = valid_synthetic_graph();
+        g.packages.insert(
+            "rogue".into(),
+            PackageInfo {
+                name: "rogue".into(),
+                manifest_dir: "crates/rogue".into(),
+                deps: vec![],
+            },
+        );
+        let v = check_architecture(&g);
+        assert!(
+            v.iter()
+                .any(|x| x.rule == "R-ARCH-1" && x.package == "rogue")
+        );
+    }
+
+    #[test]
+    fn r_arch_2_rejects_external_dep_in_zero_external_deps_crate() {
+        let mut g = valid_synthetic_graph();
+        g.packages
+            .get_mut("doc-render")
+            .unwrap()
+            .deps
+            .push(ext_dep("mock-external"));
+        let v = check_architecture(&g);
+        assert!(
+            v.iter()
+                .any(|x| x.rule == "R-ARCH-2" && x.package == "doc-render")
+        );
+    }
+
+    #[test]
+    fn r_arch_3_rejects_kernel_dependency() {
+        let mut g = valid_synthetic_graph();
+        g.packages
+            .get_mut("frame")
+            .unwrap()
+            .deps
+            .push(ext_dep("libc"));
+        let v = check_architecture(&g);
+        assert!(
+            v.iter()
+                .any(|x| x.rule == "R-ARCH-3" && x.package == "frame")
+        );
+    }
+
+    #[test]
+    fn r_arch_4_rejects_contract_depending_on_component() {
+        let mut g = valid_synthetic_graph();
+        g.packages
+            .get_mut("net-api")
+            .unwrap()
+            .deps
+            .push(ws_dep("l4-transport"));
+        let v = check_architecture(&g);
+        assert!(
+            v.iter()
+                .any(|x| x.rule == "R-ARCH-4" && x.package == "net-api")
+        );
+    }
+
+    #[test]
+    fn r_arch_5_rejects_component_to_component_dependency() {
+        let mut g = valid_synthetic_graph();
+        g.packages
+            .get_mut("l4-transport")
+            .unwrap()
+            .deps
+            .push(ws_dep("doc-render"));
+        let v = check_architecture(&g);
+        assert!(
+            v.iter()
+                .any(|x| x.rule == "R-ARCH-5" && x.package == "l4-transport")
+        );
+    }
+
+    #[test]
+    fn r_arch_6_rejects_entry_depending_on_component() {
+        let mut g = valid_synthetic_graph();
+        g.packages
+            .get_mut("d-daemon")
+            .unwrap()
+            .deps
+            .push(ws_dep("l4-transport"));
+        let v = check_architecture(&g);
+        assert!(
+            v.iter()
+                .any(|x| x.rule == "R-ARCH-6" && x.package == "d-daemon")
+        );
+    }
+
+    #[test]
+    fn r_arch_7_rejects_assembly_to_assembly_and_minimal_forbidden() {
+        let mut g = valid_synthetic_graph();
+        g.packages
+            .get_mut("d-minimal")
+            .unwrap()
+            .deps
+            .push(ws_dep("doc-render"));
+        g.packages
+            .get_mut("d-minimal")
+            .unwrap()
+            .deps
+            .push(ws_dep("d"));
+        let v = check_architecture(&g);
+        let r7: Vec<_> = v.iter().filter(|x| x.rule == "R-ARCH-7").collect();
+        assert!(
+            r7.len() >= 2,
+            "expected both R-ARCH-7 checks to fire: {r7:?}"
+        );
+    }
+
+    #[test]
+    fn r_arch_8_rejects_cycle_and_single_impl_contract() {
+        let mut g = valid_synthetic_graph();
+        g.packages
+            .get_mut("net-api")
+            .unwrap()
+            .deps
+            .push(ws_dep("render-api"));
+        g.packages
+            .get_mut("render-api")
+            .unwrap()
+            .deps
+            .push(ws_dep("net-api"));
+        g.packages
+            .get_mut("doc-render-plain")
+            .unwrap()
+            .deps
+            .retain(|d| d.name != "render-api");
+        let v = check_architecture(&g);
+        let r8: Vec<_> = v.iter().filter(|x| x.rule == "R-ARCH-8").collect();
+        assert!(
+            r8.len() >= 2,
+            "expected cycle and multi-impl failures: {r8:?}"
+        );
+    }
+}

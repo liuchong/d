@@ -3,8 +3,9 @@
 
 use app_files::format_http_date;
 use d::{AppHandle, Options, create_app, create_app_with_options};
+use frame::{ConfigValue, EntryPatch, EntryTarget, ErrorKind, PluginEntry};
 use http_api::{HttpRequest, HttpResponse, Method, StatusCode};
-use std::path::Path;
+use std::collections::BTreeMap;
 use tempfile::TempDir;
 
 async fn test_app(allow_hidden: bool) -> (AppHandle, TempDir) {
@@ -470,63 +471,6 @@ async fn compression_negotiation_and_206_exemption() {
     );
 }
 
-#[test]
-fn workspace_dependency_purity_and_legacy_removed() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    assert!(
-        !root.join("src/httpd").exists(),
-        "legacy src/httpd must be removed"
-    );
-    assert!(!root.join("src/error.rs").exists());
-    assert!(!root.join("src/utils.rs").exists());
-
-    let root_toml = std::fs::read_to_string(root.join("Cargo.toml")).unwrap();
-    for banned in [
-        "axum",
-        "tower",
-        "clap",
-        "serde",
-        "httpdate",
-        "mime_guess",
-        "percent-encoding",
-        "tracing",
-    ] {
-        assert!(
-            !root_toml.contains(banned),
-            "root Cargo.toml must not depend on {banned}"
-        );
-    }
-
-    for zero_dep in [
-        "crates/frame/Cargo.toml",
-        "crates/contracts/net-api/Cargo.toml",
-        "crates/contracts/http-api/Cargo.toml",
-        "crates/contracts/files-api/Cargo.toml",
-        "crates/contracts/render-api/Cargo.toml",
-        "crates/components/doc-render/Cargo.toml",
-        "crates/components/ext-cors/Cargo.toml",
-        "crates/components/viewer-markdown/Cargo.toml",
-        "crates/components/viewer-code/Cargo.toml",
-        "crates/components/viewer-media/Cargo.toml",
-        "crates/entries/cli/Cargo.toml",
-    ] {
-        let toml = std::fs::read_to_string(root.join(zero_dep)).unwrap();
-        let deps_section = toml.split("[dependencies]").nth(1).unwrap_or("");
-        for line in deps_section.lines().map(str::trim) {
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            if line.starts_with('[') {
-                break;
-            }
-            assert!(
-                line.contains("path ="),
-                "{zero_dep} must have zero external dependencies, found: {line}"
-            );
-        }
-    }
-}
-
 #[tokio::test]
 async fn markdown_html_passthrough_and_relative_images() {
     let dir = TempDir::new().unwrap();
@@ -701,4 +645,143 @@ async fn white_minimal_ui() {
             );
         }
     }
+}
+
+#[tokio::test]
+async fn loader_hot_patch_cors_and_config_without_downtime() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    std::fs::write(root.join("hello.bin"), b"ok-payload").unwrap();
+    std::fs::write(root.join(".hidden"), b"secret").unwrap();
+
+    let app = create_app(root.clone(), false).await;
+
+    let proto_fiber_before = app
+        .inspect()
+        .fibers
+        .iter()
+        .find(|f| f.name == "proto-http")
+        .map(|f| f.id)
+        .expect("proto-http fiber present");
+
+    // Initially CORS is disabled and hidden files are excluded.
+    let no_cors = app
+        .dispatch(
+            get("/hello.bin").with_header("Origin", "https://example.com"),
+        )
+        .await;
+    assert_eq!(no_cors.status, StatusCode::OK);
+    assert!(no_cors.header("access-control-allow-origin").is_none());
+
+    let list_before =
+        String::from_utf8(body_bytes(app.dispatch(get("/")).await).await)
+            .unwrap();
+    assert!(!list_before.contains(".hidden"));
+
+    // Hot-insert ext-cors via Loader::apply_patches without touching proto-http.
+    app.loader()
+        .apply_patches(vec![EntryPatch::Insert {
+            anchor: None,
+            entry: PluginEntry {
+                id: "ext-cors".to_string(),
+                target: EntryTarget::Name("ext-cors".to_string()),
+                config: ConfigValue::Null,
+                disabled: false,
+                isolate: Vec::new(),
+                children: Vec::new(),
+            },
+        }])
+        .await
+        .unwrap();
+
+    let cors_get = app
+        .dispatch(
+            get("/hello.bin").with_header("Origin", "https://example.com"),
+        )
+        .await;
+    assert_eq!(cors_get.status, StatusCode::OK);
+    assert_eq!(cors_get.header("access-control-allow-origin"), Some("*"));
+
+    let cors_opt = app
+        .dispatch(
+            HttpRequest::new(Method::Options, "/hello.bin")
+                .with_header("Origin", "https://example.com")
+                .with_header("Access-Control-Request-Method", "GET"),
+        )
+        .await;
+    assert_eq!(cors_opt.status, StatusCode::NO_CONTENT);
+    assert_eq!(cors_opt.header("access-control-allow-origin"), Some("*"));
+
+    // Hot-remove ext-cors and enable allow_hidden in app-files simultaneously.
+    app.loader()
+        .apply_patches(vec![
+            EntryPatch::Remove {
+                id: "ext-cors".to_string(),
+            },
+            EntryPatch::ReplaceConfig {
+                id: "app-files".to_string(),
+                config: ConfigValue::Map(BTreeMap::from([
+                    (
+                        "root".to_string(),
+                        ConfigValue::Str(root.to_string_lossy().into_owned()),
+                    ),
+                    ("allow_hidden".to_string(), ConfigValue::Bool(true)),
+                ])),
+                disabled: None,
+            },
+        ])
+        .await
+        .unwrap();
+    app.context().settle().await;
+
+    let cors_removed = app
+        .dispatch(
+            get("/hello.bin").with_header("Origin", "https://example.com"),
+        )
+        .await;
+    assert_eq!(cors_removed.status, StatusCode::OK);
+    assert!(cors_removed.header("access-control-allow-origin").is_none());
+
+    let list_after =
+        String::from_utf8(body_bytes(app.dispatch(get("/")).await).await)
+            .unwrap();
+    assert!(list_after.contains(".hidden"));
+
+    // Invalid config patch is rejected before commit without disrupting HTTP service.
+    let bad_patch = app
+        .loader()
+        .apply_patches(vec![EntryPatch::ReplaceConfig {
+            id: "app-files".to_string(),
+            config: ConfigValue::Map(BTreeMap::from([
+                (
+                    "root".to_string(),
+                    ConfigValue::Str(root.to_string_lossy().into_owned()),
+                ),
+                (
+                    "allow_hidden".to_string(),
+                    ConfigValue::Str("not-a-bool".to_string()),
+                ),
+            ])),
+            disabled: None,
+        }])
+        .await
+        .unwrap_err();
+    assert_eq!(bad_patch.kind, ErrorKind::ValidationFailed);
+
+    let still_serving = app.dispatch(get("/hello.bin")).await;
+    assert_eq!(still_serving.status, StatusCode::OK);
+
+    let proto_fiber_after = app
+        .inspect()
+        .fibers
+        .iter()
+        .find(|f| f.name == "proto-http")
+        .map(|f| f.id)
+        .expect("proto-http fiber still active");
+    assert_eq!(
+        proto_fiber_before, proto_fiber_after,
+        "proto-http must stay running without restart across ext/config patches"
+    );
+
+    app.dispose().await.unwrap();
 }
