@@ -1,0 +1,17 @@
+[package]
+name = "d-mcp"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license-file = "../../../LICENSE"
+description = "Optional, configurable pure-Rust MCP control server for dynamic state and config management of d"
+
+[dependencies]
+frame = { path = "../../frame" }
+http-api = { path = "../../contracts/http-api" }
+d-cli = { path = "../cli" }
+d-daemon = { path = "../daemon" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "io-std", "sync", "time"] }
+
+[dev-dependencies]
+tempfile = "3"

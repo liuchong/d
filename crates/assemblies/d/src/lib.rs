@@ -50,10 +50,7 @@ pub fn build_spec(
             .register("viewer-media", MediaViewerPlugin),
     );
 
-    let mut entries = Vec::new();
-    if bind_addr.is_some() {
-        entries.push(entry("l4-transport", ConfigValue::Null));
-    }
+    let mut entries = vec![entry("l4-transport", ConfigValue::Null)];
 
     let http_config = match bind_addr {
         Some(addr) => ConfigValue::Map(BTreeMap::from([(

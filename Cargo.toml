@@ -18,6 +18,7 @@ members = [
     "crates/components/viewer-media",
     "crates/entries/cli",
     "crates/entries/daemon",
+    "crates/entries/mcp",
     "crates/assemblies/d",
     "crates/assemblies/d-minimal",
     "xtask",
@@ -40,6 +41,7 @@ default-members = [
     "crates/components/viewer-media",
     "crates/entries/cli",
     "crates/entries/daemon",
+    "crates/entries/mcp",
     "crates/assemblies/d",
 ]
 
@@ -58,7 +60,7 @@ components = [
     "viewer-code",
     "viewer-media",
 ]
-entries = ["d-cli", "d-daemon"]
+entries = ["d-cli", "d-daemon", "d-mcp"]
 assemblies = ["d", "d-minimal"]
 tools = ["xtask"]
 zero_external_deps = [

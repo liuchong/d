@@ -11,6 +11,10 @@ documentation = "https://docs.rs/d"
 description = "D is a modular extensible network daemon with built-in HTTP and file services."
 keywords = ["d", "httpd", "http-server", "http", "server"]
 
+[features]
+default = ["mcp"]
+mcp = ["dep:d-mcp"]
+
 [dependencies]
 frame = { path = "../../frame" }
 net-api = { path = "../../contracts/net-api" }
@@ -28,6 +32,7 @@ viewer-code = { path = "../../components/viewer-code" }
 viewer-media = { path = "../../components/viewer-media" }
 d-cli = { path = "../../entries/cli" }
 d-daemon = { path = "../../entries/daemon" }
+d-mcp = { path = "../../entries/mcp", optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net"] }
 
 [dev-dependencies]

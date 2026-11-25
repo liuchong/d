@@ -25,8 +25,93 @@ pub fn check_architecture(graph: &WorkspaceGraph) -> Vec<Violation> {
     check_layer_boundaries(graph, &layer_map, &mut violations);
     check_minimal_exclusion(graph, &mut violations);
     check_acyclic_and_multi_impl(graph, &layer_map, &mut violations);
+    check_skills_integrity(&graph.root, &mut violations);
 
     violations
+}
+
+/// Verify bundled repository Agent Skills (`skills/d` and `skills/d-dev`) when present.
+pub(crate) fn check_skills_integrity(
+    root: &std::path::Path,
+    violations: &mut Vec<Violation>,
+) {
+    let skills_root = root.join("skills");
+    if !skills_root.is_dir() {
+        return;
+    }
+
+    for skill in ["d", "d-dev"] {
+        let skill_dir = skills_root.join(skill);
+        let entry = skill_dir.join("SKILL.md");
+        if !entry.is_file() {
+            violations.push(Violation {
+                rule: "R-ARCH-8",
+                package: format!("skills/{skill}"),
+                message: "missing SKILL.md entrypoint".to_string(),
+            });
+            continue;
+        }
+        let Ok(body) = std::fs::read_to_string(&entry) else {
+            violations.push(Violation {
+                rule: "R-ARCH-8",
+                package: format!("skills/{skill}"),
+                message: "failed to read SKILL.md as UTF-8".to_string(),
+            });
+            continue;
+        };
+        let mut lines = body.lines();
+        let valid_frontmatter = if lines.next() == Some("---") {
+            let mut has_name = false;
+            let mut has_desc = false;
+            let mut closed = false;
+            for line in lines {
+                if line == "---" {
+                    closed = true;
+                    break;
+                }
+                if line.starts_with("name:")
+                    && !line["name:".len()..].trim().is_empty()
+                {
+                    has_name = true;
+                }
+                if line.starts_with("description:")
+                    && !line["description:".len()..].trim().is_empty()
+                {
+                    has_desc = true;
+                }
+            }
+            closed && has_name && has_desc
+        } else {
+            false
+        };
+        if !valid_frontmatter {
+            violations.push(Violation {
+                rule: "R-ARCH-8",
+                package: format!("skills/{skill}"),
+                message: "SKILL.md requires YAML frontmatter with `name` and `description`".to_string(),
+            });
+        }
+
+        let mut rest = body.as_str();
+        while let Some(idx) = rest.find("](references/") {
+            let after = &rest[idx + 2..];
+            if let Some(end) = after.find(')') {
+                let rel = &after[..end];
+                if !skill_dir.join(rel).is_file() {
+                    violations.push(Violation {
+                        rule: "R-ARCH-8",
+                        package: format!("skills/{skill}"),
+                        message: format!(
+                            "broken local skill reference `{rel}` in SKILL.md"
+                        ),
+                    });
+                }
+                rest = &after[end + 1..];
+            } else {
+                break;
+            }
+        }
+    }
 }
 
 pub fn run_check(graph: &WorkspaceGraph) -> i32 {
@@ -666,5 +751,41 @@ mod tests {
             r8.len() >= 2,
             "expected cycle and multi-impl failures: {r8:?}"
         );
+    }
+
+    #[test]
+    fn skill_integrity_checks_frontmatter_and_references() {
+        let base = std::env::temp_dir()
+            .join(format!("d-xtask-skill-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("skills/d/references")).unwrap();
+        std::fs::create_dir_all(base.join("skills/d-dev")).unwrap();
+        std::fs::write(
+            base.join("skills/d/SKILL.md"),
+            "---\nname: d\ndescription: demo\n---\nSee [ref](references/missing.md)\n",
+        )
+        .unwrap();
+        std::fs::write(base.join("skills/d-dev/SKILL.md"), "no frontmatter")
+            .unwrap();
+
+        let mut v = Vec::new();
+        check_skills_integrity(&base, &mut v);
+        assert!(
+            v.iter()
+                .any(|x| x.message.contains("broken local skill reference"))
+        );
+        assert!(v.iter().any(|x| x.message.contains("YAML frontmatter")));
+
+        std::fs::write(base.join("skills/d/references/missing.md"), "# ok\n")
+            .unwrap();
+        std::fs::write(
+            base.join("skills/d-dev/SKILL.md"),
+            "---\nname: d-dev\ndescription: dev\n---\n",
+        )
+        .unwrap();
+        let mut clean = Vec::new();
+        check_skills_integrity(&base, &mut clean);
+        assert!(clean.is_empty(), "expected no skill violations: {clean:?}");
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

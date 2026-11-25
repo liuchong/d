@@ -56,10 +56,28 @@ impl LogLevel {
 }
 
 static ACTIVE_LOG_LEVEL: AtomicU8 = AtomicU8::new(LogLevel::Info as u8);
+static LOG_TO_STDERR: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 /// Configure the global stderr/stdout logging level threshold.
 pub fn init_log_level(level: LogLevel) {
     ACTIVE_LOG_LEVEL.store(level as u8, Ordering::Release);
+}
+
+/// Return the currently configured global logging level threshold.
+pub fn current_log_level() -> LogLevel {
+    match ACTIVE_LOG_LEVEL.load(Ordering::Acquire) {
+        1 => LogLevel::Error,
+        2 => LogLevel::Warn,
+        4 => LogLevel::Debug,
+        5 => LogLevel::Trace,
+        _ => LogLevel::Info,
+    }
+}
+
+/// Route informational logs to `stderr` instead of `stdout` (required for stdio MCP).
+pub fn set_log_to_stderr(enabled: bool) {
+    LOG_TO_STDERR.store(enabled, Ordering::Release);
 }
 
 fn should_log(level: LogLevel) -> bool {
@@ -69,7 +87,11 @@ fn should_log(level: LogLevel) -> bool {
 /// Emit an informational log line if `INFO` is enabled.
 pub fn log_info(msg: &str) {
     if should_log(LogLevel::Info) {
-        println!("INFO {msg}");
+        if LOG_TO_STDERR.load(Ordering::Acquire) {
+            eprintln!("INFO {msg}");
+        } else {
+            println!("INFO {msg}");
+        }
     }
 }
 
@@ -87,6 +109,37 @@ pub fn log_error(msg: &str) {
     }
 }
 
+/// Optional Model Context Protocol (MCP) server flags resolved by the CLI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpCliConfig {
+    pub stdio: bool,
+    pub http_addr: Option<SocketAddr>,
+    pub http_path: String,
+    pub auth_token: Option<String>,
+    pub read_only: bool,
+    pub allow_shutdown: bool,
+}
+
+impl Default for McpCliConfig {
+    fn default() -> Self {
+        Self {
+            stdio: false,
+            http_addr: None,
+            http_path: "/mcp".to_string(),
+            auth_token: None,
+            read_only: false,
+            allow_shutdown: false,
+        }
+    }
+}
+
+impl McpCliConfig {
+    /// Return `true` when at least one MCP transport (stdio or HTTP) is enabled.
+    pub fn is_enabled(&self) -> bool {
+        self.stdio || self.http_addr.is_some()
+    }
+}
+
 /// Resolved CLI configuration returned by the parser.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CliConfig {
@@ -96,6 +149,8 @@ pub struct CliConfig {
     pub log_level: LogLevel,
     pub allow_hidden: bool,
     pub cors: bool,
+    pub no_http: bool,
+    pub mcp: McpCliConfig,
     pub addr: SocketAddr,
 }
 
@@ -112,14 +167,21 @@ fn help_text() -> String {
         "D is a simple standalone httpd (v{VERSION})\n\n\
          USAGE:\n    d [OPTIONS]\n\n\
          OPTIONS:\n\
-             -H, --host <HOST>    Set listening host [env: D_HOST] [default: {DEFAULT_HOST}]\n\
-             -p, --port <PORT>    Set listening port [env: D_PORT] [default: {DEFAULT_PORT}]\n\
-             -r, --root <PATH>    Set root directory to serve [env: D_ROOT] [default: .]\n\
-             -l, --log <LEVEL>    Set log level (trace, debug, info, warn, error) [env: RUST_LOG] [default: info]\n\
-                 --hidden         Show hidden files [env: D_SHOW_HIDDEN]\n\
-                 --cors           Enable permissive CORS [env: D_CORS]\n\
-             -h, --help           Print help\n\
-             -V, --version        Print version\n"
+             -H, --host <HOST>           Set listening host [env: D_HOST] [default: {DEFAULT_HOST}]\n\
+             -p, --port <PORT>           Set listening port [env: D_PORT] [default: {DEFAULT_PORT}]\n\
+             -r, --root <PATH>           Set root directory to serve [env: D_ROOT] [default: .]\n\
+             -l, --log <LEVEL>           Set log level (trace, debug, info, warn, error) [env: RUST_LOG] [default: info]\n\
+                 --hidden                Show hidden files [env: D_SHOW_HIDDEN]\n\
+                 --cors                  Enable permissive CORS [env: D_CORS]\n\
+                 --no-http               Run in-memory HTTP router without binding TCP listener initially [env: D_NO_HTTP]\n\
+                 --mcp-stdio             Enable stdio MCP control server (routes logs to stderr) [env: D_MCP_STDIO]\n\
+                 --mcp-http <ADDR>       Enable HTTP MCP control server on host:port [env: D_MCP_HTTP]\n\
+                 --mcp-path <PATH>       HTTP MCP endpoint path [env: D_MCP_PATH] [default: /mcp]\n\
+                 --mcp-token <TOKEN>     Bearer token required for HTTP MCP endpoint [env: D_MCP_TOKEN]\n\
+                 --mcp-read-only         Restrict MCP server to read-only inspection & probing [env: D_MCP_READ_ONLY]\n\
+                 --mcp-allow-shutdown    Allow MCP d_shutdown tool [env: D_MCP_ALLOW_SHUTDOWN]\n\
+             -h, --help                  Print help\n\
+             -V, --version               Print version\n"
     )
 }
 
@@ -128,6 +190,22 @@ fn parse_bool_env(val: &str) -> bool {
         val.trim().to_ascii_lowercase().as_str(),
         "1" | "true" | "yes" | "on"
     )
+}
+
+fn parse_host_port_addr(raw: &str) -> Result<SocketAddr, String> {
+    let trimmed = raw.trim();
+    if let Ok(addr) = trimmed.parse::<SocketAddr>() {
+        return Ok(addr);
+    }
+    let Some((host, port_str)) = trimmed.rsplit_once(':') else {
+        return Err(format!(
+            "Invalid MCP HTTP address '{raw}': expected <host>:<port>"
+        ));
+    };
+    let port: u16 = port_str
+        .parse()
+        .map_err(|e| format!("Invalid MCP HTTP port in '{raw}': {e}"))?;
+    resolve_socket_addr(host, port)
 }
 
 /// Parse CLI arguments and environment variables using injectable sources.
@@ -164,6 +242,25 @@ where
     let mut allow_hidden =
         env_fn("D_SHOW_HIDDEN").is_some_and(|v| parse_bool_env(&v));
     let mut cors = env_fn("D_CORS").is_some_and(|v| parse_bool_env(&v));
+    let mut no_http = env_fn("D_NO_HTTP").is_some_and(|v| parse_bool_env(&v));
+    let mut mcp = McpCliConfig {
+        stdio: env_fn("D_MCP_STDIO").is_some_and(|v| parse_bool_env(&v)),
+        http_addr: match env_fn("D_MCP_HTTP").filter(|s| !s.trim().is_empty()) {
+            Some(raw) => match parse_host_port_addr(&raw) {
+                Ok(addr) => Some(addr),
+                Err(msg) => return ParseOutcome::ExitErr(msg),
+            },
+            None => None,
+        },
+        http_path: env_fn("D_MCP_PATH")
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| "/mcp".to_string()),
+        auth_token: env_fn("D_MCP_TOKEN").filter(|s| !s.is_empty()),
+        read_only: env_fn("D_MCP_READ_ONLY")
+            .is_some_and(|v| parse_bool_env(&v)),
+        allow_shutdown: env_fn("D_MCP_ALLOW_SHUTDOWN")
+            .is_some_and(|v| parse_bool_env(&v)),
+    };
 
     let mut iter = args.into_iter().skip(1);
     while let Some(arg) = iter.next() {
@@ -175,6 +272,10 @@ where
             }
             "--hidden" => allow_hidden = true,
             "--cors" => cors = true,
+            "--no-http" => no_http = true,
+            "--mcp-stdio" => mcp.stdio = true,
+            "--mcp-read-only" => mcp.read_only = true,
+            "--mcp-allow-shutdown" => mcp.allow_shutdown = true,
             "-H" | "--host" => {
                 let Some(val) = iter.next() else {
                     return ParseOutcome::ExitErr(format!(
@@ -215,6 +316,39 @@ where
                 };
                 log_raw = val.as_ref().to_string();
             }
+            "--mcp-http" => {
+                let Some(val) = iter.next() else {
+                    return ParseOutcome::ExitErr(format!(
+                        "Missing value for {s}"
+                    ));
+                };
+                mcp.http_addr = match parse_host_port_addr(val.as_ref()) {
+                    Ok(a) => Some(a),
+                    Err(msg) => return ParseOutcome::ExitErr(msg),
+                };
+            }
+            "--mcp-path" => {
+                let Some(val) = iter.next() else {
+                    return ParseOutcome::ExitErr(format!(
+                        "Missing value for {s}"
+                    ));
+                };
+                mcp.http_path = val.as_ref().to_string();
+            }
+            "--mcp-token" => {
+                let Some(val) = iter.next() else {
+                    return ParseOutcome::ExitErr(format!(
+                        "Missing value for {s}"
+                    ));
+                };
+                let tok = val.as_ref().to_string();
+                if tok.is_empty() {
+                    return ParseOutcome::ExitErr(
+                        "Invalid empty --mcp-token".to_string(),
+                    );
+                }
+                mcp.auth_token = Some(tok);
+            }
             _ if s.starts_with("--host=") => {
                 host = s["--host=".len()..].to_string();
             }
@@ -235,12 +369,38 @@ where
             _ if s.starts_with("--log=") => {
                 log_raw = s["--log=".len()..].to_string();
             }
+            _ if s.starts_with("--mcp-http=") => {
+                let raw = &s["--mcp-http=".len()..];
+                mcp.http_addr = match parse_host_port_addr(raw) {
+                    Ok(a) => Some(a),
+                    Err(msg) => return ParseOutcome::ExitErr(msg),
+                };
+            }
+            _ if s.starts_with("--mcp-path=") => {
+                mcp.http_path = s["--mcp-path=".len()..].to_string();
+            }
+            _ if s.starts_with("--mcp-token=") => {
+                let tok = &s["--mcp-token=".len()..];
+                if tok.is_empty() {
+                    return ParseOutcome::ExitErr(
+                        "Invalid empty --mcp-token".to_string(),
+                    );
+                }
+                mcp.auth_token = Some(tok.to_string());
+            }
             _ => {
                 return ParseOutcome::ExitErr(format!(
                     "Unknown argument: {s}\nUse --help for usage."
                 ));
             }
         }
+    }
+
+    if !mcp.http_path.starts_with('/') {
+        return ParseOutcome::ExitErr(format!(
+            "Invalid MCP path '{}': must start with '/'",
+            mcp.http_path
+        ));
     }
 
     let log_level = LogLevel::parse(&log_raw).unwrap_or(LogLevel::Info);
@@ -266,6 +426,8 @@ where
         log_level,
         allow_hidden,
         cors,
+        no_http,
+        mcp,
         addr,
     })
 }
@@ -333,7 +495,40 @@ mod tests {
 
         assert!(matches!(
             parse_args(["d", "--help"], |_| None),
-            ParseOutcome::ExitOk(t) if t.contains("--cors")
+            ParseOutcome::ExitOk(t) if t.contains("--cors") && t.contains("--mcp-stdio")
+        ));
+    }
+
+    #[test]
+    fn parses_mcp_cli_and_env_options() {
+        let tmp = std::env::temp_dir();
+        let tmp_str = tmp.to_string_lossy().into_owned();
+        let mut envs = HashMap::new();
+        envs.insert("D_ROOT", tmp_str);
+        envs.insert("D_MCP_STDIO", "1".to_string());
+        envs.insert("D_MCP_HTTP", "127.0.0.1:18888".to_string());
+        envs.insert("D_MCP_PATH", "/control".to_string());
+        envs.insert("D_MCP_TOKEN", "tok-123".to_string());
+        envs.insert("D_MCP_READ_ONLY", "true".to_string());
+        envs.insert("D_NO_HTTP", "yes".to_string());
+
+        let out =
+            parse_args(["d", "--mcp-allow-shutdown"], |k| envs.get(k).cloned());
+        let ParseOutcome::Run(cfg) = out else {
+            panic!("expected Run, got: {out:?}");
+        };
+        assert!(cfg.no_http);
+        assert!(cfg.mcp.is_enabled());
+        assert!(cfg.mcp.stdio);
+        assert_eq!(cfg.mcp.http_addr, Some("127.0.0.1:18888".parse().unwrap()));
+        assert_eq!(cfg.mcp.http_path, "/control");
+        assert_eq!(cfg.mcp.auth_token.as_deref(), Some("tok-123"));
+        assert!(cfg.mcp.read_only);
+        assert!(cfg.mcp.allow_shutdown);
+
+        assert!(matches!(
+            parse_args(["d", "--mcp-path", "no-leading-slash"], |_| None),
+            ParseOutcome::ExitErr(msg) if msg.contains("must start with '/'")
         ));
     }
 }

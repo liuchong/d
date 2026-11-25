@@ -104,3 +104,72 @@ async fn minimal_supports_cors_option() {
 
     app.dispose().await.unwrap();
 }
+
+#[cfg(feature = "mcp")]
+#[tokio::test]
+async fn minimal_with_mcp_exposes_plain_catalog_and_dynamic_config() {
+    use d_mcp::json::{JsonValue, parse};
+    use d_mcp::{McpServer, McpServerPolicy};
+    use frame::LoaderService;
+    use std::sync::Arc;
+
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join(".secret"), b"hi").unwrap();
+    let app = create_app(dir.path(), false).await;
+
+    let loader = app
+        .context()
+        .get::<LoaderService>()
+        .unwrap()
+        .as_ref()
+        .clone();
+    let srv = McpServer::new(
+        app.context().clone(),
+        loader,
+        Arc::clone(app.control()),
+        McpServerPolicy {
+            read_only: false,
+            allow_shutdown: false,
+            stdio: false,
+            http_addr: None,
+            http_path: "/mcp".to_string(),
+            auth_token_configured: false,
+        },
+    );
+
+    let cat_raw = srv
+        .handle_str(
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"d_catalog"}}"#,
+        )
+        .await
+        .unwrap();
+    let cat = parse(&cat_raw).unwrap();
+    let plugins = cat
+        .get("result")
+        .and_then(|r| r.get("structuredContent"))
+        .and_then(|s| s.get("plugins"))
+        .and_then(JsonValue::as_array)
+        .unwrap();
+    let names: Vec<&str> = plugins
+        .iter()
+        .filter_map(|p| p.get("name").and_then(JsonValue::as_str))
+        .collect();
+    assert!(names.contains(&"doc-render-plain"));
+    assert!(!names.contains(&"doc-render"));
+    assert!(!names.contains(&"ext-compression"));
+
+    let patch_raw = srv
+        .handle_str(
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"d_set_plugin_config","arguments":{"id":"app-files","config":{"allow_hidden":true}}}}"#,
+        )
+        .await
+        .unwrap();
+    assert!(patch_raw.contains("\"isError\":false"));
+
+    let html =
+        String::from_utf8(body_bytes(app.dispatch(get("/")).await).await)
+            .unwrap();
+    assert!(html.contains(".secret"));
+
+    app.dispose().await.unwrap();
+}

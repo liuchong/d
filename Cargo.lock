@@ -90,6 +90,7 @@ dependencies = [
  "app-files",
  "d-cli",
  "d-daemon",
+ "d-mcp",
  "doc-render",
  "ext-compression",
  "ext-cors",
@@ -125,12 +126,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "d-mcp"
+version = "0.1.0"
+dependencies = [
+ "d-cli",
+ "d-daemon",
+ "frame",
+ "http-api",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "d-minimal"
 version = "0.1.0"
 dependencies = [
  "app-files",
  "d-cli",
  "d-daemon",
+ "d-mcp",
  "doc-render-plain",
  "ext-cors",
  "files-api",

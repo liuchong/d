@@ -6,6 +6,10 @@ rust-version = "1.88"
 license-file = "../../../LICENSE"
 description = "Minimal static HTTP assembly of d using plain rendering and zero compression or rich viewer dependencies"
 
+[features]
+default = []
+mcp = ["dep:d-mcp"]
+
 [dependencies]
 frame = { path = "../../frame" }
 net-api = { path = "../../contracts/net-api" }
@@ -19,6 +23,7 @@ app-files = { path = "../../components/app-files" }
 doc-render-plain = { path = "../../components/doc-render-plain" }
 d-cli = { path = "../../entries/cli" }
 d-daemon = { path = "../../entries/daemon" }
+d-mcp = { path = "../../entries/mcp", optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net"] }
 
 [dev-dependencies]

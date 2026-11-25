@@ -42,10 +42,7 @@ pub fn build_spec(
             .register("doc-render-plain", PlainDocRenderPlugin),
     );
 
-    let mut entries = Vec::new();
-    if bind_addr.is_some() {
-        entries.push(entry("l4-transport", ConfigValue::Null));
-    }
+    let mut entries = vec![entry("l4-transport", ConfigValue::Null)];
 
     let http_config = match bind_addr {
         Some(addr) => ConfigValue::Map(BTreeMap::from([(
@@ -83,7 +80,8 @@ pub async fn build_runtime(
     bind_addr: Option<SocketAddr>,
 ) -> Result<AppHandle, FrameError> {
     let spec = build_spec(root, options, bind_addr);
-    d_daemon::build_from_spec(spec, bind_addr.is_some()).await
+    d_daemon::build_from_spec_named("d-minimal", spec, bind_addr.is_some())
+        .await
 }
 
 /// Construct an in-memory `d-minimal` application serving `root` with default options.
