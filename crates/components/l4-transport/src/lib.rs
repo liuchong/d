@@ -1,8 +1,9 @@
 //! Layer 1 transport plugin: TCP listener management and two-phase graceful drain.
 
 use frame::{
-    BoxFuture, ConfigValue, Context, Deps, EffectHandle, ErrorKind, FrameError,
-    Plugin, Spawner, ValidationIssue,
+    BoxFuture, ConfigFieldSchema, ConfigFieldType, ConfigValue, Context, Deps,
+    EffectHandle, ErrorKind, FrameError, Plugin, PluginSchema, Spawner,
+    ValidationIssue,
 };
 use net_api::{
     AsyncByteIo, BoxStreamIo, ConnectionHandler, ConnectionKind,
@@ -403,6 +404,32 @@ impl Plugin for TransportPlugin {
 
     fn deps(&self) -> Deps {
         Deps::empty()
+    }
+
+    fn schema(&self) -> PluginSchema {
+        PluginSchema::new(
+            "Layer 1 TCP transport listener supervision and two-phase graceful drain",
+        )
+        .field(
+            ConfigFieldSchema::new(
+                "short_drain_ms",
+                ConfigFieldType::Int,
+                "Phase 1 graceful drain window in milliseconds for short-lived connections",
+            )
+            .with_default(ConfigValue::Int(
+                self.config.short_drain_timeout.as_millis() as i64,
+            )),
+        )
+        .field(
+            ConfigFieldSchema::new(
+                "long_drain_ms",
+                ConfigFieldType::Int,
+                "Phase 2 graceful drain timeout in milliseconds after DrainSignal",
+            )
+            .with_default(ConfigValue::Int(
+                self.config.long_drain_timeout.as_millis() as i64,
+            )),
+        )
     }
 
     fn validate_config(

@@ -8,7 +8,8 @@ use files_api::{
     FileCategory, FileViewer, ViewMode, ViewerInput, ViewerRegistryService,
 };
 use frame::{
-    BoxFuture, ConfigValue, Context, Deps, FrameError, Plugin, ValidationIssue,
+    BoxFuture, ConfigValue, Context, Deps, FrameError, Plugin, PluginSchema,
+    ValidationIssue,
 };
 use http_api::{HttpResponse, StatusCode};
 use render_api::RenderService;
@@ -124,6 +125,12 @@ impl Plugin for CodeViewerPlugin {
         Deps::empty()
             .with::<ViewerRegistryService>()
             .with::<RenderService>()
+    }
+
+    fn schema(&self) -> PluginSchema {
+        PluginSchema::new(
+            "Minimalist white source code and plain-text viewer with server-side lexical highlighting",
+        )
     }
 
     fn validate_config(

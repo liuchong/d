@@ -28,7 +28,10 @@ pub use loader::{
     LoaderEntrySnapshot, LoaderPlugin, LoaderService, PluginEntry, Resolver,
     StaticResolver,
 };
-pub use plugin::{Deps, Plugin};
+pub use plugin::{
+    ConfigFieldSchema, ConfigFieldType, Deps, Plugin, PluginDescriptor,
+    PluginSchema,
+};
 pub use service::{
     ReadinessCheck, Scope, ScopeToken, ScopedService, Service, ServiceKey,
     merge_config_values,

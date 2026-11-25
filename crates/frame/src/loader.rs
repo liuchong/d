@@ -1,7 +1,7 @@
 use crate::context::Context;
 use crate::error::{ErrorKind, FrameError};
 use crate::fiber::{FiberHandle, FiberState};
-use crate::plugin::{Deps, Plugin};
+use crate::plugin::{Deps, Plugin, PluginDescriptor};
 use crate::service::{Service, ServiceKey};
 use crate::sync::{BoxFuture, SerialQueue};
 use std::collections::{BTreeMap, HashSet};
@@ -85,6 +85,11 @@ pub enum EntryPatch {
 
 pub trait Resolver: Send + Sync + 'static {
     fn resolve(&self, name: &str) -> Result<Arc<dyn Plugin>, FrameError>;
+
+    /// Enumerate known plugin names registered in this resolver.
+    fn list_names(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 #[derive(Default)]
@@ -124,6 +129,10 @@ impl Resolver for StaticResolver {
                 format!("plugin `{name}` is not registered"),
             )
         })
+    }
+
+    fn list_names(&self) -> Vec<String> {
+        self.entries.keys().cloned().collect()
     }
 }
 
@@ -202,6 +211,35 @@ impl LoaderService {
 
     pub fn inspect(&self) -> Vec<LoaderEntrySnapshot> {
         self.0.inspect()
+    }
+
+    pub fn entries(&self) -> Vec<PluginEntry> {
+        self.0.entries()
+    }
+
+    pub fn catalog(&self) -> Vec<PluginDescriptor> {
+        self.0.catalog()
+    }
+
+    pub fn validate_entries(
+        &self,
+        entries: &[PluginEntry],
+    ) -> Result<(), FrameError> {
+        self.0.validate_entries(entries)
+    }
+
+    pub fn validate_patches(
+        &self,
+        patches: &[EntryPatch],
+    ) -> Result<Vec<PluginEntry>, FrameError> {
+        self.0.validate_patches(patches)
+    }
+
+    pub fn restart(
+        &self,
+        id: &str,
+    ) -> BoxFuture<'static, Result<(), FrameError>> {
+        self.0.restart(id)
     }
 
     pub fn close(&self) -> BoxFuture<'static, Result<(), FrameError>> {
@@ -597,6 +635,96 @@ impl Loader {
             .collect()
     }
 
+    pub fn entries(&self) -> Vec<PluginEntry> {
+        self.inner
+            .state
+            .lock()
+            .expect("loader lock")
+            .entries
+            .clone()
+    }
+
+    pub fn catalog(&self) -> Vec<PluginDescriptor> {
+        let mut out = Vec::new();
+        for name in self.inner.resolver.list_names() {
+            if let Ok(plugin) = self.inner.resolver.resolve(&name) {
+                let deps = plugin.deps();
+                let schema = plugin.schema();
+                out.push(PluginDescriptor {
+                    name,
+                    description: schema.description.clone(),
+                    required_deps: deps.keys().iter().map(|k| k.name).collect(),
+                    optional_deps: deps
+                        .optional_keys()
+                        .iter()
+                        .map(|k| k.name)
+                        .collect(),
+                    schema,
+                });
+            }
+        }
+        out
+    }
+
+    pub fn validate_entries(
+        &self,
+        entries: &[PluginEntry],
+    ) -> Result<(), FrameError> {
+        let _ = preflight_entries(entries, &self.inner.resolver)?;
+        Ok(())
+    }
+
+    pub fn validate_patches(
+        &self,
+        patches: &[EntryPatch],
+    ) -> Result<Vec<PluginEntry>, FrameError> {
+        let current = {
+            let st = self.inner.state.lock().expect("loader lock");
+            if st.closed {
+                return Err(FrameError::new(
+                    ErrorKind::LoaderClosed,
+                    "loader is closed",
+                ));
+            }
+            st.entries.clone()
+        };
+        let candidate = apply_patches_to_entries(&current, patches)?;
+        let _ = preflight_entries(&candidate, &self.inner.resolver)?;
+        Ok(candidate)
+    }
+
+    pub fn restart(
+        &self,
+        id: &str,
+    ) -> BoxFuture<'static, Result<(), FrameError>> {
+        let inner = Arc::clone(&self.inner);
+        let id = id.to_string();
+        Box::pin(async move {
+            let _guard = inner.queue.acquire().await;
+            let fiber = {
+                let st = inner.state.lock().expect("loader lock");
+                if st.closed {
+                    return Err(FrameError::new(
+                        ErrorKind::LoaderClosed,
+                        "loader is closed",
+                    ));
+                }
+                st.records.iter().find(|r| r.entry.id == id).map(|r| {
+                    FiberHandle {
+                        record: Arc::clone(&r.fiber.record),
+                    }
+                })
+            };
+            let Some(fiber) = fiber else {
+                return Err(FrameError::new(
+                    ErrorKind::UnknownEntry,
+                    format!("entry `{id}` is not active or does not exist"),
+                ));
+            };
+            fiber.restart().await
+        })
+    }
+
     pub fn close(&self) -> BoxFuture<'static, Result<(), FrameError>> {
         let inner = Arc::clone(&self.inner);
         Box::pin(async move {
@@ -823,5 +951,139 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(err.kind, ErrorKind::UnknownEntry);
+    }
+
+    struct SchemaPlugin {
+        schema: crate::plugin::PluginSchema,
+        restarts: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl Plugin for SchemaPlugin {
+        fn name(&self) -> &str {
+            "schema-dummy"
+        }
+
+        fn schema(&self) -> crate::plugin::PluginSchema {
+            self.schema.clone()
+        }
+
+        fn validate_config(
+            &self,
+            raw: &ConfigValue,
+        ) -> Result<ConfigValue, FrameError> {
+            match raw {
+                ConfigValue::Null => Ok(ConfigValue::Null),
+                ConfigValue::Map(_) => Ok(raw.clone()),
+                _ => Err(FrameError::validation(vec![
+                    crate::error::ValidationIssue {
+                        path: "".to_string(),
+                        message: "must be null or map".to_string(),
+                    },
+                ])),
+            }
+        }
+
+        fn apply(
+            &self,
+            _ctx: Context,
+            _config: ConfigValue,
+        ) -> BoxFuture<'static, Result<(), FrameError>> {
+            self.restarts
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    struct InlineSpawner;
+    impl crate::sync::Spawner for InlineSpawner {
+        fn spawn(&self, mut fut: BoxFuture<'static, ()>) {
+            let waker = std::task::Waker::noop();
+            let mut cx = std::task::Context::from_waker(waker);
+            let _ = fut.as_mut().poll(&mut cx);
+        }
+    }
+
+    #[test]
+    fn catalog_validate_patches_and_restart_work() {
+        let restarts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let schema = crate::plugin::PluginSchema::new("Dummy described plugin")
+            .field(
+                crate::plugin::ConfigFieldSchema::new(
+                    "token",
+                    crate::plugin::ConfigFieldType::Str,
+                    "secret token",
+                )
+                .sensitive(),
+            );
+        let resolver = Arc::new(StaticResolver::new().register(
+            "schema-dummy",
+            SchemaPlugin {
+                schema,
+                restarts: Arc::clone(&restarts),
+            },
+        ));
+        let ctx = Context::new(crate::sync::FrameOptions::new(Arc::new(
+            InlineSpawner,
+        )));
+        let loader = Loader::new(ctx, resolver);
+
+        let catalog = loader.catalog();
+        assert_eq!(catalog.len(), 1);
+        assert_eq!(catalog[0].name, "schema-dummy");
+        assert_eq!(catalog[0].description, "Dummy described plugin");
+        assert!(catalog[0].schema.fields[0].sensitive);
+
+        // Dry-run validate_patches checks validation without modifying entries.
+        let invalid = loader.validate_patches(&[EntryPatch::Insert {
+            anchor: None,
+            entry: PluginEntry {
+                id: "one".to_string(),
+                target: EntryTarget::Name("schema-dummy".to_string()),
+                config: ConfigValue::Int(7),
+                disabled: false,
+                isolate: Vec::new(),
+                children: Vec::new(),
+            },
+        }]);
+        assert_eq!(invalid.unwrap_err().kind, ErrorKind::ValidationFailed);
+        assert!(loader.entries().is_empty());
+
+        let fut_apply = loader.apply(vec![PluginEntry {
+            id: "one".to_string(),
+            target: EntryTarget::Name("schema-dummy".to_string()),
+            config: ConfigValue::Null,
+            disabled: false,
+            isolate: Vec::new(),
+            children: Vec::new(),
+        }]);
+        let mut pinned = Box::pin(fut_apply);
+        let waker = std::task::Waker::noop();
+        let mut cx = std::task::Context::from_waker(waker);
+        match pinned.as_mut().poll(&mut cx) {
+            std::task::Poll::Ready(res) => res.unwrap(),
+            std::task::Poll::Pending => {
+                panic!("inline spawner settles synchronously")
+            }
+        };
+
+        assert_eq!(loader.entries().len(), 1);
+        assert_eq!(restarts.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        let mut restart_pinned = Box::pin(loader.restart("one"));
+        match restart_pinned.as_mut().poll(&mut cx) {
+            std::task::Poll::Ready(res) => res.unwrap(),
+            std::task::Poll::Pending => {
+                panic!("inline restart settles synchronously")
+            }
+        }
+        assert_eq!(restarts.load(std::sync::atomic::Ordering::SeqCst), 2);
+
+        let mut missing_pinned = Box::pin(loader.restart("missing"));
+        match missing_pinned.as_mut().poll(&mut cx) {
+            std::task::Poll::Ready(Err(e)) => {
+                assert_eq!(e.kind, ErrorKind::UnknownEntry);
+            }
+            other => panic!("expected UnknownEntry, got {other:?}"),
+        }
     }
 }

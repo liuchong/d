@@ -1,7 +1,8 @@
 //! Layer 3 pure-std CORS filter plugin.
 
 use frame::{
-    BoxFuture, ConfigValue, Context, Deps, FrameError, Plugin, ValidationIssue,
+    BoxFuture, ConfigFieldSchema, ConfigFieldType, ConfigValue, Context, Deps,
+    FrameError, Plugin, PluginSchema, ValidationIssue,
 };
 use http_api::{
     FilterOutcome, HttpFilter, HttpRequest, HttpResponse, Method, RequestMeta,
@@ -104,6 +105,20 @@ impl Plugin for CorsPlugin {
 
     fn deps(&self) -> Deps {
         Deps::empty().with::<RouterService>()
+    }
+
+    fn schema(&self) -> PluginSchema {
+        PluginSchema::new(
+            "Layer 3 CORS response headers and OPTIONS preflight filter",
+        )
+        .field(
+            ConfigFieldSchema::new(
+                "allow_origin",
+                ConfigFieldType::Str,
+                "Value emitted for Access-Control-Allow-Origin",
+            )
+            .with_default(ConfigValue::Str("*".to_string())),
+        )
     }
 
     fn validate_config(

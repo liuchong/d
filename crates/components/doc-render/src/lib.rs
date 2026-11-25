@@ -7,7 +7,8 @@ pub mod markdown;
 pub mod style;
 
 use frame::{
-    BoxFuture, ConfigValue, Context, Deps, FrameError, Plugin, ValidationIssue,
+    BoxFuture, ConfigValue, Context, Deps, FrameError, Plugin, PluginSchema,
+    ValidationIssue,
 };
 use render_api::{MarkdownOptions, RenderService, RenderedDocument, Renderer};
 use std::sync::Arc;
@@ -45,6 +46,12 @@ impl Plugin for DocRenderPlugin {
 
     fn deps(&self) -> Deps {
         Deps::empty()
+    }
+
+    fn schema(&self) -> PluginSchema {
+        PluginSchema::new(
+            "Pure-Rust CommonMark+GFM renderer, embedded HTML passthrough, and built-in lexical code highlighter",
+        )
     }
 
     fn validate_config(

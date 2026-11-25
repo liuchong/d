@@ -8,7 +8,8 @@ use files_api::{
     FileCategory, FileViewer, ViewMode, ViewerInput, ViewerRegistryService,
 };
 use frame::{
-    BoxFuture, ConfigValue, Context, Deps, FrameError, Plugin, ValidationIssue,
+    BoxFuture, ConfigValue, Context, Deps, FrameError, Plugin, PluginSchema,
+    ValidationIssue,
 };
 use http_api::{HttpResponse, StatusCode};
 use std::sync::Arc;
@@ -89,6 +90,12 @@ impl Plugin for MediaViewerPlugin {
 
     fn deps(&self) -> Deps {
         Deps::empty().with::<ViewerRegistryService>()
+    }
+
+    fn schema(&self) -> PluginSchema {
+        PluginSchema::new(
+            "Minimalist white media viewer (?view=viewer) for images, audio, and video embedding bare raw streams",
+        )
     }
 
     fn validate_config(

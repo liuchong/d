@@ -4,7 +4,8 @@ use brotli::CompressorWriter;
 use flate2::Compression;
 use flate2::write::{GzEncoder, ZlibEncoder};
 use frame::{
-    BoxFuture, ConfigValue, Context, Deps, FrameError, Plugin, ValidationIssue,
+    BoxFuture, ConfigFieldSchema, ConfigFieldType, ConfigValue, Context, Deps,
+    FrameError, Plugin, PluginSchema, ValidationIssue,
 };
 use http_api::{
     AsyncByteStream, BodyKind, FilterOutcome, HttpFilter, HttpRequest,
@@ -191,8 +192,10 @@ fn should_exempt(
             streaming: true, ..
         } => true,
         BodyKind::Stream {
-            streaming: false, ..
-        } => false,
+            content_length,
+            streaming: false,
+            ..
+        } => content_length.is_some_and(|len| len < min_size as u64),
         BodyKind::Bytes(b) => b.len() < min_size,
     }
 }
@@ -527,6 +530,20 @@ impl Plugin for CompressionPlugin {
 
     fn deps(&self) -> Deps {
         Deps::empty().with::<RouterService>()
+    }
+
+    fn schema(&self) -> PluginSchema {
+        PluginSchema::new(
+            "Layer 3 streaming-aware br/gzip/deflate compression filter with automatic exemptions for SSE/206/304/media",
+        )
+        .field(
+            ConfigFieldSchema::new(
+                "min_size",
+                ConfigFieldType::Int,
+                "Minimum static response body size in bytes before compression activates",
+            )
+            .with_default(ConfigValue::Int(self.config.min_size as i64)),
+        )
     }
 
     fn validate_config(

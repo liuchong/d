@@ -16,7 +16,8 @@ use files_api::{
     ViewerRegistryService,
 };
 use frame::{
-    BoxFuture, ConfigValue, Context, Deps, FrameError, Plugin, ValidationIssue,
+    BoxFuture, ConfigFieldSchema, ConfigFieldType, ConfigValue, Context, Deps,
+    FrameError, Plugin, PluginSchema, ValidationIssue,
 };
 use http_api::{
     HttpHandler, HttpRequest, HttpResponse, Method, RequestMeta, RouteMatch,
@@ -108,6 +109,24 @@ fn resolve_files_config(
             path: "root".to_string(),
             message: "root directory must be configured".to_string(),
         });
+    } else {
+        match std::fs::canonicalize(&cfg.root) {
+            Ok(canon) if canon.is_dir() => cfg.root = canon,
+            Ok(not_dir) => issues.push(ValidationIssue {
+                path: "root".to_string(),
+                message: format!(
+                    "root path `{}` is not a directory",
+                    not_dir.display()
+                ),
+            }),
+            Err(e) => issues.push(ValidationIssue {
+                path: "root".to_string(),
+                message: format!(
+                    "invalid root path `{}`: {e}",
+                    cfg.root.display()
+                ),
+            }),
+        }
     }
     if issues.is_empty() {
         Ok(cfg)
@@ -123,6 +142,28 @@ impl Plugin for FilesAppPlugin {
 
     fn deps(&self) -> Deps {
         Deps::empty().with::<RouterService>()
+    }
+
+    fn schema(&self) -> PluginSchema {
+        PluginSchema::new(
+            "Layer 4 sandboxed static file server, directory index, Range/ETag/304 handler, and viewer registry",
+        )
+        .field(
+            ConfigFieldSchema::new(
+                "root",
+                ConfigFieldType::Str,
+                "Directory path served by app-files (canonicalized and sandboxed)",
+            )
+            .required(),
+        )
+        .field(
+            ConfigFieldSchema::new(
+                "allow_hidden",
+                ConfigFieldType::Bool,
+                "Allow serving and listing dotfiles and dot-directories",
+            )
+            .with_default(ConfigValue::Bool(self.config.allow_hidden)),
+        )
     }
 
     fn validate_config(

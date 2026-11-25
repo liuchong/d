@@ -2,7 +2,8 @@
 //! demonstrating swappable contract implementations across minimal assemblies.
 
 use frame::{
-    BoxFuture, ConfigValue, Context, Deps, FrameError, Plugin, ValidationIssue,
+    BoxFuture, ConfigValue, Context, Deps, FrameError, Plugin, PluginSchema,
+    ValidationIssue,
 };
 use render_api::{
     HeadingEntry, MarkdownOptions, RenderService, RenderedDocument, Renderer,
@@ -83,6 +84,12 @@ impl Plugin for PlainDocRenderPlugin {
 
     fn deps(&self) -> Deps {
         Deps::empty()
+    }
+
+    fn schema(&self) -> PluginSchema {
+        PluginSchema::new(
+            "Zero-dependency plain HTML-escaped text alternative implementation of render-api",
+        )
     }
 
     fn validate_config(

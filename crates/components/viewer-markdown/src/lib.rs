@@ -8,7 +8,8 @@ use files_api::{
     FileCategory, FileViewer, ViewMode, ViewerInput, ViewerRegistryService,
 };
 use frame::{
-    BoxFuture, ConfigValue, Context, Deps, FrameError, Plugin, ValidationIssue,
+    BoxFuture, ConfigValue, Context, Deps, FrameError, Plugin, PluginSchema,
+    ValidationIssue,
 };
 use http_api::{HttpResponse, StatusCode};
 use render_api::{MarkdownOptions, RenderService};
@@ -95,6 +96,12 @@ impl Plugin for MarkdownViewerPlugin {
         Deps::empty()
             .with::<ViewerRegistryService>()
             .with::<RenderService>()
+    }
+
+    fn schema(&self) -> PluginSchema {
+        PluginSchema::new(
+            "Minimalist white Markdown reader viewer supporting raw, preview, and attachment download modes",
+        )
     }
 
     fn validate_config(

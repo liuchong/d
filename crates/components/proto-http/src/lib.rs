@@ -5,8 +5,8 @@ pub mod router;
 pub mod writer;
 
 use frame::{
-    BoxFuture, ConfigValue, Context, Deps, ErrorKind, FrameError, Plugin,
-    ValidationIssue,
+    BoxFuture, ConfigFieldSchema, ConfigFieldType, ConfigValue, Context, Deps,
+    ErrorKind, FrameError, Plugin, PluginSchema, ValidationIssue,
 };
 pub use http_api::BoundServerInfo;
 use http_api::{
@@ -288,6 +288,69 @@ impl Plugin for HttpEnginePlugin {
         } else {
             Deps::empty().with_optional::<TransportService>()
         }
+    }
+
+    fn schema(&self) -> PluginSchema {
+        PluginSchema::new(
+            "Layer 2 bounded HTTP/1.1 parser, chunked streamer, and lock-free snapshot router",
+        )
+        .field(
+            ConfigFieldSchema::new(
+                "bind_addr",
+                ConfigFieldType::Str,
+                "TCP socket address to bind HTTP/1.1 listener (null runs router in-memory only)",
+            )
+            .nullable()
+            .with_default(
+                self.config
+                    .bind_addr
+                    .map_or(ConfigValue::Null, |a| ConfigValue::Str(a.to_string())),
+            ),
+        )
+        .field(
+            ConfigFieldSchema::new(
+                "max_request_line_bytes",
+                ConfigFieldType::Int,
+                "Maximum request-line length in bytes (414 when exceeded)",
+            )
+            .with_default(ConfigValue::Int(
+                self.config.max_request_line_bytes as i64,
+            )),
+        )
+        .field(
+            ConfigFieldSchema::new(
+                "max_headers",
+                ConfigFieldType::Int,
+                "Maximum HTTP headers accepted per request (431 when exceeded)",
+            )
+            .with_default(ConfigValue::Int(self.config.max_headers as i64)),
+        )
+        .field(
+            ConfigFieldSchema::new(
+                "max_header_bytes",
+                ConfigFieldType::Int,
+                "Maximum total HTTP header section size in bytes (431 when exceeded)",
+            )
+            .with_default(ConfigValue::Int(self.config.max_header_bytes as i64)),
+        )
+        .field(
+            ConfigFieldSchema::new(
+                "max_body_bytes",
+                ConfigFieldType::Int,
+                "Maximum request body length in bytes (413 when exceeded)",
+            )
+            .with_default(ConfigValue::Int(self.config.max_body_bytes as i64)),
+        )
+        .field(
+            ConfigFieldSchema::new(
+                "idle_timeout_ms",
+                ConfigFieldType::Int,
+                "Keep-alive connection idle timeout in milliseconds",
+            )
+            .with_default(ConfigValue::Int(
+                self.config.idle_timeout.as_millis() as i64,
+            )),
+        )
     }
 
     fn validate_config(

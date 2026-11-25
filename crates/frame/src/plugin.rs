@@ -56,11 +56,118 @@ impl Deps {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConfigFieldType {
+    Bool,
+    Int,
+    Float,
+    Str,
+    List,
+    Map,
+    Any,
+}
+
+impl ConfigFieldType {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Bool => "bool",
+            Self::Int => "int",
+            Self::Float => "float",
+            Self::Str => "string",
+            Self::List => "list",
+            Self::Map => "map",
+            Self::Any => "any",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ConfigFieldSchema {
+    pub name: String,
+    pub kind: ConfigFieldType,
+    pub required: bool,
+    pub nullable: bool,
+    pub sensitive: bool,
+    pub default: Option<ConfigValue>,
+    pub description: String,
+}
+
+impl ConfigFieldSchema {
+    pub fn new(
+        name: impl Into<String>,
+        kind: ConfigFieldType,
+        description: impl Into<String>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            kind,
+            required: false,
+            nullable: false,
+            sensitive: false,
+            default: None,
+            description: description.into(),
+        }
+    }
+
+    pub fn required(mut self) -> Self {
+        self.required = true;
+        self
+    }
+
+    pub fn nullable(mut self) -> Self {
+        self.nullable = true;
+        self
+    }
+
+    pub fn sensitive(mut self) -> Self {
+        self.sensitive = true;
+        self
+    }
+
+    pub fn with_default(mut self, default: ConfigValue) -> Self {
+        self.default = Some(default);
+        self
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PluginSchema {
+    pub description: String,
+    pub fields: Vec<ConfigFieldSchema>,
+}
+
+impl PluginSchema {
+    pub fn new(description: impl Into<String>) -> Self {
+        Self {
+            description: description.into(),
+            fields: Vec::new(),
+        }
+    }
+
+    pub fn field(mut self, field: ConfigFieldSchema) -> Self {
+        self.fields.push(field);
+        self
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PluginDescriptor {
+    pub name: String,
+    pub description: String,
+    pub required_deps: Vec<&'static str>,
+    pub optional_deps: Vec<&'static str>,
+    pub schema: PluginSchema,
+}
+
 pub trait Plugin: Send + Sync + 'static {
     fn name(&self) -> &str;
 
     fn deps(&self) -> Deps {
         Deps::empty()
+    }
+
+    fn schema(&self) -> PluginSchema {
+        PluginSchema::default()
     }
 
     fn validate_config(
