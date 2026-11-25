@@ -35,6 +35,7 @@
             <a href="#examples">示例</a>
             <a href="#roadmap">路线图</a>
             <a class="nav-cta" href="pages/usage.html">完整使用指南</a>
+            <a href="https://github.com/liuchong/d/blob/master/docs/mcp.md">MCP 控制</a>
             <a href="https://github.com/liuchong/d">GitHub</a>
         </div>
     </div>
@@ -72,7 +73,7 @@
 
         <div class="metrics" aria-label="已验证工作区指标">
             <div class="metric">
-                <strong>20</strong>
+                <strong>21</strong>
                 <span>纯 Virtual Workspace 分层包</span>
             </div>
             <div class="metric">
@@ -80,12 +81,12 @@
                 <span>零外部依赖核心 / 契约 / 纯组件包</span>
             </div>
             <div class="metric">
-                <strong>109 + 57</strong>
-                <span>工作区测试 + 端到端 HTTP 验收</span>
+                <strong>12 + 4</strong>
+                <span>可选 MCP 控制工具 + 实时资源</span>
             </div>
             <div class="metric">
-                <strong>1PL</strong>
-                <span>One Public License 开源协议</span>
+                <strong>57</strong>
+                <span>端到端 HTTP 验收全通过项</span>
             </div>
         </div>
     </div>
@@ -111,6 +112,7 @@
                     <button class="tab-btn" type="button" role="tab" aria-selected="false" data-scenario-tab="static">静态网站托管</button>
                     <button class="tab-btn" type="button" role="tab" aria-selected="false" data-scenario-tab="lan">局域网与 CORS</button>
                     <button class="tab-btn" type="button" role="tab" aria-selected="false" data-scenario-tab="curl">Range 与 304</button>
+                    <button class="tab-btn" type="button" role="tab" aria-selected="false" data-scenario-tab="mcp">MCP 控制与 Skill</button>
                     <button class="tab-btn" type="button" role="tab" aria-selected="false" data-scenario-tab="rust">Rust 库内嵌</button>
                 </div>
             </div>
@@ -237,8 +239,8 @@ d -r . -p 8080
         <div class="section-head">
             <div>
                 <span class="section-kicker">Architecture</span>
-                <h2 class="section-title">五层单向依赖架构与 20 个 Workspace 包</h2>
-                <p class="section-desc">上层只依赖下层契约包（<code>contracts/*</code>），实现之间零横向直接耦合，由 <code>d</code> 与 <code>d-minimal</code> 按声明式 <code>Loader</code> 装配并经 <code>xtask</code> 校验。</p>
+                <h2 class="section-title">五层单向依赖架构与 21 个 Workspace 包</h2>
+                <p class="section-desc">上层只依赖下层契约包（<code>contracts/*</code>），实现之间零横向直接耦合，由 <code>d</code> 与 <code>d-minimal</code> 按声明式 <code>Loader</code> 装配并支持可选 <code>d-mcp</code> 实时控制。</p>
             </div>
             <a class="btn" href="https://github.com/liuchong/d/blob/master/docs/frame.md">了解 frame 微内核设计</a>
         </div>
@@ -267,7 +269,7 @@ d -r . -p 8080
                 </button>
                 <button class="arch-btn" type="button" role="tab" aria-selected="false" data-layer-btn="entry">
                     <strong>Entries, Assemblies &amp; xtask</strong>
-                    <span>d-cli / d-daemon · d / d-minimal · xtask</span>
+                    <span>d-cli / d-daemon / d-mcp · d / d-minimal · skills · xtask</span>
                 </button>
             </div>
             <div class="arch-detail">
@@ -361,17 +363,17 @@ d -r . -p 8080
             </article>
             <article class="phase done">
                 <div class="phase-head">
-                    <h3>阶段 2 · 五层重构、契约升级与双装配体演进</h3>
-                    <span class="phase-badge">已完成 · d &amp; d-minimal</span>
+                    <h3>阶段 2 · 五层重构、契约升级、双装配体与 MCP / Skill 体系</h3>
+                    <span class="phase-badge">已完成 · d / d-minimal / d-mcp</span>
                 </div>
-                <p>落地 20 包纯 Virtual Workspace、自建 HTTP/1.1 引擎、零手工包装 <code>ScopedService</code> 接线、可互换 <code>doc-render-plain</code>、<code>d-daemon</code> 与纯 <code>std</code> <code>xtask</code> 治理工具。</p>
+                <p>落地 21 包纯 Virtual Workspace、自建 HTTP/1.1 引擎、零手工包装 <code>ScopedService</code> 接线、可互换 <code>doc-render-plain</code>、可选纯 Rust <code>d-mcp</code>、随版本演进 <code>skills/{d,d-dev}</code> 与 <code>xtask</code> 治理工具。</p>
             </article>
             <article class="phase done">
                 <div class="phase-head">
                     <h3>阶段 3 · 纯内建 Markdown、词法高亮与极简白色界面</h3>
                     <span class="phase-badge">已完成 · 全栈闭环</span>
                 </div>
-                <p>交付零外部依赖 <code>doc-render</code> 与 <code>viewer-*</code>，实现无冲突媒体/文档路由、全站纯白视觉规范与 109 项测试 + 57 项端到端验收闭环。</p>
+                <p>交付零外部依赖 <code>doc-render</code> 与 <code>viewer-*</code>，实现无冲突媒体/文档路由、全站纯白视觉规范与全套工作区测试及 57 项端到端验收闭环。</p>
             </article>
             <article class="phase">
                 <div class="phase-head">

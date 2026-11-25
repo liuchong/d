@@ -111,6 +111,9 @@
       "curl" (js-object
                "cmd" "# 字节范围切片（206）与后缀范围\ncurl -r 0-1023 http://localhost:8080/data.bin\ncurl -r -16 http://localhost:8080/data.bin\n\n# 条件缓存（命中 ETag 返回 304）与原流 / RFC 5987 下载\ncurl -sI http://localhost:8080/data.bin\ncurl \"http://localhost:8080/README.md?view=raw\"\ncurl -OJ \"http://localhost:8080/README.md?view=download\""
                "note" "自建 HTTP/1.1 引擎完整处理 Range/416、弱比较 ETag/304、HEAD 与流式压缩（206/304/HEAD/SSE 自动豁免）。")
+      "mcp" (js-object
+              "cmd" "# 方式 1：stdio MCP 控制专属实例（日志自动切到 stderr）\nd -r ./docs --no-http --mcp-stdio --mcp-allow-shutdown\n\n# 方式 2：开启 HTTP + 受 Bearer Token 保护的 Streamable HTTP MCP\nd -H 127.0.0.1 -p 8080 -r ./public --mcp-http 127.0.0.1:18081 --mcp-token secret"
+              "note" "通过 d_catalog / d_inspect / d_set_plugin_config / d_apply_patches 动态发现插件 Schema 并实时调整状态与配置，配合 skills/{d,d-dev} 随项目同步演进。")
       "rust" (js-object
                "cmd" "use d::{Options, create_app_with_options};\nuse http_api::{HttpRequest, Method};\n\nlet app = create_app_with_options(\n    \"./examples/docs\",\n    Options { allow_hidden: false, cors: false },\n).await;\nlet resp = app.dispatch(HttpRequest::new(Method::Get, \"/guide.md\")).await;\napp.dispose().await?;"
                "note" "除 CLI 守护进程外，也可零端口直接在内存中装配完整 5 层插件树并向 RouterService 派发请求。")))
@@ -288,10 +291,10 @@
              "deps" "doc-render、doc-render-plain、viewer-* 与契约包全部零外部依赖"
              "desc" "app-files 负责沙箱路径校验、目录 301 规范化、Range/ETag/304/HEAD 与 RFC 5987；doc-render 提供完整 GFM/HTML/高亮，doc-render-plain 提供可互换的纯文本安全实现，viewer-* 输出统一极简白底界面。")
       "entry" (js-object
-                "title" "纯入口底座、多装配体与 xtask 治理层"
-                "crates" "d-cli · d-daemon · assemblies/{d,d-minimal} · xtask"
-                "deps" "纯 Virtual Workspace 20 包；d-cli / xtask 零外依；d-daemon 零组件依赖"
-                "desc" "d-daemon 提供组件无关守护底座；d 装配全栈功能，d-minimal 仅装配轻量静态服务与 doc-render-plain；cargo xtask check 静态强制 8 条架构红线。")))
+                "title" "纯入口底座、可选 MCP、多装配体与 xtask / Skill 治理层"
+                "crates" "d-cli · d-daemon · d-mcp · assemblies/{d,d-minimal} · skills/{d,d-dev} · xtask"
+                "deps" "纯 Virtual Workspace 21 包；d-cli / xtask 零外依；d-daemon / d-mcp 零组件依赖"
+                "desc" "d-daemon 提供组件无关守护底座；d-mcp 提供可选 stdio/HTTP MCP 控制面并从 Plugin::schema() 自发现配置；d 装配全栈功能，d-minimal 支持 --features mcp 按需接入；cargo xtask check 静态强制 8 条架构与 Skill 完整性红线。")))
 
   (defun bind-layers ()
     (let ((btns (nodes "[data-layer-btn]"))
@@ -332,6 +335,10 @@
               (log-in (node "[data-cli-log]"))
               (hidden-in (node "[data-cli-hidden]"))
               (cors-in (node "[data-cli-cors]"))
+              (mcp-mode-in (node "[data-cli-mcp-mode]"))
+              (mcp-addr-in (node "[data-cli-mcp-addr]"))
+              (mcp-ro-in (node "[data-cli-mcp-ro]"))
+              (mcp-shut-in (node "[data-cli-mcp-shut]"))
               (fmt-in (node "[data-cli-format]"))
               (out-el (node "[data-cli-output]")))
           (when (and (present? host-in) (present? port-in) (present? dir-in)
@@ -349,6 +356,13 @@
                                     (if (= v "") "info" v)))
                              (hidden (field hidden-in "checked"))
                              (cors (field cors-in "checked"))
+                             (mcp-mode (if (present? mcp-mode-in) (field mcp-mode-in "value") "off"))
+                             (mcp-addr (if (present? mcp-addr-in)
+                                           (let ((v (trimmed (field mcp-addr-in "value"))))
+                                             (if (= v "") "127.0.0.1:18081" v))
+                                         "127.0.0.1:18081"))
+                             (mcp-ro (and (present? mcp-ro-in) (field mcp-ro-in "checked")))
+                             (mcp-shut (and (present? mcp-shut-in) (field mcp-shut-in "checked")))
                              (fmt (field fmt-in "value")))
                         (if (= fmt "env")
                             (let ((envs ""))
@@ -364,6 +378,14 @@
                                 (setq envs (str envs "D_SHOW_HIDDEN=true ")))
                               (when cors
                                 (setq envs (str envs "D_CORS=true ")))
+                              (when (= mcp-mode "stdio")
+                                (setq envs (str envs "D_MCP_STDIO=true ")))
+                              (when (= mcp-mode "http")
+                                (setq envs (str envs "D_MCP_HTTP=" (quote-arg mcp-addr) " ")))
+                              (when (and (not (= mcp-mode "off")) mcp-ro)
+                                (setq envs (str envs "D_MCP_READ_ONLY=true ")))
+                              (when (and (not (= mcp-mode "off")) mcp-shut)
+                                (setq envs (str envs "D_MCP_ALLOW_SHUTDOWN=true ")))
                               (set-text out-el (str envs "d")))
                           (let ((cmd "d"))
                             (when (not (= host "localhost"))
@@ -378,11 +400,20 @@
                               (setq cmd (str cmd " --hidden")))
                             (when cors
                               (setq cmd (str cmd " --cors")))
+                            (when (= mcp-mode "stdio")
+                              (setq cmd (str cmd " --mcp-stdio")))
+                            (when (= mcp-mode "http")
+                              (setq cmd (str cmd " --mcp-http " (quote-arg mcp-addr))))
+                            (when (and (not (= mcp-mode "off")) mcp-ro)
+                              (setq cmd (str cmd " --mcp-read-only")))
+                            (when (and (not (= mcp-mode "off")) mcp-shut)
+                              (setq cmd (str cmd " --mcp-allow-shutdown")))
                             (set-text out-el cmd)))))))
-              (each (js-array host-in port-in dir-in log-in hidden-in cors-in fmt-in)
+              (each (js-array host-in port-in dir-in log-in hidden-in cors-in mcp-mode-in mcp-addr-in mcp-ro-in mcp-shut-in fmt-in)
                     (lambda (ctrl)
-                      (watch ctrl "input" rebuild)
-                      (watch ctrl "change" rebuild)))
+                      (when (present? ctrl)
+                        (watch ctrl "input" rebuild)
+                        (watch ctrl "change" rebuild))))
               (funcall rebuild nil)))))))
 
   ;; -------------------------------------------------------- runtime bootstrap

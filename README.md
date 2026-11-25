@@ -10,6 +10,8 @@
 `d` is a modular, low-overhead standalone network daemon and file/document server built on a zero-dependency plugin microkernel (`frame`), a custom HTTP/1.1 streaming engine, and pure-Rust server-side Markdown and syntax rendering.
 
 **[Usage Handbook (中文)](./docs/usage.md)** ·
+**[MCP Control](./docs/mcp.md)** ·
+**[Agent Skills](./skills/d/SKILL.md)** ·
 **[Project Site Source](./docs/index.html)** ·
 **[Examples](./examples/README.md)** ·
 **[Architecture](./docs/architecture.md)** ·
@@ -19,12 +21,13 @@
 
 ## Key Capabilities
 
-- **Layered plugin architecture (5 layers, 16 workspace crates)**:
-  - Layer 0 (`frame`): zero-dependency pure-`std` microkernel (`Context`, `Scope`, `Service`, `Fiber`, `EffectHandle`, `Event`, `Loader`, `Inspect`).
+- **Layered plugin architecture (5 layers, 21 workspace crates)**:
+  - Layer 0 (`frame`): zero-dependency pure-`std` microkernel (`ScopedService`, `PluginSchema`, `Context`, `Scope`, `Fiber`, `EffectHandle`, `Event`, `Loader`, `Inspect`).
   - Layer 1 (`l4-transport`): TCP listener management and two-phase graceful connection drain on `SIGINT`/`SIGTERM` or teardown.
   - Layer 2 (`proto-http`): custom HTTP/1.1 parser (`400`/`413`/`414`/`431`/`505` wire bounds), chunked unbuffered streaming (`streaming: true`), and lock-free atomic snapshot routing (`HttpRouter`).
   - Layer 3 (`ext-compression`, `ext-cors`): streaming-aware `br`/`gzip`/`deflate` negotiation (automatically exempting SSE/`streaming`, `206`, `304`, `HEAD`, pre-compressed media, and tiny payloads under 256 bytes) and opt-in permissive CORS (`--cors`).
-  - Layer 4 (`app-files`, `doc-render`, `viewer-markdown`, `viewer-code`, `viewer-media`): sandboxed file server with pure-Rust rendering and minimalist white viewers.
+  - Layer 4 (`app-files`, `doc-render`, `doc-render-plain`, `viewer-markdown`, `viewer-code`, `viewer-media`): sandboxed file server with pure-Rust rendering, interchangeable plain renderer, and minimalist white viewers.
+  - Entries & MCP (`d-cli`, `d-daemon`, optional `d-mcp`): pure-`std` CLI, component-agnostic daemon harness, and opt-in pure-Rust MCP control plane paired with self-evolving [`skills/d`](./skills/d/SKILL.md) and [`skills/d-dev`](./skills/d-dev/SKILL.md).
 - **Built-in CommonMark + GFM & native embedded HTML**: Zero-dependency `doc-render` compiles Markdown on the server with CJK/ASCII unique heading anchors, aligned GFM tables, task lists, strikethrough, footnotes, autolinks, and unescaped block/inline HTML (`<details>`, `<figure>`, `<img>`, `<table>`, `<kbd>`).
 - **Server-side lexical code highlighting**: Built-in tokenizer and light stylesheet for Rust, JavaScript/TypeScript, Python, Go, C/C++/Java/Zig/Swift/Kotlin/Scala, Shell (`sh`/`bash`/`zsh`/`fish`), JSON, YAML, TOML, SQL, HTML/XML/SVG, and CSS/SCSS — zero external scripts or CDNs.
 - **Minimalist white UI**: Self-contained offline `#ffffff` / `#f6f8fa` / `#0969da` layout across directory listings and document/code/media viewers; no dark themes, no colored badges, no emoji, and no client JavaScript required.
@@ -80,10 +83,17 @@ cargo run -- -r docs -p 8080
 | `-l, --log <LEVEL>` | `RUST_LOG` | `info` | `trace`, `debug`, `info`, `warn`, `error` |
 | `--hidden` | `D_SHOW_HIDDEN` | disabled | Expose dotfiles and allow `?hidden=true\|false` toggling (`1`/`true`/`yes`/`on`) |
 | `--cors` | `D_CORS` | disabled | Add `Access-Control-Allow-Origin: *` and handle `OPTIONS` preflight (`204`) |
+| `--no-http` | `D_NO_HTTP` | disabled | Start router in memory without binding HTTP TCP port until configured via MCP |
+| `--mcp-stdio` | `D_MCP_STDIO` | disabled | Enable pure-Rust stdio MCP control server (routes daemon logs to `stderr`) |
+| `--mcp-http <ADDR>` | `D_MCP_HTTP` | unset | Enable Streamable HTTP MCP endpoint on `<host>:<port>` |
+| `--mcp-path <PATH>` | `D_MCP_PATH` | `/mcp` | HTTP MCP `POST` route path |
+| `--mcp-token <TOKEN>` | `D_MCP_TOKEN` | unset | Bearer token protecting the HTTP MCP endpoint |
+| `--mcp-read-only` | `D_MCP_READ_ONLY` | disabled | Restrict MCP to read-only inspection, schema discovery, and probing |
+| `--mcp-allow-shutdown` | `D_MCP_ALLOW_SHUTDOWN` | disabled | Allow MCP `d_shutdown` tool |
 | `-h, --help` | — | — | Print help and exit |
 | `-V, --version` | — | — | Print version and exit |
 
-Precedence is strictly **CLI flag > Environment variable > Default**. Boolean environment variables treat `1`, `true`, `yes`, and `on` (case-insensitive) as enabled.
+Precedence is strictly **CLI flag > Environment variable > Default**. Boolean environment variables treat `1`, `true`, `yes`, and `on` (case-insensitive) as enabled. MCP is disabled by default unless `--mcp-stdio` / `--mcp-http` is explicitly enabled; build without MCP via `cargo build -p d --no-default-features`, or add MCP to `d-minimal` via `cargo build -p d-minimal --features mcp`. See [docs/mcp.md](./docs/mcp.md).
 
 ---
 
@@ -179,8 +189,8 @@ async fn dispatch_once() -> Result<(), Box<dyn std::error::Error>> {
 | **Layer 2** | `crates/components/proto-http` | Bounded HTTP/1.1 parser/writer, streaming chunk encoder, lock-free snapshot `HttpRouter` |
 | **Layer 3** | `crates/components/{ext-compression,ext-cors}` | Streaming-aware `br`/`gzip`/`deflate` compression filter and opt-in CORS filter |
 | **Layer 4** | `crates/components/{app-files,doc-render,doc-render-plain,viewer-*}` | Sandboxed file handler, full CommonMark/GFM/highlight renderer & zero-dep `doc-render-plain`, white viewers |
-| **Entries & Assemblies** | `crates/entries/{cli,daemon}`, `crates/assemblies/{d,d-minimal}` | Pure-`std` `d-cli`, component-agnostic `d-daemon`, full `d` & lightweight `d-minimal` |
-| **Tooling** | `xtask` | Pure-`std` workspace governance (`cargo xtask check`, `info`, `test`) |
+| **Entries & Assemblies** | `crates/entries/{cli,daemon,mcp}`, `crates/assemblies/{d,d-minimal}` | Pure-`std` `d-cli`, component-agnostic `d-daemon`, optional pure-Rust `d-mcp`, full `d` & lightweight `d-minimal` |
+| **Skills & Tooling** | `skills/{d,d-dev}`, `xtask` | Self-evolving runtime/contributor Skills & pure-`std` workspace governance (`cargo xtask check`, `info`, `test`) |
 
 Ready-to-run sample directories live in [`examples/`](./examples) — see [examples/README.md](./examples/README.md) for guided tours of `demo/`, `code/`, `docs/`, `media/`, and `static-site/`.
 
@@ -189,10 +199,13 @@ Ready-to-run sample directories live in [`examples/`](./examples) — see [examp
 ## Testing & Acceptance
 
 ```bash
-cargo xtask check          # Enforce all 8 workspace architecture invariants
+cargo xtask check          # Enforce all 8 workspace architecture & skill invariants
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace     # 109 unit, contract, and assembly integration tests
+cargo clippy -p d --no-default-features -- -D warnings
+cargo clippy -p d-minimal --features mcp --all-targets -- -D warnings
+cargo test --workspace     # Full workspace unit, contract, MCP, and integration tests
+cargo test -p d-minimal --features mcp
 scripts/acceptance.sh      # 57 end-to-end HTTP, Markdown, and UI checks
 ```
 

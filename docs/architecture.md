@@ -183,10 +183,12 @@ workspace/
 │   │   └── viewer-media/           #   第 4 层实现：图片、音频、视频白底展示器
 │   ├── entries/                    # 极薄外部入口壳与守护底座（零 components/* 依赖）
 │   │   ├── cli/                    #   命令行参数、环境变量、日志与配置入口（d-cli）
-│   │   └── daemon/                 #   组件无关守护底座、Loader 引导与信号优雅排空（d-daemon）
+│   │   ├── daemon/                 #   组件无关守护底座、Loader 引导与信号优雅排空（d-daemon）
+│   │   └── mcp/                    #   可选可配置纯 Rust MCP 控制面（d-mcp）
 │   └── assemblies/                 # 多装配体最终可交付产物
-│       ├── d/                      #   主产物 `d`（声明式 Loader 装配全栈组件）
-│       └── d-minimal/              #   轻量静态托管版 `d-minimal`（装配 doc-render-plain，零压缩/富渲染）
+│       ├── d/                      #   主产物 `d`（声明式 Loader 装配全栈组件，默认含 mcp 特性）
+│       └── d-minimal/              #   轻量静态托管版 `d-minimal`（可选 `--features mcp`，零压缩/富渲染）
+├── skills/                         # 随版本演进的 Agent Skills（`skills/d` 运行控管、`skills/d-dev` 扩展维护）
 ├── xtask/                          # 纯 std 架构门禁、装配矩阵检视与受影响闭包测试工具
 ├── examples/                       # 各类典型使用示例集
 ├── scripts/                        # 端到端 HTTP 验收脚本
@@ -203,7 +205,7 @@ workspace/
 4. **内建文档与词法高亮包（`doc-render` / `doc-render-plain` + `render-api`）**：零外部脚本、零网络请求、静态编译内建的 Markdown（含嵌入式 HTML）与多语言轻量语法高亮库，并附带纯文本安全转义替代实现 `doc-render-plain` 实证同契约可互换。
 5. **文件与展示引擎包（`app-files` + `viewer-*`）**：即插即用的白底安全静态文件托管与可插拔内容浏览套件。
 6. **通用反向代理与开发提效包（`ext-proxy`、`ext-dev-kit`）**：面向现代 AI 流式与本地联调痛点的代理及开发增强套件（阶段 4/5 规划）。
-7. **`d` 与 `d-minimal` 宿主发行版及 `xtask` 工具链**：基于组件无关 `d-daemon` 底座与 `Loader` 声明式装配出全栈 `d` 与轻量静态托管版 `d-minimal`，并由纯 `std` `cargo xtask check/info/test` 在编译器与 CI 层强制验证架构隔离。
+7. **`d` 与 `d-minimal` 宿主发行版、可选 `d-mcp`、`skills/` 与 `xtask` 工具链**：基于组件无关 `d-daemon` 底座与 `Loader` 声明式装配出全栈 `d`（默认带可选开关关闭状态的 `mcp` 特性）与轻量 `d-minimal`（支持 `--features mcp`）；结合组件 `Plugin::schema()` 自描述、`d-mcp` 动态自省工具与 `skills/{d,d-dev}`，令运行控管能力随新组件自动演进，并由 `cargo xtask check/info/test` 强制架构与 Skill 完整性。
 
 ---
 

@@ -277,12 +277,29 @@ impl Deps {
     pub fn contains_type(&self, type_id: std::any::TypeId) -> bool;
 }
 
+/// 配置字段类型与自描述元数据（供 Loader::catalog 与控制面自动发现）。
+pub enum ConfigFieldType { Bool, Int, Float, Str, List, Map, Any }
+pub struct ConfigFieldSchema { /* name, kind, required, nullable, sensitive, default, description */ }
+pub struct PluginSchema { pub description: String, pub fields: Vec<ConfigFieldSchema> }
+pub struct PluginDescriptor {
+    pub name: String,
+    pub description: String,
+    pub required_deps: Vec<&'static str>,
+    pub optional_deps: Vec<&'static str>,
+    pub schema: PluginSchema,
+}
+
 /// 所有挂载到 frame 的应用、扩展或协议引擎均实现此接口。
 pub trait Plugin: Send + Sync + 'static {
     fn name(&self) -> &str;
 
     fn deps(&self) -> Deps {
         Deps::empty()
+    }
+
+    /// 声明插件说明与配置 Schema；控制面据此自动暴露参数描述与敏感字段脱敏。
+    fn schema(&self) -> PluginSchema {
+        PluginSchema::default()
     }
 
     /// 同步配置校验与默认值规整：在进入 apply 前执行；不可被更新钩子绕过。
@@ -516,8 +533,11 @@ pub enum InsertAnchor {
 
 pub trait Resolver: Send + Sync + 'static {
     fn resolve(&self, name: &str) -> Result<Arc<dyn Plugin>, FrameError>;
+    fn list_names(&self) -> Vec<String> { Vec::new() }
 }
 ```
+
+> `Loader` 与 `LoaderService` 除 `apply`、`apply_patches`、`inspect`、`close` 外，亦提供只读快照/自省与就地控制接口：`entries()`、`catalog() -> Vec<PluginDescriptor>`、`validate_entries()`、`validate_patches()`（无副作用预检）及 `restart(id)`。
 
 **装配与热更新流程契约**：
 

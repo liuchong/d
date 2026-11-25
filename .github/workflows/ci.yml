@@ -31,10 +31,15 @@ jobs:
         run: cargo fmt --check
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: |
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo clippy -p d --no-default-features -- -D warnings
+          cargo clippy -p d-minimal --features mcp --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test --workspace
+        run: |
+          cargo test --workspace
+          cargo test -p d-minimal --features mcp
 
   acceptance:
     name: end-to-end acceptance

@@ -30,6 +30,7 @@
         <div class="nav-links">
             <a href="#builder">命令生成器</a>
             <a href="#cli-ref">参数与环境变量</a>
+            <a href="#mcp-ref">MCP 与 Skill</a>
             <a href="#routes-ref">路由矩阵</a>
             <a href="#curl">curl 调试</a>
             <a href="#embed">Rust 嵌入</a>
@@ -92,6 +93,18 @@
                         <option value="env">环境变量（D_* ENV）</option>
                     </select>
                 </div>
+                <div class="field">
+                    <label for="cli-mcp-mode">可选 MCP 模式 (--mcp-*)</label>
+                    <select id="cli-mcp-mode" data-cli-mcp-mode>
+                        <option value="off" selected>关闭（默认）</option>
+                        <option value="stdio">stdio（--mcp-stdio）</option>
+                        <option value="http">Streamable HTTP（--mcp-http）</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="cli-mcp-addr">MCP HTTP 地址 (--mcp-http)</label>
+                    <input id="cli-mcp-addr" type="text" value="127.0.0.1:18081" placeholder="127.0.0.1:18081" data-cli-mcp-addr>
+                </div>
                 <div class="field-checks">
                     <label class="check-item">
                         <input type="checkbox" data-cli-hidden>
@@ -100,6 +113,14 @@
                     <label class="check-item">
                         <input type="checkbox" data-cli-cors>
                         <span>开启 CORS 跨域（<code>--cors</code> / <code>D_CORS=true</code>）</span>
+                    </label>
+                    <label class="check-item">
+                        <input type="checkbox" data-cli-mcp-ro>
+                        <span>MCP 只读模式（<code>--mcp-read-only</code>）</span>
+                    </label>
+                    <label class="check-item">
+                        <input type="checkbox" data-cli-mcp-shut>
+                        <span>允许 MCP 关停（<code>--mcp-allow-shutdown</code>）</span>
                     </label>
                 </div>
             </div>
@@ -172,6 +193,24 @@
                         <td>附加 <code>Access-Control-Allow-Origin: *</code>，预检 <code>OPTIONS</code> 返回 <code>204</code>。</td>
                     </tr>
                     <tr>
+                        <td><code>--no-http</code></td>
+                        <td><code>D_NO_HTTP</code></td>
+                        <td>关闭</td>
+                        <td>仅在内存启动路由（不绑定 HTTP 端口），等待经 MCP 动态设置 <code>proto-http.bind_addr</code>。</td>
+                    </tr>
+                    <tr>
+                        <td><code>--mcp-stdio</code> / <code>--mcp-http &lt;ADDR&gt;</code></td>
+                        <td><code>D_MCP_STDIO</code> / <code>D_MCP_HTTP</code></td>
+                        <td>关闭</td>
+                        <td>按需启用 stdio（日志切往 <code>stderr</code>）或独立 HTTP MCP 控制端点。</td>
+                    </tr>
+                    <tr>
+                        <td><code>--mcp-path</code> / <code>--mcp-token</code> / <code>--mcp-read-only</code> / <code>--mcp-allow-shutdown</code></td>
+                        <td><code>D_MCP_PATH</code> / <code>D_MCP_TOKEN</code> / <code>D_MCP_READ_ONLY</code> / <code>D_MCP_ALLOW_SHUTDOWN</code></td>
+                        <td><code>/mcp</code> / 无 / 关 / 关</td>
+                        <td>配置 HTTP MCP 路径、Bearer 鉴权令牌、只读保护与远程优雅关停授权。</td>
+                    </tr>
+                    <tr>
                         <td><code>-h, --help</code> / <code>-V, --version</code></td>
                         <td>—</td>
                         <td>—</td>
@@ -179,6 +218,21 @@
                     </tr>
                 </tbody>
             </table>
+        </div>
+    </div>
+</section>
+
+<section id="mcp-ref" class="section">
+    <div class="wrap">
+        <div class="section-head">
+            <div>
+                <span class="section-kicker">MCP &amp; Self-Evolving Skills</span>
+                <h2 class="section-title">可选 MCP 动态控制面与随版本演进 Skill</h2>
+                <p class="section-desc">
+                    通过 <code>d-mcp</code>（12 项控制工具 + 4 项只读资源）可在不停服状态下调整插件配置、开关 CORS/隐藏文件、切换根目录、重绑端口与调整日志级别；仓库自带 <code>skills/d</code> 与 <code>skills/d-dev</code>，由各组件 <code>Plugin::schema()</code> 自动同步演进。完整说明见
+                    <a href="https://github.com/liuchong/d/blob/master/docs/mcp.md">docs/mcp.md</a>。
+                </p>
+            </div>
         </div>
     </div>
 </section>

@@ -1,7 +1,7 @@
 # `d` 使用手册
 
 > 本手册覆盖 `d` 的安装运行、命令行与环境变量、无冲突路由规则、内建 Markdown 与词法高亮、HTTP/1.1 与流式压缩语义，以及作为 Rust 库嵌入的完整用法。
-> 相关设计文档：[架构总览](./architecture.md) · [`frame` 微内核](./frame.md) · [示例集](../examples/README.md) · [README](../README.md)
+> 相关设计文档：[架构总览](./architecture.md) · [`frame` 微内核](./frame.md) · [MCP 控制与 Skill](./mcp.md) · [示例集](../examples/README.md) · [README](../README.md)
 
 ---
 
@@ -61,6 +61,13 @@ cargo run -- -r docs -p 8080
 | `-l, --log <LEVEL>` | `RUST_LOG` | `info` | 日志级别：`error`、`warn`、`info`、`debug`、`trace`（亦兼容 `warning` 与模块后缀写法） |
 | `--hidden` | `D_SHOW_HIDDEN` | 关闭 | 允许显示点文件，并允许页面/请求通过 `?hidden=true\|false` 切换 |
 | `--cors` | `D_CORS` | 关闭 | 对所有响应附加 `Access-Control-Allow-Origin: *`，并为 `OPTIONS` 预检返回 `204` |
+| `--no-http` | `D_NO_HTTP` | 关闭 | 启动内存路由而不绑定 HTTP 端口（可稍后经 MCP 动态绑定 `proto-http.bind_addr`） |
+| `--mcp-stdio` | `D_MCP_STDIO` | 关闭 | 开启 stdio MCP 控制面（日志自动切到 `stderr`） |
+| `--mcp-http <ADDR>` | `D_MCP_HTTP` | 未开启 | 开启 Streamable HTTP MCP 端点 |
+| `--mcp-path <PATH>` | `D_MCP_PATH` | `/mcp` | HTTP MCP 请求路径 |
+| `--mcp-token <TOKEN>` | `D_MCP_TOKEN` | 无 | HTTP MCP Bearer 鉴权令牌 |
+| `--mcp-read-only` | `D_MCP_READ_ONLY` | 关闭 | 禁用所有 MCP 写操作工具，仅保留检视/预检/探测 |
+| `--mcp-allow-shutdown` | `D_MCP_ALLOW_SHUTDOWN` | 关闭 | 允许 MCP `d_shutdown` 工具 |
 | `-h, --help` | — | — | 打印帮助信息并退出（返回码 `0`） |
 | `-V, --version` | — | — | 打印版本信息（如 `d 0.1.0`）并退出（返回码 `0`） |
 
@@ -264,3 +271,19 @@ cargo test --workspace
 cargo build -p d-minimal
 scripts/acceptance.sh
 ```
+
+---
+
+## 九、可选 MCP 动态控制与随版本演进 Skill
+
+`d`（默认带 `mcp` 特性）与 `d-minimal`（支持 `--features mcp`）内置可选纯 Rust `d-mcp` 控制面，默认关闭，传入 `--mcp-stdio` 或 `--mcp-http <ADDR>` 后启用：
+
+```bash
+# 仅跑内存路由并通过 stdio 提供 MCP 控制
+d -r ./docs --no-http --mcp-stdio --mcp-allow-shutdown
+
+# 同时托管 HTTP 与受 Bearer Token 保护的 HTTP MCP
+d -H 127.0.0.1 -p 8080 -r ./public --mcp-http 127.0.0.1:18081 --mcp-token secret
+```
+
+全部 12 项控制工具（`d_catalog`、`d_inspect`、`d_validate_patches`、`d_http_probe`、`d_set_plugin_config`、`d_toggle_plugin`、`d_restart_plugin`、`d_apply_patches`、`d_apply_manifest`、`d_set_log_level`、`d_shutdown`）、4 项资源及与 `skills/{d,d-dev}` 协同演进的完整规范请查阅 **[MCP 控制文档](./mcp.md)**。
