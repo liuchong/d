@@ -72,5 +72,7 @@ Requests must use `POST <http_path>` with `Content-Type: application/json` (and 
   `d_set_plugin_config` `{ "id": "proto-http", "config": { "bind_addr": "127.0.0.1:8090" } }` (or `"bind_addr": null` to unbind while keeping in-memory routing active)
 - **Adjust compression threshold or disable compression**:
   `d_set_plugin_config` `{ "id": "ext-compression", "config": { "min_size": 1024 } }` or `d_toggle_plugin` `{ "id": "ext-compression", "enabled": false }`
+- **Mount / tune gateway plugins dynamically across the 17 cataloged plugins**:
+  Use `d_catalog` first to inspect live schemas for `l4-tls`, `proto-ws`, `proto-tcp`, `ext-proxy` (`upstreams`, `http_routes`, `tcp_routes`), `ext-observability` (`/metrics`, `/healthz`, `/readyz`), `ext-ratelimit`, `ext-auth` (`rules` marked `sensitive`), `ext-dev-kit` (`mocks`, `live_reload`, `inspect_path`), `app-files` (`mount_prefix`, `host`), and `doc-render` (`sanitize_html`), then apply via `d_set_plugin_config` or `d_toggle_plugin`.
 - **Tune HTTP parser limits or L4 drain windows**:
   Inspect exact field names in `d_catalog` (`max_request_line_bytes`, `max_headers`, `max_header_bytes`, `max_body_bytes`, `idle_timeout_ms`, `short_drain_ms`, `long_drain_ms`), then patch with `d_set_plugin_config`.

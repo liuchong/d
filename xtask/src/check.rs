@@ -728,6 +728,47 @@ mod tests {
     }
 
     #[test]
+    fn r_arch_7_rejects_gateway_crates_and_rustls_in_minimal() {
+        let mut g = valid_synthetic_graph();
+        g.arch
+            .components
+            .extend(["l4-tls".into(), "ext-proxy".into()]);
+        g.arch.minimal_forbidden.extend([
+            "l4-tls".into(),
+            "ext-proxy".into(),
+            "rustls".into(),
+        ]);
+        g.packages.insert(
+            "l4-tls".into(),
+            PackageInfo {
+                name: "l4-tls".into(),
+                manifest_dir: "crates/components/l4-tls".into(),
+                deps: vec![ext_dep("rustls")],
+            },
+        );
+        g.packages.insert(
+            "ext-proxy".into(),
+            PackageInfo {
+                name: "ext-proxy".into(),
+                manifest_dir: "crates/components/ext-proxy".into(),
+                deps: vec![ws_dep("net-api")],
+            },
+        );
+        let dm = g.packages.get_mut("d-minimal").unwrap();
+        dm.deps.push(ws_dep("l4-tls"));
+        dm.deps.push(ws_dep("ext-proxy"));
+
+        let v = check_architecture(&g);
+        let r7: Vec<_> = v.iter().filter(|x| x.rule == "R-ARCH-7").collect();
+        assert!(
+            r7.iter().any(|x| x.message.contains("l4-tls"))
+                && r7.iter().any(|x| x.message.contains("ext-proxy"))
+                && r7.iter().any(|x| x.message.contains("rustls")),
+            "expected R-ARCH-7 violations for l4-tls, ext-proxy, and rustls: {r7:?}"
+        );
+    }
+
+    #[test]
     fn r_arch_8_rejects_cycle_and_single_impl_contract() {
         let mut g = valid_synthetic_graph();
         g.packages

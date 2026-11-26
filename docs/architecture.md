@@ -156,42 +156,48 @@
 为确保各层依赖边界靠编译器强制保证（而非仅靠约定），整个仓库按契约、实现、入口与装配四个职责区组织：
 
 ```text
-workspace/
+workspace/                          # 32 个 Workspace 包（其中 19 个零外部依赖纯包）
 ├── Cargo.toml                      # 纯 Virtual Workspace 与 [workspace.metadata.architecture]
 ├── crates/
 │   ├── frame/                      # 第 0 层：独立微内核包（纯 std 零外部依赖）
-│   ├── contracts/                  # 纯接口契约包集合（Trait、ScopedService 视图与共享数据类型）
-│   │   ├── net-api/                #   L4 传输与连接生命周期契约
-│   │   ├── http-api/               #   HTTP 请求/响应/流式体/路由/过滤器契约
-│   │   ├── ws-api/                 #   （规划预留）WebSocket 帧与会话契约
+│   ├── contracts/                  # 7 个纯接口契约包（Trait、ScopedService 视图与共享数据类型）
+│   │   ├── net-api/                #   L4 传输、多监听选项与连接生命周期契约
+│   │   ├── tls-api/                #   TLS 握手、SNI/ALPN 协商与热换证契约
+│   │   ├── http-api/               #   HTTP 请求/响应/流式体/参数路由/升级与过滤器契约
+│   │   ├── ws-api/                 #   WebSocket 帧与双向会话注册契约
+│   │   ├── proxy-api/              #   反向代理上游池、负载均衡策略与健康快照契约
 │   │   ├── files-api/              #   文件存储、路径解析与视图扩展契约
 │   │   └── render-api/             #   文档与代码高亮渲染契约（多实现可互换）
-│   ├── components/                 # 各层独立实现组件（仅依赖 contracts/*，禁止组件间直连实现）
-│   │   ├── l4-transport/           #   第 1 层实现：监听、连接台账与优雅排空
-│   │   ├── proto-http/             #   第 2 层实现：自建底层 HTTP 状态机、快照路由与过滤管线
-│   │   ├── proto-ws/               #   （规划预留）第 2 层实现：WebSocket 升级与帧引擎
-│   │   ├── proto-tcp/              #   （规划预留）第 2 层实现：原生 TCP 流处理底座
-│   │   ├── ext-proxy/              #   （规划预留）第 3 层实现：L7/L4 反向代理、上游池与健康检查
+│   ├── components/                 # 18 个独立实现组件（仅依赖 contracts/*，禁止组件间直连实现）
+│   │   ├── l4-transport/           #   第 1 层实现：多监听、连接上限/统计与两阶段优雅排空
+│   │   ├── l4-tls/                 #   第 1 层实现：纯 Rust TLS 1.2/1.3、SNI/ALPN 与原子热换证
+│   │   ├── proto-http/             #   第 2 层实现：自建底层 HTTP/1.1 状态机、流式请求体、参数快照路由与 101 移交
+│   │   ├── proto-ws/               #   第 2 层实现：纯 Rust RFC 6455 WebSocket 引擎（SHA-1/Base64/分帧/控制帧/背压/排空）
+│   │   ├── proto-tcp/              #   第 2 层实现：原生 TCP 监听注册与声明式端口转发引擎
+│   │   ├── ext-proxy/              #   第 3 层实现：L7/L4 反向代理、Keep-Alive 连接池、LB、主被动健康检查、SSE/WS 隧道
+│   │   ├── ext-observability/      #   第 3 层实现：零外依结构化访问日志、/metrics 与 /healthz /readyz 探针
+│   │   ├── ext-ratelimit/          #   第 3 层实现：零外依 IP 令牌桶限流过滤器（429 + Retry-After）
+│   │   ├── ext-auth/               #   第 3 层实现：零外依常量时间 Bearer/Basic/IP CIDR 鉴权过滤器（401/403）
+│   │   ├── ext-dev-kit/            #   第 3 层实现：Mock（含 SSE）、零外链 Live Reload 与白底 /_d/inspect 检视器
 │   │   ├── ext-compression/        #   第 3 层实现：流式感知压缩过滤器
-│   │   ├── ext-cors/               #   第 3 层实现：CORS 过滤器
-│   │   ├── ext-dev-kit/            #   （规划预留）第 3 层实现：本地 HTTPS、实时刷新、Mock 与检视器
-│   │   ├── doc-render/             #   第 4 层实现：独立内建 GFM/HTML 与轻量词法高亮实现
-│   │   ├── doc-render-plain/       #   第 4 层替代实现：零外依纯文本转义渲染器
-│   │   ├── app-files/              #   第 4 层实现：文件服务、安全沙箱与目录索引
+│   │   ├── ext-cors/               #   第 3 层实现：零外依 CORS 过滤器
+│   │   ├── doc-render/             #   第 4 层实现：零外依 GFM/HTML（含 sanitize_html）与轻量词法高亮实现
+│   │   ├── doc-render-plain/       #   第 4 层替代实现：零外依纯文本安全转义渲染器
+│   │   ├── app-files/              #   第 4 层实现：多前缀/多 Host 挂载、安全沙箱与目录索引
 │   │   ├── viewer-markdown/        #   第 4 层实现：Markdown 展示器
 │   │   ├── viewer-code/            #   第 4 层实现：源码与纯文本展示器
 │   │   └── viewer-media/           #   第 4 层实现：图片、音频、视频白底展示器
 │   ├── entries/                    # 极薄外部入口壳与守护底座（零 components/* 依赖）
-│   │   ├── cli/                    #   命令行参数、环境变量、日志与配置入口（d-cli）
-│   │   ├── daemon/                 #   组件无关守护底座、Loader 引导与信号优雅排空（d-daemon）
+│   │   ├── cli/                    #   命令行参数（含 -c/--config）、环境变量、日志与配置入口（d-cli）
+│   │   ├── daemon/                 #   组件无关守护底座、纯 std JSON 解析与 SIGHUP 增量热重载（d-daemon）
 │   │   └── mcp/                    #   可选可配置纯 Rust MCP 控制面（d-mcp）
 │   └── assemblies/                 # 多装配体最终可交付产物
-│       ├── d/                      #   主产物 `d`（声明式 Loader 装配全栈组件，默认含 mcp 特性）
-│       └── d-minimal/              #   轻量静态托管版 `d-minimal`（可选 `--features mcp`，零压缩/富渲染）
+│       ├── d/                      #   主产物 `d`（注册全部 17 个组件，支持默认 + -c 清单，含默认 mcp 特性）
+│       └── d-minimal/              #   轻量静态托管版 `d-minimal`（仅含 tokio，支持 --features mcp，零重依赖与扩展）
 ├── skills/                         # 随版本演进的 Agent Skills（`skills/d` 运行控管、`skills/d-dev` 扩展维护）
-├── xtask/                          # 纯 std 架构门禁、装配矩阵检视与受影响闭包测试工具
-├── examples/                       # 各类典型使用示例集
-├── scripts/                        # 端到端 HTTP 验收脚本
+├── xtask/                          # 纯 std 架构门禁（32 包 8 规则）、装配矩阵检视与受影响闭包测试工具
+├── examples/                       # 各类典型使用示例集（含 examples/gateway/）
+├── scripts/                        # 端到端 HTTP、网关与热重载验收脚本
 └── docs/                           # 精简设计文档与项目主页源码
 ```
 
@@ -199,12 +205,12 @@ workspace/
 
 以下组件在设计上保持纯正通用性，达到稳定边界后均可直接拆出或单独发布供外部项目复用：
 
-1. **框架层微内核包（当前命名待定）**：纯 Rust 响应式插件与异步资源生命周期微内核，适用于守护进程、桌面后端、CLI 插件宿主机及各类动态组合系统。
-2. **守护进程传输与排空包（`l4-transport` + `net-api`）**：通用的多地址监听、连接计数跟踪、分阶段优雅排空与信号协调核心。
-3. **底层 HTTP/WS 引擎包（`proto-http` + `proto-ws` + `http-api`）**：控制面与数据面分离、无锁不可变快照路由、流式零缓冲优先的轻量底层协议引擎。
-4. **内建文档与词法高亮包（`doc-render` / `doc-render-plain` + `render-api`）**：零外部脚本、零网络请求、静态编译内建的 Markdown（含嵌入式 HTML）与多语言轻量语法高亮库，并附带纯文本安全转义替代实现 `doc-render-plain` 实证同契约可互换。
-5. **文件与展示引擎包（`app-files` + `viewer-*`）**：即插即用的白底安全静态文件托管与可插拔内容浏览套件。
-6. **通用反向代理与开发提效包（`ext-proxy`、`ext-dev-kit`）**：面向现代 AI 流式与本地联调痛点的代理及开发增强套件（阶段 4/5 规划）。
+1. **框架层微内核包（`frame`）**：纯 Rust 零外依响应式插件与异步资源生命周期微内核，适用于守护进程、桌面后端、CLI 插件宿主机及各类动态组合系统。
+2. **守护进程传输与 TLS 包（`l4-transport` + `l4-tls` + `net-api`/`tls-api`）**：通用的多地址监听、连接上限与统计、分阶段优雅排空、纯 Rust SNI/ALPN 与零断连热换证核心。
+3. **底层 HTTP/WS/TCP 引擎包（`proto-http` + `proto-ws` + `proto-tcp` + `http-api`/`ws-api`）**：控制面与数据面分离、无锁不可变快照路由、流式零缓冲优先、RFC 6455 与原生 TCP 的轻量底层协议引擎。
+4. **内建文档与词法高亮包（`doc-render` / `doc-render-plain` + `render-api`）**：零外部脚本、零网络请求、静态编译内建的 Markdown（含嵌入式 HTML 与可选净化）及多语言轻量语法高亮库，并附带纯文本安全转义替代实现 `doc-render-plain` 实证同契约可互换。
+5. **文件与展示引擎包（`app-files` + `viewer-*`）**：即插即用的白底安全多挂载静态文件托管与可插拔内容浏览套件。
+6. **通用反向代理、治理与开发提效包（`ext-proxy`、`ext-observability`、`ext-ratelimit`、`ext-auth`、`ext-dev-kit`）**：面向现代 AI 流式与线上/本地联调统一场景的代理、纯 `std` 治理及开发增强套件。
 7. **`d` 与 `d-minimal` 宿主发行版、可选 `d-mcp`、`skills/` 与 `xtask` 工具链**：基于组件无关 `d-daemon` 底座与 `Loader` 声明式装配出全栈 `d`（默认带可选开关关闭状态的 `mcp` 特性）与轻量 `d-minimal`（支持 `--features mcp`）；结合组件 `Plugin::schema()` 自描述、`d-mcp` 动态自省工具与 `skills/{d,d-dev}`，令运行控管能力随新组件自动演进，并由 `cargo xtask check/info/test` 强制架构与 Skill 完整性。
 
 ---
@@ -290,9 +296,8 @@ workspace/
    - 实现 `doc-render`（完整 Markdown + 图片相对路径 + 嵌入式 HTML 透传 + 锚点 + 纯 Rust 轻量词法高亮），彻底移除所有外部资源链接；
    - 全面切换为极简白色设计体系，落地 `viewer-markdown`、`viewer-code`、`viewer-media`（图片/音视频 `?view=viewer`）与规范的无冲突路由；
    - 补充包含嵌入式 HTML、本地图片、代码与媒体的示例目录及对应端到端验收项。
-4. **阶段 4：声明式配置驱动、热重载与开发工作流提效扩展**
-   - 接入声明式配置文件解析与增量热更新协调，验证局部热更不中断长连接；
-   - 落地开发工作流提效套件（本地自动 HTTPS、多服务聚合反代、接口模拟、无外链实时刷新、支持 SSE/WS 时间线的白底请求检视器）。
-5. **阶段 5：流量治理扩展与多协议应用示范**
-   - 补齐 WebSocket / 原生 TCP 协议引擎与通用 L7/L4 反向代理、健康检查、TLS 续期、鉴权、限流与指标采集；
-   - 挂载精简示范应用（例如实时消息服务与 AI 流式网关），完成通用守护进程生态闭环验证。
+4. **阶段 4：声明式配置驱动、热重载、治理三件套与开发工作流提效扩展（已落地）**
+   - 落地 `-c/--config`（`D_CONFIG`）纯 `std` JSON 清单解析、`SIGHUP` 全量预检增量热重载与 `/readyz` 探针，实测无关长连接（SSE/WS）热重载不断流；
+   - 交付零外依治理三件套（`ext-observability`、`ext-ratelimit`、`ext-auth`）、开发工作流提效套件（`ext-dev-kit`）、`app-files` 多前缀/多 Host 挂载及 `doc-render` `sanitize_html`。
+5. **阶段 5：纯 Rust TLS、WebSocket / 原生 TCP 与通用反向代理闭环（已落地）**
+   - 交付 `tls-api` + `l4-tls`（SNI/ALPN/原子热换证）、`ws-api` + 纯 Rust RFC 6455 `proto-ws`、`proto-tcp` 与 `proxy-api` + `ext-proxy`（Keep-Alive 池、三种 LB、主被动健康检查、SSE 穿透与 WS 隧道），通过 32 包工作区全量验收与独立干净重建。

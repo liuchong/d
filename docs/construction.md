@@ -765,3 +765,345 @@ flowchart LR
 | `A20` | [x] | `Q14` / `C21,C24` | 全仓 grep 零本机绝对路径前缀、零第三方项目/框架名称；文档数据与实测一致 | 已实测：全仓 grep 零本机家目录绝对路径与零第三方框架/依赖命名泄露；文档及 Pages 数据已同步至 `20` 包 / `13` 零外依 / `109` 测试 / `57` 验收 |
 | `A21` | [x] | 全局门禁 / `C25` | 隔离 `git archive` 干净副本依次通过全部门禁、测试与 `acceptance.sh`，临时目录彻底清理 | 已实测（基线提交 `d5d74f6`）：全新 `mktemp` 导出树完成 `cargo fmt --check`、`cargo xtask check`（20 包 8 规则）、`clippy --workspace --all-targets -- -D warnings`、`cargo test --workspace`（`109 passed, 0 failed`）、`cargo build --workspace` 与 `PORT=18099 scripts/acceptance.sh`（`57 passed, 0 failed`），临时目录已销毁确认不存在 |
 | `A22` | [x] | 交付 / `C26` | GPG 签名提交并推送 `origin/master`，`git log -1 --show-signature` 与远端 SHA 读回一致 | 已实测：M1 (`30dd218`)、M2 (`ae47781`)、M3 (`d5d74f6`) 及收尾记录均经 GPG 签名提交并推送 `origin/master`，工作区干净且远端引用一致 |
+
+
+
+---
+---
+
+# 第三部分：对标现代网关、全协议插件生态与通用反代演进（G1–G5）
+
+> **当前状态声明（施工准备已完成，未启动实现与 Goal）**：
+> - 续接基线：`master @ 095bcc140d86d621933563c883b055816188a48e`（前序阶段 `P1`–`P3` 与 `M1`–`M3` 全部验收闭环，另含提交 `9d2e12b`/`62bfbf5`/`095bcc1` 交付的 `Plugin::schema`、`d-mcp` 可选控制面与仓内 `skills/`，当前 21 个包、13 个零外依纯包、121 项工作区测试、57 项端到端验收均已通过）。
+> - 本部分仅完成需求分析、详细架构设计与可执行施工准备；**尚未编写任何 `G1`–`G5` 业务代码、测试源码，亦未运行本轮验收或启动 `/goal`**。所有 `GC01`–`GC32` 与 `GA01`–`GA28` 均保持未勾选状态。
+> - 开发纪律：严格执行 `bulk-development` / R39（每阶段内部 **完整业务实现 → 完整集成验收 → 关键保护性单元测试** 一次推进）、R13（零旧兼容性包袱、无内部版本号）及 R20/R40/R52（零本机家目录绝对路径、零第三方框架名称、GPG 签名提交、隔离干净重建与及时清理临时产物）。
+
+---
+
+## 9. 演进目标、当前基线与准备核查
+
+### 9.1 演进目标与边界（`G1`–`G5` 全闭环）
+
+对照用户提出的七大评判标准，完成以下五个功能阶段的完整落地：
+
+1. **阶段 `G1`（`GC01`–`GC05`）— L4 多监听、连接上限、TLS/SNI/ALPN 与热换证**：
+   - 升级 `net-api` 与 `l4-transport` 支持 `ListenOptions`（多地址并行监听、最大并发连接上限 `max_connections`、统计快照、绑定 TLS 监听器 ID）；
+   - 新增零外部依赖契约 `crates/contracts/tls-api/` 与纯 Rust TLS 协议栈组件 `crates/components/l4-tls/`，支持 SNI 多域名证书、ALPN、TLS 上游连接器及运行期无中断原子热换证。
+2. **阶段 `G2`（`GC06`–`GC13`）— HTTP 增强、连接升级劫持、纯 Rust WebSocket 与 TCP 引擎**：
+   - 升级 `http-api` 与 `proto-http` 支持路径参数（`:name` 与 `*rest`）、超大/分块请求体流式化（防全量缓冲 OOM）、以及 `101 Switching Protocols` 连接升级劫持移交（`UpgradeHandler` + `BodyKind::Upgrade`）；
+   - 新增零外依契约 `crates/contracts/ws-api/` 与纯 Rust RFC 6455 引擎 `crates/components/proto-ws/`（手写 SHA-1/Base64/分帧/掩码/控制帧/有界发送背压/优雅关闭）；
+   - 新增原生 TCP 引擎组件 `crates/components/proto-tcp/`，打通 L4 自定义协议与 TCP 透传装配。
+3. **阶段 `G3`（`GC14`–`GC17`）— 通用 L7/L4 反向代理、负载均衡与健康检查**：
+   - 新增零外依契约 `crates/contracts/proxy-api/` 与组件 `crates/components/ext-proxy/`，实现 HTTP/1.1 上游连接池、轮询/最少连接/加权轮询、主被动健康检查与熔断、`Forwarded`/`X-Forwarded-*` 头注入与路径剥离、**SSE 零缓冲穿透**、**WebSocket 101 双向隧道代理** 及 L4 TCP 上游转发。
+4. **阶段 `G4`（`GC18`–`GC27`）— 生产治理扩展、开发工作流扩展、静态增强与配置热重载**：
+   - 新增三个 **零外部依赖纯 `std`** 治理组件：`ext-observability`（JSON/文本访问日志、`/metrics` 指标、`/healthz` & `/readyz` 探针）、`ext-ratelimit`（令牌桶限流 `429`）、`ext-auth`（常量时间 `Bearer`/`Basic` 与 IP CIDR 规则 `401`/`403`）；
+   - 新增开发提效组件 `ext-dev-kit`（声明式 Mock 含 SSE 模拟、零外链 `proto-ws` Live Reload、白底 `/_d/inspect` 请求/SSE 时间线/WS 帧检视与一键重放）；
+   - 增强 `app-files` 支持 `mount_prefix` 与 `host` 多挂载，增强 `render-api` + `doc-render` 支持内建白名单 `sanitize_html: bool` 安全净化；
+   - 升级 `d-cli` 与 `d-daemon` 支持 `-c/--config <PATH>` 声明式 JSON 清单及 `SIGHUP` 全量预检增量 Diff 热重载；在全栈 `d` 装配体注册全部新插件（保持既有 `Options`/`create_app*`/`start*` 与 `d-minimal` 零膨胀）。
+5. **阶段 `G5`（`GC28`–`GC32`）— 架构红线更新、多协议/反代示例、文档/Skill/Pages 同步与干净重建交付**：
+   - 更新根目录 `Cargo.toml` `[workspace.metadata.architecture]`（32 个包、19 个 `zero_external_deps`、`d-minimal` 禁入清单扩展）并补齐 `xtask` 规则与 `scripts/acceptance.sh` 端到端网关校验；
+   - 新增通用反代、多协议插件挂载（HTTP/WS/SSE Agent/TCP）示例，同步更新 `README.md`、`docs/`、`docs/pages/`（零 `.js`）与 `skills/{d,d-dev}`；
+   - 完成隔离 `git archive HEAD` 干净重建与 GPG 签名推送。
+
+**非阻塞边界**：HTTP/2、HTTP/3 (QUIC)、ACME 公网证书自动签发与跨节点配置集群同步不作为本次 `G1`–`G5` 阻塞范围，仅保留 ALPN 与抽象契约扩展点。
+
+### 9.2 当前与目标全貌对照
+
+#### 当前源码树（基线 `095bcc1`，21 个 Workspace 包，省略 `target/` 与 `.git/`）
+
+```text
+.
+├── Cargo.toml                            # L1-97: 21个成员包，13个zero_external_deps
+├── crates/
+│   ├── frame/                            # 第 0 层微内核（Plugin::schema/LoaderService 就绪）
+│   ├── contracts/                        # 4个零外依契约包
+│   │   ├── net-api/src/lib.rs            #   L15-172: AsyncByteIo/DrainSignal/Transport/TransportService
+│   │   ├── http-api/src/lib.rs           #   L411-888: BodyKind/HttpRequest/HttpResponse/RouterService/Filter
+│   │   ├── files-api/src/lib.rs          #   FileViewer/ViewerRegistryService
+│   │   └── render-api/src/lib.rs         #   L10-104: MarkdownOptions(含sanitizer预留钩子)/Renderer/RenderService
+│   ├── components/                       # 10个组件
+│   │   ├── l4-transport/src/lib.rs       #   L206-458: DefaultTransportService/TransportPlugin（明文TCP+两阶段排空）
+│   │   ├── proto-http/src/{lib,parser,router,writer}.rs  # HTTP/1.1 状态机与无锁快照路由
+│   │   ├── ext-{compression,cors}/       #   流式感知压缩与 CORS
+│   │   ├── app-files/src/lib.rs          #   L39-212: FilesConfig(root,allow_hidden) + CatchAll 静态托管
+│   │   ├── doc-render/src/lib.rs         #   L20-91: DefaultRenderer + DocRenderPlugin
+│   │   ├── doc-render-plain/src/lib.rs   #   纯文本转义替代实现
+│   │   └── viewer-{markdown,code,media}/ #   白底可插拔内容查看器
+│   ├── entries/
+│   │   ├── cli/src/lib.rs                #   L145-400: CliConfig/McpCliConfig/LogLevel/parse_args
+│   │   ├── daemon/src/lib.rs             #   L46-471: RuntimeControlService/AppHandle/build_from_spec_named/信号退出
+│   │   └── mcp/                          #   可选 pure-Rust d-mcp（12工具 + 4资源）
+│   └── assemblies/
+│       ├── d/src/{lib,main}.rs           #   全栈装配（StaticResolver 9插件 + 可选 d-mcp）
+│       └── d-minimal/src/{lib,main}.rs   #   轻量装配（5插件，仅 tokio，含 doc-render-plain）
+├── skills/{d,d-dev}/                     # 仓内自演进 Agent Skills
+├── xtask/src/check.rs                    # L20-220: 8条架构红线 + Skill 完整性校验
+├── scripts/acceptance.sh                 # 57 项端到端静态+HTTP验收
+└── docs/                                 # architecture.md, frame.md, mcp.md, usage.md, construction.md, gateway-evolution.md, index.html & pages/
+```
+
+#### 当前与目标处理流程差异图
+
+```mermaid
+flowchart LR
+  IN["L4接入 l4-transport"] --> TLS{"是否配置 TLS 监听器?"}
+  TLS -->|新增 GD03/GD04: l4-tls| SNI["SNI选证 / ALPN协商 / 原子热替换"]
+  TLS -->|明文 TCP| DISPATCH
+  SNI --> DISPATCH{"接入协议分发"}
+  DISPATCH -->|新增 GD12/GD13: proto-tcp| TCPAPP["原生TCP业务 / L4上行透传"]
+  DISPATCH -->|修改 GD08-GD10: proto-http| FILTER["HttpFilter 入口链"]
+  FILTER --> FAUTH["新增 GD20-GD22: auth / ratelimit / observability / cors"]
+  FAUTH --> ROUTER["无锁不可变快照路由 (Exact > 新增Param > Prefix > CatchAll)"]
+  ROUTER -->|命中 Upgrade 101| UP["新增 GD08/GD10/GD11: ws-api / proto-ws (RFC6455)"]
+  ROUTER -->|命中反向代理前缀| PROXY["新增 GD14/GD15: ext-proxy (连接池/LB/健康检查/SSE/WS隧道)"]
+  ROUTER -->|命中开发工具前缀| DEV["新增 GD23: ext-dev-kit (Mock/LiveReload/_d/inspect)"]
+  ROUTER -->|修改 GD24: app-files host+mount_prefix| FILES["沙箱静态文件 + doc-render(sanitize_html)"]
+  classDef added fill:#d4edda,stroke:#155724
+  classDef changed fill:#fff3cd,stroke:#856404
+  class TLS,SNI,TCPAPP,FAUTH,UP,PROXY,DEV added
+  class DISPATCH,ROUTER,FILES changed
+```
+
+#### 目标源码树变更总览（计划共 32 个 Workspace 包）
+
+```text
+crates/
+  contracts/
+    tls-api/         # 新建 GD03: TLS 监听器/连接器契约与 TlsAcceptorService/TlsConnectorService
+    ws-api/          # 新建 GD11: WebSocket 帧/消息/会话与 WsRegistryService/ScopedWsRegistry
+    proxy-api/       # 新建 GD14: 上游目标/LB策略/健康检查与 UpstreamPoolService
+    net-api/         # 修改 GD01: ListenOptions(max_connections, tls_listener_id) + TransportStatsSnapshot
+    http-api/        # 修改 GD06: RouteMatch::Param, HttpRequest::path_params, UpgradeHandler/BodyKind::Upgrade
+    render-api/      # 修改 GD25: MarkdownOptions 增 sanitize_html 字段约定及辅助说明
+  components/
+    l4-tls/          # 新建 GD04: 纯 Rust TLS 协议栈实现 + TlsConfigPlugin(证书校验与原子热替换)
+    l4-transport/    # 修改 GD02: 连接上限计数、可选 TlsAcceptorService 握手包装与 stats 查询
+    proto-http/      # 修改 GD07-GD10: 路径参数匹配、分块/大请求体流式化、101 Upgrade 移交
+    proto-ws/        # 新建 GD12: 纯 Rust RFC 6455 引擎(无第三方WS依赖) + WsEnginePlugin
+    proto-tcp/       # 新建 GD13: L4 TCP/透传引擎组件 + TcpEnginePlugin
+    ext-proxy/       # 新建 GD15: L7/L4 通用反向代理(连接池/LB/主被动健康/SSE/WS隧道)
+    ext-observability/ # 新建 GD20: 零外依纯 std 日志、/metrics 与 /healthz /readyz
+    ext-ratelimit/   # 新建 GD21: 零外依纯 std 令牌桶限流 HttpFilter (429)
+    ext-auth/        # 新建 GD22: 零外依纯 std Bearer/Basic/CIDR 鉴权 HttpFilter (401/403)
+    ext-dev-kit/     # 新建 GD23: 开发期 Mock(含SSE)、零外链 Live Reload 与 /_d/inspect 检视台
+    app-files/       # 修改 GD24: FilesConfig 增加 mount_prefix 与 host 多挂载支持
+    doc-render/      # 修改 GD25: 实现内建纯 Rust HTML 白名单净化器 sanitize_html
+  entries/
+    cli/             # 修改 GD26: 增加 -c/--config <PATH> 与 D_CONFIG
+    daemon/          # 修改 GD27: 纯 std JSON 配置清单解析、SIGHUP 全量预检热重载与健康快照
+  assemblies/
+    d/               # 修改 GD28: StaticResolver 注册全部新插件并按配置文件/Options装配
+    d-minimal/       # 修改 GD29: 保持零新增重依赖与接口对齐（仅新增依赖 budget 门禁验证）
+  Cargo.toml & xtask/# 修改 GD30: 32包元数据、19个zero_external_deps、扩展 minimal_forbidden 与校验规则
+```
+
+### 9.3 准备状态核查表
+
+| 准备维度 | 核查内容与位置 | 当前状态 | 缺口与解除条件 |
+| :--- | :--- | :--- | :--- |
+| 需求与标准边界 | 七大提问标准映射为 `GQ01`–`GQ18` 并入第 10 节；H2/H3 与 ACME 明确划为后续 | 已具备 | 无设计缺口 |
+| 架构与契约设计 | [gateway-evolution.md](gateway-evolution.md) 与 `GD01`–`GD32` 已绑定真实基线行号与符号 | 已具备 | 仅存文档，未开始实现 |
+| 唯一外部依赖约束 | 新增纯 Rust TLS 协议栈外部依赖严格限在可裁剪 `l4-tls`；3 个新契约 + 3 个新扩展纯 `std` | 已具备 | 进入 `G1` 编辑 `l4-tls/Cargo.toml` 时经 `xtask check` 校验 |
+| 测试与验收计划 | BDD 场景 `GT01`–`GT28` 与逐条验收标准 `GA01`–`GA28` 已在本手册第 12 节写齐 | 已具备 | 尚未写测试源码；按 `bulk-development` 在每阶段业务实现后编写 |
+| 工具链与运行环境 | `rustc 1.98.1`、`cargo`、`rustfmt`、`clippy`、`curl`、GPG 签名环境均在基线实测可用 | 已具备 | 仅授权后启动 `G1` / `GC01` |
+
+---
+
+## 10. 需求清单与逐文件精确施工差异表
+
+### 10.1 编号需求清单（`GQ01`–`GQ18`）
+
+| 需求 ID | 来源标准 | 明确要求 | 对应阶段 |
+| :--- | :--- | :--- | :--- |
+| `GQ01` | 标准 1/4 | `l4-transport` 支持 `ListenOptions`（多地址监听、`max_connections` 并发上限保护、活跃/拒绝统计、`tls_listener_id` 关联）并保持两阶段优雅排空 | `G1` |
+| `GQ02` | 标准 1/4/7 | 新增零外依 `tls-api` 与独立组件 `l4-tls`（纯 Rust TLS 协议栈），支持 SNI 多证书、ALPN（含 H2 预留口）、TLS 上游连接器及运行期无中断热换证 | `G1` |
+| `GQ03` | 标准 1/2 | `http-api` / `proto-http` 支持 `RouteMatch::Param`（`:id` / `*rest`）抽取至 `HttpRequest::path_params`，保持路由排序 `Priority > Host > Exact > Param > Prefix > CatchAll` | `G2` |
+| `GQ04` | 标准 1/2 | `proto-http` 支持chunked 与大请求体经 `stream_channel()` 增量流式传递至 `BodyKind::Stream`，并持续执行 `max_body_bytes` 上限拦截 | `G2` |
+| `GQ05` | 标准 1/2/3 | `http-api` / `proto-http` 新增 `UpgradeHandler` 与 `BodyKind::Upgrade` 移交机制，正确吐出 `101` 响应头并将裸流及预读字节无损转交长连接协议 | `G2` |
+| `GQ06` | 标准 2/7 | 新增零外依 `ws-api` 与纯 Rust RFC 6455 组件 `proto-ws`（手写 SHA-1/Base64/分帧/掩码/Ping-Pong-Close/有界写队列与排空收尾），支持客户端路由插件化挂载 | `G2` |
+| `GQ07` | 标准 2 | 新增组件 `proto-tcp` 支持声明式多端口原生 TCP 处理与基础转发入口 | `G2` |
+| `GQ08` | 标准 1/3 | 新增零外依 `proxy-api` 与 `ext-proxy`：支持 L7 HTTP/1.1 Keep-Alive 连接复用池、3 种 LB 策略、主被动健康检查与熔断、`Forwarded`/`X-Forwarded-*` 注入与前缀剥离 | `G3` |
+| `GQ09` | 标准 2/3 | `ext-proxy` 完整支持 **SSE 零缓冲穿透**（`streaming: true`）、**WebSocket 101 双向隧道** 及 **L4 TCP 转发** | `G3` |
+| `GQ10` | 标准 1/4/7 | 新增 **零外依纯 `std`** `ext-observability`（JSON/文本访问日志、`/metrics` 指标与直方图、`/healthz` & `/readyz`） | `G4` |
+| `GQ11` | 标准 1/4/7 | 新增 **零外依纯 `std`** `ext-ratelimit`（令牌桶 `429`）与 `ext-auth`（常量时间 `Bearer`/`Basic`/IP CIDR `401`/`403`） | `G4` |
+| `GQ12` | 标准 2/5 | 新增 `ext-dev-kit`：白底 `/_d/inspect`（含 SSE 逐块时间线、WS 帧记录与请求重放）、声明式 Mock（含 SSE 流模拟）与零外链 `proto-ws` Live Reload | `G4` |
+| `GQ13` | 标准 6 | `app-files` 支持 `mount_prefix` 与 `host` 以同进程多挂载不冲突；`doc-render` 支持 `sanitize_html: bool` 内建白名单 HTML 净化 | `G4` |
+| `GQ14` | 标准 1/4/5 | `d-cli`/`d-daemon` 支持 `-c/--config <PATH>`（`D_CONFIG`）纯 `std` JSON 清单加载与 `SIGHUP` 全量预检增量热重载（失败零破坏，不中断无关长流） | `G4` |
+| `GQ15` | 标准 1/2/3/4/5 | 全栈 `d` 装配体集成并暴露全部新插件（各自配完备 `Plugin::schema()` 供 `d-mcp` 自动发现），同时 100% 兼容原有库 API | `G4` |
+| `GQ16` | 标准 7 | `d-minimal` 继续排除全部新增重组件与外部 TLS 依赖，维持除工作区包外唯一外部依赖仅 `tokio` | `G5` |
+| `GQ17` | 标准 7 | 更新根目录 `Cargo.toml` 与 `xtask/src/check.rs`，强制校验 32 包分层与 19 个 `zero_external_deps` 零外依红线 | `G5` |
+| `GQ18` | 标准 2/3/4/5 | 补充反代、HTTP/WS/SSE Agent/TCP 多协议示范，同步 `README.md`、`docs/`、`docs/pages/`（零 `.js`）与 `skills/{d,d-dev}`，完成隔离干净重建并 GPG 签名推送 | `G5` |
+
+### 10.2 逐文件精确施工差异表（`GD01`–`GD32`）
+
+| 变更 ID | 相对路径 | 基线行号 / 符号锚点 | 精确目标变更与新增符号 | 需求 | 施工 / 验收 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `GD01` | `crates/contracts/net-api/src/lib.rs` | `L93-L148`（`Transport` trait 与 `TransportService`/`ScopedTransport`） | 新增 `ListenOptions`（`addr`, `max_connections`, `tls_listener_id`）、`TransportStatsSnapshot`；`Transport` 新增 `listen_with_options`、`stats` 与 `register_tls_acceptor_hook`（或经 `TlsAcceptorService` 可选注入），`ScopedTransport` 同步透传 | `GQ01` | `GC01` / `GA01` |
+| `GD02` | `crates/components/l4-transport/src/lib.rs` | `L206-L458`（`DefaultTransportService`, `Ledger`, `TransportPlugin`） | 接入 `Option<Arc<TlsAcceptorService>>` 可选依赖（`Deps::empty().with_optional::<TlsAcceptorService>()`）；在 accept 循环强制校验 `max_connections` 并计数 `rejected_over_limit`；当设 `tls_listener_id` 时在连接任务内调用 `wrap_inbound` 后再交 `handler` | `GQ01` | `GC02` / `GA01,GA02` |
+| `GD03` | `crates/contracts/tls-api/`（**新建**） | 新建零外依契约包（`Cargo.toml` + `src/lib.rs`） | 定义 `TlsListenerEntry`、`SniCertConfig`、`TlsClientConfig`、`TlsAcceptor`、`TlsConnector`、`TlsAcceptorService`、`TlsConnectorService` | `GQ02` | `GC03` / `GA03` |
+| `GD04` | `crates/components/l4-tls/`（**新建**） | 新建实现组件（`Cargo.toml` + `src/{lib,store,io}.rs` + `tests/tls.rs`） | 使用纯 Rust TLS 协议栈实现 `TlsAcceptor` 与 `TlsConnector`；`TlsPlugin` 实现完整 `schema()`、`validate_config()` 预检 PEM 证书私钥、`Loader` 增量更新时通过 `RwLock<Arc<ServerConfigMap>>` 原子切换 SNI 配置，保留在途会话 | `GQ02` | `GC04` / `GA03,GA04` |
+| `GD05` | `crates/components/l4-transport/tests/`（`Cargo.toml` & 测试） | 在现有组件集成测试基础上补充 | 补充 `max_connections` 拒绝边界、`stats()` 计数与 TLS 封装连接两阶段优雅排空测试 | `GQ01,GQ02` | `GC05` / `GA01`–`GA04` |
+| `GD06` | `crates/contracts/http-api/src/lib.rs` | `L399-L526`（`BodyKind`, `HttpRequest`）、`L701-L739`（`RouteMatch`, `RouteSpec`）、`L608-L698`（`HttpResponse`） | `BodyKind` 新增 `Upgrade(Arc<dyn UpgradeHandler>)`；新增 `UpgradeHandler` trait；`HttpResponse::upgrade` 构造器；`RouteMatch` 新增 `Param(String)`；`HttpRequest` 新增 `pub path_params: BTreeMap<String, String>` 与 `path_param(&self, key: &str)` | `GQ03,GQ05` | `GC06` / `GA05,GA07` |
+| `GD07` | `crates/components/proto-http/src/router.rs` | `L45-L121`（`rebuild_snapshot`, `route_matches`） | `rebuild_snapshot` 按 `(Priority, Host, RouteRank: Exact=4 > Param=3 > Prefix=2 > CatchAll=1, PatternLen, seq)` 排序；实现纯 `std` 段匹配与 `:name`/`*rest` 提取并写入 `req.path_params` | `GQ03` | `GC07` / `GA05` |
+| `GD08` | `crates/components/proto-http/src/parser.rs` | `L50-L120` 及其请求体读取循环、`L57-L80`（`ConnReader`） | 为 `ConnReader` 暴露 `take_io_and_leftover(self) -> (BoxStreamIo, Vec<u8>)`；chunked 或 `Content-Length > stream_body_threshold` 时改为 `tokio::spawn` 流泵经 `stream_channel()` 构造 `BodyKind::Stream`（持续强制 `max_body_bytes` -> `413`） | `GQ04,GQ05` | `GC08` / `GA06` |
+| `GD09` | `crates/components/proto-http/src/writer.rs` | `L14-L160`（`write_response`） | 抽取 `write_head`；当遇到 `BodyKind::Upgrade(handler)` 时调用 `drain.mark_long_lived()`，写出 `101`（或指定）头部并 flush，返回特殊枚举告诉连接循环退出并触发移交 | `GQ05` | `GC09` / `GA07` |
+| `GD10` | `crates/components/proto-http/src/lib.rs` | `L77-L154`（`HttpConnectionDriver::handle`）及 `HttpConfig` | `HttpConfig` 增 `stream_body_threshold`（默认 `65536`）与 schema 字段；`handle` 循环遇到 `Upgrade` 结果立即调用 `reader.take_io_and_leftover()` 并转交 `handler.on_upgrade(io, leftover, drain).await` 后直接返回 | `GQ04,GQ05` | `GC10` / `GA06,GA07` |
+| `GD11` | `crates/contracts/ws-api/`（**新建**） | 新建零外依契约包（`Cargo.toml` + `src/lib.rs`） | 定义 `WsOpcode`, `WsMessage`, `WsCloseFrame`, `WsSession`, `WsHandler`, `WsRegistryService`, `ScopedWsRegistry`（实现 `ScopedService`） | `GQ06` | `GC11` / `GA08` |
+| `GD12` | `crates/components/proto-ws/`（**新建**） | 新建组件（`Cargo.toml` + `src/{lib,frame,handshake,codec}.rs` + `tests/ws.rs`） | 纯 Rust 实现 SHA-1 + Base64（零额外 crate）、RFC 6455 握手验证、分帧解码与掩码、分片拼接、Ping/Pong/Close 自动应答、有界写队列与优雅排空收尾；`WsEnginePlugin` 提供 `WsRegistryService` | `GQ06` | `GC12` / `GA08,GA09` |
+| `GD13` | `crates/components/proto-tcp/`（**新建**） | 新建组件（`Cargo.toml` + `src/lib.rs` + `tests/tcp.rs`） | 提供 `TcpRegistryService`（按 `ListenOptions` 挂载原始 TCP 协议处理器，复用 `TransportService`）与 `TcpEnginePlugin`（支持声明式端口配置） | `GQ07` | `GC13` / `GA10` |
+| `GD14` | `crates/contracts/proxy-api/`（**新建**） | 新建零外依契约包（`Cargo.toml` + `src/lib.rs`） | 定义 `LoadBalanceStrategy`, `BackendConfig`, `HealthCheckConfig`, `UpstreamConfig`, `HttpProxyRouteConfig`, `TcpProxyRouteConfig`, `UpstreamHealthSnapshot`, `UpstreamPoolService` | `GQ08,GQ09` | `GC14` / `GA11` |
+| `GD15` | `crates/components/ext-proxy/`（**新建**） | 新建组件（`Cargo.toml` + `src/{lib,pool,lb,health,http_proxy,ws_tunnel,tcp_proxy}.rs`） | 实现 L7 HTTP/1.1 Keep-Alive 连接池、`RoundRobin`/`LeastConn`/`WeightedRoundRobin`、主被动健康检查与熔断、头重写与路径剥离、SSE 零缓冲穿透、WS 101 隧道及 L4 TCP 透传；暴露完备 `Plugin::schema()` | `GQ08,GQ09` | `GC15` / `GA11`–`GA14` |
+| `GD16`–`GD17` | `crates/components/proto-ws/tests/`、`ext-proxy/tests/` | 在相应组件包内新建集成与保护单测 | 覆盖 RFC 6455 握手/分帧/分片/掩码/背压/排空，以及反代连接池复用、3 种 LB、故障摘除与恢复、SSE 逐块延迟低抖动、WS 隧道、TCP 透传 | `GQ06,GQ08,GQ09` | `GC16`–`GC17` / `GA08`–`GA14` |
+| `GD18`–`GD20` | `crates/components/ext-{observability,ratelimit,auth}/`（**新建 3 包**） | 各自新建零外依纯 `std` 包（`Cargo.toml` + `src/lib.rs` + `tests/*.rs`） | `ext-observability`（访问日志+`/metrics`+`/healthz`+`/readyz`）、`ext-ratelimit`（令牌桶 `429`）、`ext-auth`（常量时间 `Bearer`/`Basic`/IP CIDR `401`/`403`，密钥标 `secret()` 脱敏） | `GQ10,GQ11` | `GC18`–`GC20` / `GA15`–`GA17` |
+| `GD21` | `crates/components/ext-dev-kit/`（**新建**） | 新建组件（`Cargo.toml` + `src/{lib,mock,livereload,inspector}.rs` + `tests/devkit.rs`） | 白底 `/_d/inspect`（含 SSE 时间线与 WS 帧记录 + 重放）、声明式 Mock（支持 SSE 分片延迟）与零外链基于 `proto-ws` 的 Live Reload 注入器 | `GQ12` | `GC21` / `GA18,GA19` |
+| `GD22` | `crates/components/app-files/src/lib.rs` | `L38-L167`（`FilesConfig`, `resolve_files_config`, `schema`）与 `L198-L250`（`mount_route` 与 `handle_request`） | `FilesConfig` 增 `pub mount_prefix: String`（默认 `"/"`）与 `pub host: Option<String>`；若不为 `"/"` 则挂 `RouteMatch::Prefix`，请求剥离前缀并保留 `mount_prefix` 用于目录 301 重定向拼接 | `GQ13` | `GC22` / `GA20` |
+| `GD23` | `crates/contracts/render-api/src/lib.rs` & `doc-render/src/{lib,sanitize}.rs` | `render-api/src/lib.rs:L11-L29`；`doc-render/src/lib.rs:L20-L91` | `render-api` 文档与 `DocRenderPlugin` 增 `sanitize_html: bool` 配置字段（默认 `false`）；开启后由 `doc-render/src/sanitize.rs`（纯 Rust 零外依）清除危险标签/事件属性/`javascript:` 链接 | `GQ13` | `GC23` / `GA21` |
+| `GD24` | `crates/entries/cli/src/lib.rs` | `L144-L186`（`CliConfig`, `help_text`）、`L212-L400`（`parse_args`） | `CliConfig` 增 `pub config_file: Option<PathBuf>`，新增 `-c, --config <PATH>` 与 `D_CONFIG` 解析与单测更新 | `GQ14` | `GC24` / `GA22` |
+| `GD25` | `crates/entries/daemon/src/lib.rs` | `L1-L20`（依赖与模块）、`L46-L110`（`RuntimeControlService`）、`L313-L454`（`run_cli_daemon_with_control` 与 Unix 信号循环） | 新增纯 `std` `config_json.rs` 将 JSON 清单解析为 `Vec<PluginEntry>`（仅依赖 `frame` 绝对不碰组件包）；`RuntimeControlService` 暴露 `readiness_check()`（供 `/readyz`）；`run_cli_daemon_with_control` 载入 `-c` 清单并注册 `SIGHUP` 热重载（先 `loader.validate_entries` 全量预检再增量 `apply`） | `GQ14` | `GC25` / `GA22,GA23` |
+| `GD26` | `crates/assemblies/d/src/lib.rs` | `L35-L86`（`build_spec`） | 在 `StaticResolver` 注册 `l4-tls`、`proto-ws`、`proto-tcp`、`ext-proxy`、`ext-observability`、`ext-ratelimit`、`ext-auth`、`ext-dev-kit`，支持从配置文件清单或 `Options` 构建 `AssemblySpec`，保持已有库函数签名 100% 兼容 | `GQ15` | `GC26` / `GA24` |
+| `GD27` | `crates/assemblies/d/tests/`、`crates/assemblies/d-minimal/` | `crates/assemblies/d/tests/http.rs` 等 | 补齐综合网关集成与热重载验收测试（HTTPS + SNI 热换证 + 多路由反代 + SSE/WS 代理 + 限流/鉴权/指标 + `SIGHUP` 不中断长连接 + MCP 自发现新插件）；确认 `d-minimal` 零膨胀且行为不变 | `GQ15,GQ16` | `GC27` / `GA24,GA25` |
+| `GD28` | `Cargo.toml` & `xtask/src/check.rs` | `Cargo.toml:L1-L97`；`xtask/src/check.rs:L20-L185` | 将 11 个新包纳入 `members`/`default-members` 与 `[workspace.metadata.architecture]`，扩展 `zero_external_deps`（19 包）与 `minimal_forbidden`，更新 `xtask` 红线与正负向单测 | `GQ16,GQ17` | `GC28` / `GA25` |
+| `GD29` | `examples/` & `scripts/acceptance.sh` | 现有 `examples/` 与 `scripts/acceptance.sh` | 新增 `examples/gateway/`（通用反代/Mock/WS/SSE Agent 声明式清单示范）与 `scripts/acceptance.sh` 扩展校验（`/healthz`/`/readyz`/`/metrics`/反代/SSE/`SIGHUP`/WebSocket 握手校验） | `GQ18` | `GC29` / `GA26` |
+| `GD30` | `README.md`, `docs/{architecture,frame,usage,mcp}.md`, `docs/index.html`, `docs/pages/`, `skills/{d,d-dev}/`, `.github/workflows/ci.yml` | 现有文档、Pages（含 `site.eli`）与 Skills | 同步更新至 32 包/19 零外依矩阵、生产/开发用法、反代与多协议挂载文档、Pages 内容（严格零 `.js`）与 `skills/{d,d-dev}`；同步更新 `ci.yml` | `GQ18` | `GC30` / `GA27` |
+| `GD31`–`GD32` | 全工作区 & 隔离干净重建副本 | `HEAD` clean archive | 全量 `fmt --check`、`xtask check`、`clippy` 组合矩阵、`cargo test --workspace`、`cargo test -p d-minimal --features mcp`、`acceptance.sh`、干净重建校验、清理临时物并按逻辑分批 GPG 签名推送 `origin/master` | `GQ17,GQ18` | `GC31,GC32` / `GA27,GA28` |
+
+---
+
+## 11. 阶段总表与施工清单（`G1`–`G5` / `GC01`–`GC32`）
+
+> 严格执行 `bulk-development` / R39：**每阶段内依次完成（1）全部正式业务实现与接线 →（2）编写并跑通集成验收 →（3）补齐关键保护性单测**；写完并核对施工动作立即勾选 `GC*`，仅在最终真实实测通过后才勾选 `GA*`。
+
+| 阶段 | 完成 | 状态 | 阶段范围（`GC*`） | 三段推进要求 | 出口验收 |
+| :--- | :---: | :--- | :--- | :--- | :--- |
+| `G1` | [x] | 已验收 | `GC01`–`GC05` | 先写齐 `net-api`/`l4-transport`/`tls-api`/`l4-tls` 业务实现 → 集成验收（TLS+SNI+连接上限+热换证）→ 保护单测 | `GA01`–`GA04` |
+| `G2` | [x] | 已验收 | `GC06`–`GC13`, `GC16` | 先写齐 `http-api`/`proto-http`/`ws-api`/`proto-ws`/`proto-tcp` → 集成验收（参数/流请求/WS/TCP）→ 保护单测 | `GA05`–`GA10` |
+| `G3` | [x] | 已验收 | `GC14`–`GC15`, `GC17` | 先写齐 `proxy-api`/`ext-proxy` → 集成验收（连接池/LB/健康检查/SSE/WS隧道/TCP透传）→ 保护单测 | `GA11`–`GA14` |
+| `G4` | [x] | 已验收 | `GC18`–`GC27` | 先写齐三大纯 `std` 治理插件、`ext-dev-kit`、`app-files`、`doc-render`、`d-cli`/`d-daemon`/`d` 装配 → 集成验收 → 保护单测 | `GA15`–`GA24` |
+| `G5` | [ ] | 待施工 | `GC28`–`GC32` | 更新 `Cargo.toml`/`xtask`/示例/文档/Skills/Pages/CI → 全量测试与 `acceptance.sh` → 干净重建与 GPG 签名交付 | `GA25`–`GA28` |
+
+| 施工 ID | 写完 | 变更/需求 | 目标文件与锚点 | 明确施工动作 | 依赖 | 对应验收 |
+| :--- | :---: | :--- | :--- | :--- | :--- | :--- |
+| `GC01` | [x] | `GD01` / `GQ01` | `crates/contracts/net-api/src/lib.rs` | 增 `ListenOptions`、`TransportStatsSnapshot`、`listen_with_options`、`stats` 与 `ScopedTransport` 转发 | — | `GA01` |
+| `GC02` | [x] | `GD02` / `GQ01` | `crates/components/l4-transport/src/lib.rs` | 接入 `max_connections` 拒绝与统计，增加可选 `TlsAcceptorService` 握手分支并保持两阶段优雅排空 | `GC01,GC03` | `GA01,GA02` |
+| `GC03` | [x] | `GD03` / `GQ02` | `crates/contracts/tls-api/` | 新建零外部依赖 `tls-api` 契约与 `TlsAcceptorService`/`TlsConnectorService` | — | `GA03` |
+| `GC04` | [x] | `GD04` / `GQ02` | `crates/components/l4-tls/` | 新建纯 Rust TLS 协议栈组件与证书校验/SNI/ALPN/原子热换证实现 | `GC03` | `GA03,GA04` |
+| `GC05` | [x] | `GD05` / `GQ01,GQ02` | `crates/components/{l4-transport,l4-tls}/tests/` | 补齐多监听、连接上限、TLS SNI、ALPN 与运行期热换证不杀旧连接集成与单测 | `GC02,GC04` | `GA01`–`GA04` |
+| `GC06` | [x] | `GD06` / `GQ03,GQ05` | `crates/contracts/http-api/src/lib.rs` | 增 `RouteMatch::Param`、`HttpRequest::path_params`、`UpgradeHandler`、`BodyKind::Upgrade`、`HttpResponse::upgrade` | — | `GA05,GA07` |
+| `GC07` | [x] | `GD07` / `GQ03` | `crates/components/proto-http/src/router.rs` | 实现 `:name`/`*rest` 匹配排序与参数注入 | `GC06` | `GA05` |
+| `GC08` | [x] | `GD08` / `GQ04,GQ05` | `crates/components/proto-http/src/parser.rs` | 实现 `take_io_and_leftover` 与大包/分块请求体流式泵入 `BodyKind::Stream` | `GC06` | `GA06,GA07` |
+| `GC09` | [x] | `GD09` / `GQ05` | `crates/components/proto-http/src/writer.rs` | 写出 `101` Upgrade 响应头并向上层返回移交信号 | `GC06` | `GA07` |
+| `GC10` | [x] | `GD10` / `GQ04,GQ05` | `crates/components/proto-http/src/lib.rs` | 增加 `stream_body_threshold` 配置与连接驱动 `Upgrade` 移交逻辑 | `GC07`–`GC09` | `GA05`–`GA07` |
+| `GC11` | [x] | `GD11` / `GQ06` | `crates/contracts/ws-api/` | 新建零外部依赖 `ws-api` 契约与 `ScopedWsRegistry` | `GC06` | `GA08` |
+| `GC12` | [x] | `GD12` / `GQ06` | `crates/components/proto-ws/` | 新建纯 Rust RFC 6455（SHA-1/Base64/分帧/掩码/分片/控制帧/背压/排空）与 `WsEnginePlugin` | `GC10,GC11` | `GA08,GA09` |
+| `GC13` | [x] | `GD13` / `GQ07` | `crates/components/proto-tcp/` | 新建原生 TCP 监听注册与声明式转发引擎 `proto-tcp` | `GC02` | `GA10` |
+| `GC14` | [x] | `GD14` / `GQ08,GQ09` | `crates/contracts/proxy-api/` | 新建零外依反代/LB/健康检查契约包 | — | `GA11` |
+| `GC15` | [x] | `GD15` / `GQ08,GQ09` | `crates/components/ext-proxy/` | 新建 L7/L4 反向代理、Keep-Alive 连接池、LB、主被动健康熔断、SSE 与 WS 隧道 | `GC04,GC10,GC13,GC14` | `GA11`–`GA14` |
+| `GC16` | [x] | `GD16` / `GQ06,GQ07` | `crates/components/proto-{http,ws,tcp}/tests/` | 补齐 G2 集成测试与核心状态机保护单测（RFC 6455/参数路由/流请求/TCP 透传） | `GC12,GC13` | `GA05`–`GA10` |
+| `GC17` | [x] | `GD17` / `GQ08,GQ09` | `crates/components/ext-proxy/tests/` | 补齐 G3 集成测试与保护单测（连接池、3种LB、主被动健康摘除/恢复、SSE、WS隧道、TCP透传） | `GC15` | `GA11`–`GA14` |
+| `GC18` | [x] | `GD18` / `GQ10` | `crates/components/ext-observability/` | 新建纯 `std` 访问日志、`/metrics` 指标桶、`/healthz` & `/readyz` | `GC06` | `GA15` |
+| `GC19` | [x] | `GD19` / `GQ11` | `crates/components/ext-ratelimit/` | 新建纯 `std` 令牌桶限流 `HttpFilter` (`429`) | `GC06` | `GA16` |
+| `GC20` | [x] | `GD20` / `GQ11` | `crates/components/ext-auth/` | 新建纯 `std` 常量时间 `Bearer`/`Basic`/IP CIDR 鉴权 `HttpFilter` (`401`/`403`) | `GC06` | `GA17` |
+| `GC21` | [x] | `GD21` / `GQ12` | `crates/components/ext-dev-kit/` | 新建 Mock（含 SSE）、零外链 Live Reload 与白底 `/_d/inspect`（SSE 时间线+WS 帧+重放） | `GC11,GC12` | `GA18,GA19` |
+| `GC22` | [x] | `GD22` / `GQ13` | `crates/components/app-files/src/lib.rs` | `FilesConfig` 增 `mount_prefix` 与 `host`，支持同进程多目录前缀挂载与 301 前缀拼接 | `GC06` | `GA20` |
+| `GC23` | [x] | `GD23` / `GQ13` | `crates/contracts/render-api/`, `crates/components/doc-render/` | 新增 `sanitize_html: bool` 配置与纯 Rust 白名单 HTML 净化器 | — | `GA21` |
+| `GC24` | [x] | `GD24` / `GQ14` | `crates/entries/cli/src/lib.rs` | 新增 `-c/--config <PATH>` 与 `D_CONFIG` 解析及校验单测 | — | `GA22` |
+| `GC25` | [x] | `GD25` / `GQ14` | `crates/entries/daemon/src/lib.rs` | 实现纯 `std` JSON 清单解析、`readiness_check()` 与 `SIGHUP` 全量预检增量热重载 | `GC24` | `GA22,GA23` |
+| `GC26` | [x] | `GD26` / `GQ15` | `crates/assemblies/d/src/lib.rs` | 注册全部新增组件入 `StaticResolver` 并支持配置文件驱动装配，保持既有 API 不变 | `GC04`–`GC25` | `GA24` |
+| `GC27` | [x] | `GD27` / `GQ15` | `crates/components/ext-*/tests/`, `crates/assemblies/d/tests/` | 编写 G4 全部组件测试与整车网关集成验收（含热重载不断流与 MCP 发现控制新插件） | `GC18`–`GC26` | `GA15`–`GA24` |
+| `GC28` | [x] | `GD28` / `GQ16,GQ17` | 根 `Cargo.toml`, `xtask/src/` | 更新 32 包元数据、19 个零外依红线、`minimal_forbidden` 并跑通 `xtask` 正负单测 | `GC26` | `GA25` |
+| `GC29` | [x] | `GD29` / `GQ18` | `examples/`, `scripts/acceptance.sh` | 补充反代+多协议声明式示例与端到端网关/热重载/WS/指标脚本验收 | `GC27,GC28` | `GA26` |
+| `GC30` | [x] | `GD30` / `GQ18` | `README.md`, `docs/`, `docs/pages/`, `skills/`, `ci.yml` | 同步文档、Pages（零 `.js`）、`skills/{d,d-dev}` 与 CI 工作流 | `GC29` | `GA27` |
+| `GC31` | [x] | `GD31` / `GQ16`–`GQ18` | 全工作区 | 执行 `fmt`、`xtask check/info`、`clippy` 全特性矩阵、`cargo test --workspace`、`d-minimal --features mcp` 与 `scripts/acceptance.sh` | `GC30` | `GA25`–`GA27` |
+| `GC32` | [ ] | `GD32` / `GQ18` | 隔离 `git archive` 副本 + `master` | 干净副本跑通全部门禁并清理临时目录；审计零绝对路径/第三方名，按逻辑组 GPG 签名提交并推送 `origin/master` 且读回 | `GC31` | `GA28` |
+
+---
+
+## 12. BDD 验收场景（`GT01`–`GT28`）与逐条验收清单（`GA01`–`GA28`）
+
+### 12.1 核心 BDD 测试场景（给定 / 当 / 则）
+
+- **`GT01`（连接上限保护）**：**给定** `l4-transport` 对某监听器配置 `max_connections = 2`；**当** 并发建立 3 条活跃 TCP 连接；**则** 前 2 条正常服务，第 3 条立即被拒绝并关闭，`Transport::stats().rejected_over_limit >= 1`。
+- **`GT02`–`GT04`（多监听、TLS SNI 与无损热换证）**：**给定** `l4-tls` 配置两个 SNI 域名证书并通过 `ListenOptions` 挂载 HTTPS 监听；**当** 客户端按 SNI 握手建连后保持长流不关闭，同时经 `Loader::apply_patches` 热更新为新证书；**则** 原有 TLS 长流零报错继续完成传输，新发起的 TLS 连接立刻观察到新证书。
+- **`GT05`（路径参数路由）**：**给定** 注册 `RouteMatch::Param("/v1/agents/:agent_id/files/*rest")`；**当** 请求 `GET /v1/agents/a1/files/sub/doc.md`；**则** `req.path_param("agent_id") == Some("a1")` 且 `rest == Some("sub/doc.md")`，且精确路由优先级始终高于参数路由与前缀路由。
+- **`GT06`（流式请求体与大小上限）**：**给定** `proto-http` 设 `stream_body_threshold = 4096`、`max_body_bytes = 131072`；**当** 发送 chunked POST（20 KiB）与超大请求（256 KiB）；**则** 20 KiB 以 `BodyKind::Stream` 流式透传（内存无全量双份拷贝），256 KiB 返回 `413 Payload Too Large`。
+- **`GT07`–`GT09`（HTTP 101 移交 & 纯 Rust RFC 6455 WebSocket）**：**给定** 通过 `WsRegistryService` 挂载回显/广播处理器；**当** 客户端完成合法握手后发送跨分片文本帧、`Binary` 帧、`Ping` 帧，并在发送途中触发优雅停机；**则** 自动收到 `Pong`，分片重组准确，停机时在排空窗口内收到 `Close` 帧并平滑关闭，且非法的 `Sec-WebSocket-Version` 返回 `400/426`。
+- **`GT10`（原生 TCP 引擎）**：**给定** `proto-tcp` 挂载自定义回显与 TLS 透传入口；**当** 客户端直连发包；**则** 字节流无损往返且随 `Loader` 卸载立即关闭端口并排空活跃会话。
+- **`GT11`–`GT14`（L7/L4 反向代理、负载均衡、健康检查、SSE/WS 隧道）**：**给定** `ext-proxy` 挂 2 个后端节点、主动探针与被动熔断；**当**（a）分别以 `round_robin`/`least_conn`/`weighted_round_robin` 压测；（b）击穿一个后端使其连续失败达阈值；（c）经反代访问 SSE 接口（后端分 3 次延迟吐出事件）；（d）经反代发起 WebSocket 升级并发 10 条双向帧；（e）配置 L4 TCP 反代；**则** 故障后端在有效间隔内被自动摘除、零 502 泄漏给后续正常请求并在恢复后自动重回池；SSE 首事件在毫秒级内即刻到达客户端不被缓存；WS 双向隧道帧序 100% 保留。
+- **`GT15`–`GT17`（零外依治理扩展：观测 / 限流 / 鉴权）**：**给定** `ext-observability`、`ext-ratelimit`、`ext-auth` 已激活；**当**（a）请求受保护前缀不带或带错误 Token；（b）同 IP 突发请求超出令牌桶容量；（c）读取 `/healthz`、`/readyz` 与 `/metrics`；**则** 非法请求返 `401`/`403`（日志与 Inspect 绝不泄露密钥），超限返 `429` 附 `Retry-After`，`/metrics` 准确统计请求计数与延迟桶且不引入任何外部库。
+- **`GT18`–`GT19`（`ext-dev-kit` 开发工具链）**：**给定** 挂载 Mock 规则（含 SSE Mock）、Live Reload 与 `/_d/inspect`；**当** 发起 HTTP、SSE 与 WS 请求并访问 `/_d/inspect`（白底 `#ffffff`、零外网 CDN）及触发重放；**则** SSE 分片到达时间戳与 WS 双向帧列表清晰可见，一键重放收到一致状态，Live Reload 通过本机 WS 收到刷新帧。
+- **`GT20`–`GT21`（`app-files` 多挂载与 `doc-render` 安全净化）**：**给定** 挂两个不同根目录到 `/docs/` 与 `/assets/` 并开启 `sanitize_html: true`；**当** 访问 `/docs`（301 至 `/docs/`）与含 `<script>alert(1)</script><p onclick="bad()">ok</p><a href="javascript:x()">link</a>` 的 Markdown；**则** `<script>`、`onclick` 与 `javascript:` 被彻底清除而正常标签 `<p>`/`<a>` 安全保留。
+- **`GT22`–`GT23`（声明式 JSON 配置与 `SIGHUP` 无中断热重载）**：**给定** 进程以 `-c gateway.json` 启动并正保持一条进行中的 SSE/WS 连接；**当** 分别发送含语法/校验错误的 `SIGHUP` 与合法新增后端的 `SIGHUP`；**则** 错误配置被全量预检整批拒载、原拓扑 100% 不受影响，合法更新原地增量生效且进行中的无关长连接完全不断开。
+- **`GT24`（MCP 自发现全部新插件）**：**给定** 运行 `--mcp-http` 挂载全栈 `d`；**当** 调用 `d_catalog`、`d_set_plugin_config`（如动态调整 `ext-proxy` 权重或 `ext-ratelimit` 阈值）；**则** 全部新插件无需硬编码即可被列出与热调控，且秘密字段自动显示 `***`。
+- **`GT25`–`GT28`（`d-minimal`、架构门禁、接受度脚本、文档与干净重建）**：**给定** 更新后 `Cargo.toml` 与 `xtask`；**当** 运行 `xtask check`（含新增正负向单测）、`cargo tree -p d-minimal`、全工作区测试、`scripts/acceptance.sh` 与隔离 `git archive` 干净重建；**则** 32 包全部合规、`d-minimal` 唯一外部依赖仍为 `tokio`、零外部框架名称/家目录路径、文档与 `docs/pages/` 零 `.js` 可正常访问且 GPG 签名同步远端。
+
+### 12.2 逐条验收清单（`GA01`–`GA28`，最终实测通过后才勾选）
+
+| 验收 ID | 通过 | 需求/施工 | 执行命令与检查标准 | 实测证据（验收后填写） |
+| :--- | :---: | :--- | :--- | :--- |
+| `GA01` | [x] | `GQ01` / `GC01,GC02,GC05` | `cargo test -p net-api -p l4-transport` 通过；`max_connections` 越限拒绝、`stats()` 与多地址并行监听准确 | 已实测：`l4-transport` 4/4 通过（`max_connections_caps_active_streams_and_multi_listeners_coexist` 实测第 3 连接被拒、`stats()` 准确、双监听并存） |
+| `GA02` | [x] | `GQ01` / `GC02,GC05` | `l4-transport` 支持可选 `TlsAcceptorService` 且 TLS/TCP 连接同样遵循两阶段优雅排空 | 已实测：`tls_sni_alpn_preflight_hot_reload_and_drain_work` 实测 TLS 连接经两阶段排空收到 `BYE` 正常退出 |
+| `GA03` | [x] | `GQ02` / `GC03,GC04,GC05` | `cargo tree -p tls-api` 零外部依赖；`cargo test -p l4-tls` 验证 SNI 选证、ALPN 与 `TlsConnector` 握手通过 | 已实测：`cargo tree -p tls-api` 仅依赖 `frame`/`net-api`；`a.test`/`b.test` SNI、ALPN `http/1.1` 与自定义 CA `TlsConnector` 握手全过 |
+| `GA04` | [x] | `GQ02` / `GC04,GC05` | `l4-tls` 非法 PEM 预检拒载测试通过；运行期热更新证书后旧 TLS 长连接不中断、新连接切换新证书 | 已实测：非法 PEM 返 `ValidationFailed`；`Loader::apply_patches` 热换证后旧 `HOLD` TLS 流继续收发，新连接立即切至 `cert_a2` |
+| `GA05` | [x] | `GQ03` / `GC06,GC07,GC10,GC16` | `proto-http` 参数路由 `:id`/`*rest` 匹配与排序优先级单测/集成测试全通过 | 已实测：`param_routing_and_priority_ranking` 通过，提取 `:agent_id`、`*rest` 且 `Exact > Param > Prefix` |
+| `GA06` | [x] | `GQ04` / `GC08,GC10,GC16` | `proto-http` chunked 与大请求体流式泵测试 + 超出 `max_body_bytes` 返回 `413` 测试通过 | 已实测：`streaming_request_body_and_max_limit_413` 通过，超阈值转 `BodyKind::Stream`、超 `max_body_bytes` 返 `413` |
+| `GA07` | [x] | `GQ05` / `GC06,GC08`–`GC10,GC16` | `proto-http` `BodyKind::Upgrade` 写出 `101` 并无损转交预读字节与连接流测试通过 | 已实测：`upgrade_handoff_writes_101_and_passes_leftover_bytes` 通过，写出 `101` 且完整保留 `leftover` 预读负载 |
+| `GA08` | [x] | `GQ06` / `GC11,GC12,GC16` | `cargo tree -p ws-api` 零外部依赖；`proto-ws` 无第三方 WS 库（仅 `tokio`）通过握手/分帧/分片/掩码/Ping-Pong-Close 全部测试 | 已实测：`cargo tree -p ws-api` 零外依、`proto-ws` 仅含 `tokio`；unit 3/3 + `websocket_handshake_fragmentation_control_frames_and_unmasked_rejection` 全通过 |
+| `GA09` | [x] | `GQ06` / `GC12,GC16` | `proto-ws` 写端有界背压与停机两阶段排空收尾测试通过 | 已实测：`websocket_backpressure_and_graceful_drain_close_1001` 实测 `try_send` 返回 `WouldBlock` 且停机排空发送 `Close(1001)` |
+| `GA10` | [x] | `GQ07` / `GC13,GC16` | `cargo test -p proto-tcp` 验证原生 TCP 服务注册与声明式端口转发及卸载清理通过 | 已实测：`tcp_registry_and_declarative_forwarding_work_and_cleanup` 通过 |
+| `GA11` | [x] | `GQ08` / `GC14,GC15,GC17` | `cargo tree -p proxy-api` 零外部依赖；`ext-proxy` 连接池复用、`Forwarded`/`X-Forwarded-*` 头注入与 `strip_prefix` 通过 | 已实测：`cargo tree -p proxy-api` 仅依赖 `frame`；`ext-proxy` unit 2/2 + `tests/proxy.rs` 2/2 实测 Keep-Alive 池复用、`strip_prefix` 与 `Forwarded`/`X-Forwarded-*` 通过 |
+| `GA12` | [x] | `GQ08` / `GC15,GC17` | `ext-proxy` 三种负载均衡策略（RR/LC/WRR）及主被动健康检查摘除与自愈恢复测试通过 | 已实测：`round_robin_and_weighted_and_least_conn_select_accurately`、`passive_ejection_excludes_until_cooldown_expires` 与主动探针摘除/恢复集成测试通过 |
+| `GA13` | [x] | `GQ09` / `GC15,GC17` | `ext-proxy` 端到端 SSE 逐块零缓冲穿透与 WebSocket `101` 双向隧道测试通过 | 已实测：`tests/proxy.rs` 实测 SSE 分块直通（无缓冲延迟）及经反代 WS `101` 双向帧隧道完整往返 |
+| `GA14` | [x] | `GQ09` / `GC15,GC17` | `ext-proxy` L4 TCP 透传与超时控制测试通过 | 已实测：`tests/proxy.rs` L4 TCP 透传通道字节往返与超时控制通过 |
+| `GA15` | [x] | `GQ10` / `GC18,GC27` | `cargo tree -p ext-observability` 严格零外部依赖；访问日志、`/metrics` 与 `/healthz`/`/readyz` 测试通过 | 已实测：`cargo tree -p ext-observability` 仅 `frame/http-api/net-api/proxy-api`；`observability_logs_metrics_and_probes_work` 通过（含 JSON 访问日志与失败纤程 `/readyz -> 503`） |
+| `GA16` | [x] | `GQ11` / `GC19,GC27` | `cargo tree -p ext-ratelimit` 严格零外部依赖；限流放行、`429` + `Retry-After` 与桶清理测试通过 | 已实测：`cargo tree -p ext-ratelimit` 仅 `frame/http-api`；`ratelimit_enforces_burst_and_recovers_after_refill` 实测放行、`429`+`Retry-After` 与补桶恢复 |
+| `GA17` | [x] | `GQ11` / `GC20,GC27` | `cargo tree -p ext-auth` 严格零外部依赖；`Bearer`/`Basic`/IP CIDR `401`/`403` 及脱敏测试通过 | 已实测：`cargo tree -p ext-auth` 仅 `frame/http-api`；`auth_bearer_basic_ip_cidr_and_secret_schema` 实测 `401`/`403`/`200` 与 `sensitive` 脱敏 |
+| `GA18` | [x] | `GQ12` / `GC21,GC27` | `ext-dev-kit` 声明式 Mock（含 SSE）与零外链 Live Reload（WS 推送刷新帧）测试通过 | 已实测：`dev_kit_mocks_sse_inspector_replay_and_live_reload_work` 实测 Mock HTML 内联脚本注入（零 `http(s)://`）、SSE Mock 与 Live Reload WS 帧推送 |
+| `GA19` | [x] | `GQ12` / `GC21,GC27` | `ext-dev-kit` 白底 `/_d/inspect`（含 SSE 时间线、WS 帧摘要与重放、零 CDN）测试通过 | 已实测：`/_d/inspect` 验证 `#ffffff` 白底零外链、SSE 分片时间线记录与 `/_d/inspect/api/replay` 重放一致状态 |
+| `GA20` | [x] | `GQ13` / `GC22,GC27` | `app-files` 多前缀 `/docs` 与多 Host 静态目录同时挂载 + 301 重定向全通过 | 已实测：`multi_mount_prefix_and_host_isolation` 实测 `/docs`（`Host: docs.local`）+ `/assets` 并存与 `/docs`->`/docs/` 301 |
+| `GA21` | [x] | `GQ13` / `GC23,GC27` | `doc-render` `sanitize_html: true` 剥离危险标签/事件/`javascript:` URL 测试通过，默认模式保持兼容 | 已实测：`doc-render` unit 2/2 + `render.rs` 3/3 通过，默认保持透传，`sanitize_html: true` 剥离 `<script>`/`onclick`/`javascript:` |
+| `GA22` | [x] | `GQ14` / `GC24,GC25,GC27` | `d-cli` `-c/--config`（`D_CONFIG`）与 `d-daemon` 纯 `std` JSON 装配解析及失败拒载测试通过 | 已实测：`d-cli` 4/4 通过（`-c`/`--config=`/`D_CONFIG`）；`d-daemon/tests/config_reload.rs` 2/2 通过（JSON 清单解析、非法 JSON 拒载与 `readiness_ok`） |
+| `GA23` | [x] | `GQ14` / `GC25,GC27` | 实机或进程测试验证 `SIGHUP` 错误配置保留原服务、合法热重载动态生效且不中断无关 SSE/WS 长连接 | 已实测：`d/tests/gateway.rs::sighup_reload_keeps_unrelated_sse_stream_alive_and_rejects_bad_manifest` 实机 `kill -HUP` 验证错误配置拒载、增量启用 CORS 且原 SSE 流无损收完 |
+| `GA24` | [x] | `GQ15` / `GC26,GC27` | `d` 全栈集成与既有 41+1 项及新增网关/MCP 综合测试全绿（`d-mcp` 自动发现并调控新插件、既有库 API 不变） | 已实测：`d/tests/http.rs` 41/41 + `mcp.rs` 1/1 + `gateway.rs` 2/2（17 插件全自发现）全通过；工作区总计 149 passed, 0 failed（`d-minimal --features mcp` 3/3） |
+| `GA25` | [x] | `GQ16,GQ17` / `GC28,GC31` | `cargo xtask check`（32 包 8 条红线）、`cargo xtask info`（19 个纯包 `0 violations`）、`cargo test -p xtask`（含负向违例单测）、`cargo tree -p d-minimal`（唯一外依仅 `tokio`）及 `d-minimal` 实测全通过 | 已实测：`xtask check`（32 包 8 规则 0 违例）、`xtask info`（19 纯包 `OK`）、`cargo test -p xtask` `16 passed`（含 `r_arch_7_rejects_gateway_crates_and_rustls_in_minimal`）、`cargo tree -p d-minimal` 仅含 `tokio`、`d-minimal --features mcp` 3/3 通过 |
+| `GA26` | [x] | `GQ18` / `GC29,GC31` | `examples/gateway/` 实跑可通；`scripts/acceptance.sh` 原 57 项及新增网关/WS/SSE/指标/`SIGHUP` 验收全通过 | 已实测：`examples/gateway/{gateway,dev}.json` 实机启动与核心端点返 `200`；`PORT=18099 scripts/acceptance.sh` 输出 `69 passed, 0 failed`（含全部 57 原有项 + 12 网关/Mock SSE/鉴权/限流/Inspect/`SIGHUP` 项） |
+| `GA27` | [x] | `GQ18` / `GC30,GC31` | `fmt --check`、`clippy` 全特性矩阵零警告、`cargo test --workspace` 全绿；`docs/pages/` 零 `.js` 且全页 `200`；全仓零本机家目录绝对路径与零第三方框架名称 | 已实测：`fmt --check`、3 组 `clippy` 零警告、`cargo test --workspace` 150 passed（含 xtask 16）、`docs/` 下零 `.js`、静态托管 5 路径全 `200`、全仓审计 `abs_paths=0`、`third_party_hits=0` |
+| `GA28` | [ ] | `GQ18` / `GC32` | 隔离 `git archive HEAD` 干净副本依次通过全部门禁、测试与 `acceptance.sh`，临时目录彻底清理；GPG 签名提交并推送 `origin/master` 且读回一致 | 待验收 |
+
+---
+
+## 13. 进度看板、恢复入口与第三部分 Goal 驱动文案
+
+### 13.1 当前进度与恢复入口
+
+- **唯一施工入口**：`docs/construction.md`（第三部分，第 9–13 节）
+- **配套设计规范**：`docs/gateway-evolution.md`、`docs/architecture.md`、`docs/frame.md`、`docs/mcp.md`
+- **汇报档位**：节点简报（默认每完成一个阶段或门禁里程碑同步真实状态与证据）
+- **当前阶段**：已完成 `G1`–`G4`（`GC01`–`GC27`、`GA01`–`GA24`）全量实现与验收（施工 `27/32`，验收 `24/28`，工作区 32 包 `cargo test --workspace` `149 passed, 0 failed`、`cargo test -p d-minimal --features mcp` `3 passed`、全特性矩阵 `clippy` 零警告、`cargo xtask check/info` 0 违规）；当前进入 `G5`（`GC28`–`GC32`）收口与干净交付阶段
+
+### 13.2 可直接复制到 `/goal` 的驱动文案
+
+```text
+/goal 在当前工作仓库 .（分支 master，基线 095bcc140d86d621933563c883b055816188a48e）持续推进 d 的现代 L4/L7 网关演进、全协议插件生态（HTTP/WebSocket/SSE Agent/TCP）与通用反向代理落地（阶段 G1–G5 全闭环），直到全部 28 项必要验收和干净重建交付条件满足。
+
+开始或恢复时读取 ~/.assistant/GLOBAL.md、~/.assistant/private/GLOBAL.md、docs/architecture.md、docs/frame.md、docs/gateway-evolution.md 和唯一施工手册 docs/construction.md（第三部分，第 9–13 节）；核实当前工作区、实际版本、目标状态与既有证据。当前起点是：前序 P1–P3、M1–M3 及 d-mcp/skills 已在基线 095bcc1 验收闭环，第三部分 G1–G5 仅完成施工准备且尚未编写本轮业务或测试代码；请直接从 G1 / GC01 起步，保留前序已验收成果及 docs/pages/ 现有无关文件（且保持 docs/ 下零 .js 文件）。
+
+核心 TODO（严格沿用 docs/construction.md 第三部分的编号与状态）：
+[ ] G1（GC01–GC05）：升级 net-api 与 l4-transport（ListenOptions 多监听、max_connections 限制、stats、可选 TLS 握手钩子）；新增零外依 tls-api 与独立纯 Rust TLS 组件 l4-tls（SNI/ALPN/TlsConnector/运行期原子热换证不中断旧连接），通过 GA01–GA04
+[ ] G2（GC06–GC13）：升级 http-api 与 proto-http（RouteMatch::Param :name/*rest、分块及大请求体流式化、101 UpgradeHandler 移交）；新增零外依 ws-api 与纯 Rust RFC 6455 组件 proto-ws（手写 SHA-1/Base64/分帧/掩码/分片/控制帧/有界背压/排空）；新增原生 TCP 引擎 proto-tcp，通过 GA05–GA10
+[ ] G3（GC14–GC17）：新增零外依 proxy-api 与通用反向代理组件 ext-proxy（HTTP/1.1 Keep-Alive 连接池、RoundRobin/LeastConn/WeightedRoundRobin、主被动健康检查与熔断、头重写与路径剥离、SSE 零缓冲穿透、WebSocket 101 双向隧道、L4 TCP 透传），通过 GA11–GA14
+[ ] G4（GC18–GC27）：新增三个零外依纯 std 治理组件 ext-observability（日志//metrics//healthz//readyz）、ext-ratelimit（429 令牌桶）与 ext-auth（Bearer/Basic/CIDR 401/403）；新增开发提效组件 ext-dev-kit（Mock 含 SSE、零外链 Live Reload、白底 /_d/inspect 含 SSE/WS 时间线与重放）；增强 app-files（mount_prefix/host 多挂载）与 doc-render（sanitize_html 白名单净化）；升级 d-cli/d-daemon 支持 -c/--config 纯 std JSON 清单加载与 SIGHUP 全量预检增量热重载（不中断无关长流）；在全栈 d 装配体完成声明式接入与完整 MCP 自发现，通过 GA15–GA24
+[ ] G5（GC28–GC32）：更新根 Cargo.toml（32 包、19 个 zero_external_deps、扩展 d-minimal 禁入列表）与 xtask 红线测试；新增 examples/gateway/ 与扩充 scripts/acceptance.sh；同步更新 README.md、docs/、docs/pages/（零 .js）、skills/{d,d-dev}/ 与 .github/workflows/ci.yml；完成隔离干净重建、清理临时产物并按逻辑分组 GPG 签名提交推送 origin/master 且读回，通过 GA25–GA28
+
+严格执行 bulk-development 与 R39：每个阶段（G1–G5）内依次按（1）一次性完整业务实现与接线 →（2）一次性编写并跑通集成验收代码 →（3）补齐关键边界保护性单元测试并运行必要回归三段推进，严禁测试先行或无变化反复碎跑；遵守 clean-development 与 R13，不保留失效旧签名或兼容层。每写完一个 GC 项立即勾选施工 checkbox；仅在对应 GA 项真实实测通过且填入证据后才勾选验收 checkbox。
+
+验收列表（必须全部实测满足）：
+[ ] GA01–GA04（G1 传输与 TLS）：l4-transport 连接上限/统计/两阶段排空、tls-api 零外依、l4-tls SNI/ALPN/热换证不杀旧 TLS 会话全部通过
+[ ] GA05–GA10（G2 协议与底座）：参数路由与排序、流式请求体与 413 限额、101 移交、ws-api 零外依、proto-ws 纯 Rust RFC 6455 全套语义与背压排空、proto-tcp 全部通过
+[ ] GA11–GA14（G3 通用反代）：proxy-api 零外依、ext-proxy 连接池/3 种 LB/主被动健康摘除与恢复/SSE 零缓冲穿透/WS 101 隧道/L4 TCP 透传全部通过
+[ ] GA15–GA24（G4 治理、开发套件、文件与热重载）：ext-{observability,ratelimit,auth} 全部零外部依赖且通过功能/脱敏测；ext-dev-kit（Mock/LiveReload/白底 /_d/inspect）通过；app-files 多挂载与 doc-render HTML 净化通过；-c 与 SIGHUP 预检拒载及无损热重载不杀无关长流通过；d 保留既有库 API 且支持 d-mcp 自发现调控所有新插件
+[ ] GA25–GA28（G5 架构门禁、全量验收与干净交付）：cargo xtask check（32 包 8 条红线）/info/test（含负向单测）全过；cargo tree -p d-minimal 仍仅含 tokio；cargo fmt --check、cargo clippy 全特性组合（workspace / d --no-default-features / d-minimal --features mcp）零警告；cargo test --workspace、cargo test -p d-minimal --features mcp 与 scripts/acceptance.sh 全绿；examples/gateway/、docs/pages/（零 .js）实跑通过；全仓零家目录绝对路径与零第三方框架/产品命名；隔离 git archive 干净副本完成全套验证并彻底销毁临时目录；按逻辑分批 GPG 签名提交推送 origin/master 且读回一致
+
+工作边界：仅操作当前 d 仓库与隔离临时验证副本，严禁触碰其他项目或 ~/.assistant/，严禁创建子智能体或向外部发送消息，严禁引入内部版本字段或新旧兼容层；纯 Rust 外部密码学 TLS 依赖严格隔离在 l4-tls 组件内；HTTP/2、HTTP/3 与 ACME 自动公网签发不作为本 Goal 阻塞范围。
+
+阻塞与收敛规则：遇到同一根因失败两次未收敛时先分析根因再批量修复，严禁通过删除断言、放宽门禁、加长无意义 sleep 或绕过架构红线来过测；出现真实无法自动解除的外部阻塞时记录已尝试路径、证据、阻塞点与解除条件后停止汇报。完成条件为 GC01–GC32 与 GA01–GA28 全部真实实测勾选、临时产物已回收且 GPG 签名推送至 origin/master。
+```

@@ -15,7 +15,7 @@ Read [Architecture Rules](references/architecture-rules.md) for all 8 automated 
 2. **`crates/contracts/*`** (`contracts`) contain traits/types only and depend solely on `frame` and fellow contracts.
 3. **`crates/components/*`** (`components`) never depend on sibling components, `entries`, or `assemblies`. Bind resources via `ctx.use_service::<S>()` so caller fiber teardown auto-cleans effects.
 4. **`crates/entries/*`** (`d-cli`, `d-daemon`, `d-mcp`) never depend on `crates/components/*`.
-5. **`crates/assemblies/*`** (`d`, `d-minimal`) declaratively assemble components via `StaticResolver` + `PluginEntry` + `ConfigValue`. Keep `d-minimal` free of `ext-compression`, `doc-render`, `viewer-*`, `brotli`, and `flate2`.
+5. **`crates/assemblies/*`** (`d`, `d-minimal`) declaratively assemble components via `StaticResolver` + `PluginEntry` + `ConfigValue`. Keep `d-minimal` free of `l4-tls`, `proto-ws`, `proto-tcp`, `ext-proxy`, `ext-observability`, `ext-ratelimit`, `ext-auth`, `ext-dev-kit`, `ext-compression`, `doc-render`, `viewer-*`, `brotli`, `flate2`, `rustls`, and `tokio-rustls`.
 
 ## Adding or Extending Components So MCP & Skills Stay In Sync
 

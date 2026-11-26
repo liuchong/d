@@ -175,6 +175,12 @@
                         <td>根目录路径；启动时执行 <code>canonicalize</code> 校验是否存在与可访问。</td>
                     </tr>
                     <tr>
+                        <td><code>-c, --config &lt;PATH&gt;</code></td>
+                        <td><code>D_CONFIG</code></td>
+                        <td>未指定</td>
+                        <td>声明式 JSON 插件清单；配合 <code>kill -HUP</code> 执行全量预检与无中断增量热重载。</td>
+                    </tr>
+                    <tr>
                         <td><code>-l, --log &lt;LEVEL&gt;</code></td>
                         <td><code>RUST_LOG</code></td>
                         <td><code>info</code></td>

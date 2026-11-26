@@ -25,7 +25,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Architecture Check
-        run: cargo xtask check
+        run: |
+          cargo xtask check
+          cargo xtask info
 
       - name: Format
         run: cargo fmt --check
@@ -33,7 +35,7 @@ jobs:
       - name: Clippy
         run: |
           cargo clippy --workspace --all-targets -- -D warnings
-          cargo clippy -p d --no-default-features -- -D warnings
+          cargo clippy -p d --no-default-features --all-targets -- -D warnings
           cargo clippy -p d-minimal --features mcp --all-targets -- -D warnings
 
       - name: Test

@@ -7,6 +7,7 @@
 | `-H, --host <HOST>` | `D_HOST` | `localhost` | Listening host |
 | `-p, --port <PORT>` | `D_PORT` | `8080` | Listening port |
 | `-r, --root <PATH>` | `D_ROOT` | `.` | Served root directory (canonicalized sandbox) |
+| `-c, --config <PATH>` | `D_CONFIG` | unset | Declarative JSON plugin manifest; `SIGHUP` runs preflight validation and incremental reload without dropping unrelated SSE/WS streams |
 | `-l, --log <LEVEL>` | `RUST_LOG` | `info` | `error` \| `warn` \| `info` \| `debug` \| `trace` |
 | `--hidden` | `D_SHOW_HIDDEN` | `false` | Allow serving and listing dotfiles |
 | `--cors` | `D_CORS` | `false` | Enable permissive CORS headers and `OPTIONS` 204 |

@@ -17,6 +17,7 @@ cargo build          # 生成 target/debug/d
 | `docs/` | Markdown（GFM/嵌入式 HTML/相对图片）、Org/TXT/CSV | `d -r examples/docs` |
 | `media/` | 媒体直链原流与 `?view=viewer` 白底查看页（SVG/音视频） | `d -r examples/media` |
 | `static-site/` | 静态网站（HTML+CSS+JS） | `d -r examples/static-site` |
+| `gateway/` | 声明式 JSON 配置（观测/限流/鉴权/Mock/SSE/Live Reload/`SIGHUP` 热重载） | `d -c examples/gateway/gateway.json` |
 
 启动后用浏览器打开 <http://localhost:8080>。若要同时预览仓库主页与 Pages 站点源码编译效果，可运行 `cargo run -- -r docs`。
 

@@ -43,7 +43,12 @@ d --host=127.0.0.1 --port=3000 --root=./examples/docs
 # 5. 使用环境变量启动（命令行参数优先级高于环境变量）
 D_HOST=127.0.0.1 D_PORT=9000 D_ROOT=./docs D_SHOW_HIDDEN=true D_CORS=1 d
 
-# 6. 从源码直接本地预览仓库自带的 Pages 站点
+# 6. 使用声明式 JSON 清单启动网关或开发工作流，并用 SIGHUP 热重载
+d -c examples/gateway/gateway.json
+d -c examples/gateway/dev.json
+kill -HUP <d_pid>
+
+# 7. 从源码直接本地预览仓库自带的 Pages 站点
 cargo run -- -r docs -p 8080
 ```
 
@@ -58,6 +63,7 @@ cargo run -- -r docs -p 8080
 | `-H, --host <HOST>` | `D_HOST` | `localhost` | 监听主机名或 IP；解析类似 `localhost` 时优先选用 IPv4 地址 |
 | `-p, --port <PORT>` | `D_PORT` | `8080` | 监听 TCP 端口（合法 `u16` 整数） |
 | `-r, --root <PATH>` | `D_ROOT` | `.` | 服务根目录；启动时执行 `canonicalize` 规范化 |
+| `-c, --config <PATH>` | `D_CONFIG` | 未指定 | 声明式 JSON 插件清单；配合 `SIGHUP` 执行全量预检与无中断增量热重载 |
 | `-l, --log <LEVEL>` | `RUST_LOG` | `info` | 日志级别：`error`、`warn`、`info`、`debug`、`trace`（亦兼容 `warning` 与模块后缀写法） |
 | `--hidden` | `D_SHOW_HIDDEN` | 关闭 | 允许显示点文件，并允许页面/请求通过 `?hidden=true\|false` 切换 |
 | `--cors` | `D_CORS` | 关闭 | 对所有响应附加 `Access-Control-Allow-Origin: *`，并为 `OPTIONS` 预检返回 `204` |
@@ -159,9 +165,9 @@ d -H 0.0.0.0 -p 8080 -r ./share --cors
 - 删除线（`~~text~~` -> `<del>`）、引用块（`>`）、分割线（`---`）、行内代码（`` `code` ``）、围栏代码块（```` ```lang ````）
 - 脚注定义与引用（`[^1]` -> `id="fn-1"` / `id="fnref-1"`）与自动链接
 
-### 2. 原生嵌入式 HTML 透传
+### 2. 原生嵌入式 HTML 透传与安全净化
 
-与把全文转义后再交由浏览器脚本解析不同，`doc-render` 在 Markdown 解析与渲染期原生保留块级与行内 HTML 标签（例如 `<details>`、`<summary>`、`<figure>`、`<figcaption>`、`<img>`、`<table>`、`<video>`、`<audio>`、`<kbd>`、`<div>` 及内联属性），非常适合技术手册常见的折叠细节、图文图注与多栏表格。契约层同时预留 `MarkdownOptions::sanitizer` 可选净化钩子，面向本地与可信根目录默认完整透传。
+与把全文转义后再交由浏览器脚本解析不同，`doc-render` 在 Markdown 解析与渲染期原生保留块级与行内 HTML 标签（例如 `<details>`、`<summary>`、`<figure>`、`<figcaption>`、`<img>`、`<table>`、`<video>`、`<audio>`、`<kbd>`、`<div>` 及内联属性），非常适合技术手册常见的折叠细节、图文图注与多栏表格。面向公网或不受信内容时，可在 `doc-render` 插件配置中开启 `{"sanitize_html": true}` 启用内置零外依白名单 HTML 净化（剥离 `<script>`/`<iframe>`、事件处理器及 `javascript:` 链接），同时契约层保留 `MarkdownOptions::sanitizer` 自定义钩子。
 
 ### 3. 内建词法高亮覆盖语言
 
@@ -274,7 +280,20 @@ scripts/acceptance.sh
 
 ---
 
-## 九、可选 MCP 动态控制与随版本演进 Skill
+## 九、网关清单、反向代理与开发工作流套件（`-c` / `SIGHUP`）
+
+通过 `-c <PATH>`（或 `D_CONFIG`）可直接装配全栈 17 个内置插件，无“开发模式 / 生产模式”内部切换：
+
+- **传输与纯 Rust TLS（`l4-transport` / `l4-tls`）**：支持 `max_connections`、`ListenOptions` 多监听、`TlsAcceptor` SNI/ALPN 与 `Loader` 原子热换证（旧 TLS 长流不中断）。
+- **协议引擎（`proto-http` / `proto-ws` / `proto-tcp`）**：支持 `:param` / `*rest` 路径参数路由、大包与 chunked 请求体流式透传（超 `max_body_bytes` 返回 `413`）、`101 Upgrade` 移交、纯 Rust RFC 6455 WebSocket 引擎及原生 TCP 端口转发。
+- **通用反向代理（`ext-proxy`）**：HTTP/1.1 Keep-Alive 连接池、`round_robin` / `least_conn` / `weighted_round_robin` 负载均衡、主被动健康检查与熔断、`Forwarded`/`X-Forwarded-*` 头注入、`strip_prefix`、零缓冲 SSE 穿透、WebSocket `101` 双向隧道与 L4 TCP 透传。
+- **纯 `std` 流量治理（`ext-observability` / `ext-ratelimit` / `ext-auth`）**：访问日志、`GET /metrics`、`/healthz`、`/readyz`（异常返 `503`）、按 IP 令牌桶限流（`429` + `Retry-After`）以及常量时间 `Bearer` / `Basic` / IP CIDR 鉴权（`401`/`403`）。
+- **开发工作流与多前缀文件挂载（`ext-dev-kit` / `app-files`）**：支持静态与延迟 SSE Mock、零外链 Live Reload、白底零 CDN `/_d/inspect`（含 SSE 时间线与一键重放），以及同进程按 `mount_prefix` 与 `host` 挂载多个目录（参见 [examples/gateway/README.md](../examples/gateway/README.md)）。
+- **安全热重载（`SIGHUP`）**：修改清单后执行 `kill -HUP <pid>`；若语法或配置校验失败则整批拒载，校验通过则仅重建变更分支且保持无关 SSE/WS 长连接不断开。
+
+---
+
+## 十、可选 MCP 动态控制与随版本演进 Skill
 
 `d`（默认带 `mcp` 特性）与 `d-minimal`（支持 `--features mcp`）内置可选纯 Rust `d-mcp` 控制面，默认关闭，传入 `--mcp-stdio` 或 `--mcp-http <ADDR>` 后启用：
 

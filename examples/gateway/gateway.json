@@ -1,0 +1,68 @@
+{
+  "plugins": [
+    {
+      "id": "l4-transport",
+      "config": {
+        "short_drain_ms": 200,
+        "long_drain_ms": 5000
+      }
+    },
+    {
+      "id": "proto-http",
+      "config": {
+        "bind_addr": "127.0.0.1:8080"
+      }
+    },
+    { "id": "proto-ws" },
+    {
+      "id": "ext-observability",
+      "config": {
+        "log_format": "json",
+        "health_path": "/healthz",
+        "ready_path": "/readyz",
+        "metrics_path": "/metrics"
+      }
+    },
+    {
+      "id": "ext-ratelimit",
+      "config": {
+        "rules": [
+          {
+            "prefix": "/api/",
+            "rps": 50,
+            "burst": 20
+          }
+        ]
+      }
+    },
+    {
+      "id": "ext-auth",
+      "config": {
+        "rules": [
+          {
+            "prefix": "/admin/",
+            "bearer_tokens": ["replace-with-token"]
+          }
+        ]
+      }
+    },
+    { "id": "ext-compression" },
+    {
+      "id": "app-files",
+      "config": {
+        "root": "./examples/docs",
+        "mount_prefix": "/",
+        "allow_hidden": false
+      }
+    },
+    {
+      "id": "doc-render",
+      "config": {
+        "sanitize_html": true
+      }
+    },
+    { "id": "viewer-markdown" },
+    { "id": "viewer-code" },
+    { "id": "viewer-media" }
+  ]
+}

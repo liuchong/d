@@ -21,13 +21,13 @@
 
 ## Key Capabilities
 
-- **Layered plugin architecture (5 layers, 21 workspace crates)**:
+- **Layered plugin architecture (5 layers, 32 workspace crates, 19 zero-external-dep pure crates)**:
   - Layer 0 (`frame`): zero-dependency pure-`std` microkernel (`ScopedService`, `PluginSchema`, `Context`, `Scope`, `Fiber`, `EffectHandle`, `Event`, `Loader`, `Inspect`).
-  - Layer 1 (`l4-transport`): TCP listener management and two-phase graceful connection drain on `SIGINT`/`SIGTERM` or teardown.
-  - Layer 2 (`proto-http`): custom HTTP/1.1 parser (`400`/`413`/`414`/`431`/`505` wire bounds), chunked unbuffered streaming (`streaming: true`), and lock-free atomic snapshot routing (`HttpRouter`).
-  - Layer 3 (`ext-compression`, `ext-cors`): streaming-aware `br`/`gzip`/`deflate` negotiation (automatically exempting SSE/`streaming`, `206`, `304`, `HEAD`, pre-compressed media, and tiny payloads under 256 bytes) and opt-in permissive CORS (`--cors`).
-  - Layer 4 (`app-files`, `doc-render`, `doc-render-plain`, `viewer-markdown`, `viewer-code`, `viewer-media`): sandboxed file server with pure-Rust rendering, interchangeable plain renderer, and minimalist white viewers.
-  - Entries & MCP (`d-cli`, `d-daemon`, optional `d-mcp`): pure-`std` CLI, component-agnostic daemon harness, and opt-in pure-Rust MCP control plane paired with self-evolving [`skills/d`](./skills/d/SKILL.md) and [`skills/d-dev`](./skills/d-dev/SKILL.md).
+  - Layer 1 (`l4-transport`, `l4-tls` via `net-api`/`tls-api`): multi-listener TCP (`max_connections`, `stats`), two-phase graceful connection drain, and pure-Rust TLS 1.2/1.3 (`rustls`) with SNI, ALPN, and atomic zero-drop hot certificate reload.
+  - Layer 2 (`proto-http`, `proto-ws`, `proto-tcp` via `http-api`/`ws-api`): custom bounded HTTP/1.1 parser & streaming chunked writer (`RouteMatch::Param :name/*rest`, streaming request bodies, `101 Upgrade` handoff), lock-free snapshot `HttpRouter`, pure-Rust RFC 6455 WebSocket engine (only `tokio`), and raw TCP service/forwarding.
+  - Layer 3 (`ext-proxy`, `ext-observability`, `ext-ratelimit`, `ext-auth`, `ext-dev-kit`, `ext-compression`, `ext-cors`): L7/L4 reverse proxy with Keep-Alive connection pooling, `round_robin`/`least_conn`/`weighted_round_robin` LB, active/passive health checks, zero-buffer SSE passthrough, and WS `101` tunnels; three zero-external-dep pure-`std` governance extensions (structured access logs + OpenMetrics `/metrics` + `/healthz`/`/readyz`, token-bucket `429` rate limiting, constant-time Bearer/Basic/CIDR `401`/`403` auth); declarative dev workflow suite (HTTP/SSE mocks, zero-CDN Live Reload, white `#ffffff` `/_d/inspect` with SSE timeline & replay); streaming-aware `br`/`gzip`/`deflate` compression and opt-in CORS.
+  - Layer 4 (`app-files`, `doc-render`, `doc-render-plain`, `viewer-markdown`, `viewer-code`, `viewer-media`): multi-mount (`mount_prefix`, `host`) sandboxed file server, pure-Rust GFM/HTML renderer with optional `sanitize_html` whitelist mode, interchangeable `doc-render-plain`, and minimalist white viewers.
+  - Entries & MCP (`d-cli`, `d-daemon`, optional `d-mcp`): pure-`std` CLI (including `-c/--config` / `D_CONFIG`), component-agnostic daemon harness with pure-`std` JSON manifest loading & `SIGHUP` preflight incremental reload (preserving active SSE/WS streams), and opt-in pure-Rust MCP control plane self-discovering all 17 full-assembly plugins paired with [`skills/d`](./skills/d/SKILL.md) and [`skills/d-dev`](./skills/d-dev/SKILL.md).
 - **Built-in CommonMark + GFM & native embedded HTML**: Zero-dependency `doc-render` compiles Markdown on the server with CJK/ASCII unique heading anchors, aligned GFM tables, task lists, strikethrough, footnotes, autolinks, and unescaped block/inline HTML (`<details>`, `<figure>`, `<img>`, `<table>`, `<kbd>`).
 - **Server-side lexical code highlighting**: Built-in tokenizer and light stylesheet for Rust, JavaScript/TypeScript, Python, Go, C/C++/Java/Zig/Swift/Kotlin/Scala, Shell (`sh`/`bash`/`zsh`/`fish`), JSON, YAML, TOML, SQL, HTML/XML/SVG, and CSS/SCSS — zero external scripts or CDNs.
 - **Minimalist white UI**: Self-contained offline `#ffffff` / `#f6f8fa` / `#0969da` layout across directory listings and document/code/media viewers; no dark themes, no colored badges, no emoji, and no client JavaScript required.
@@ -69,6 +69,11 @@ d -r ./workspace --hidden --cors -l debug
 d --host=127.0.0.1 --port=3000 --root=./docs
 D_HOST=0.0.0.0 D_PORT=9000 D_ROOT=./examples/demo D_SHOW_HIDDEN=true d
 
+# Start with a declarative JSON gateway/dev manifest and reload safely via SIGHUP
+d -c examples/gateway/gateway.json
+d -c examples/gateway/dev.json
+kill -HUP <pid>
+
 # Preview the project's documentation site locally
 cargo run -- -r docs -p 8080
 ```
@@ -80,6 +85,7 @@ cargo run -- -r docs -p 8080
 | `-H, --host <HOST>` | `D_HOST` | `localhost` | Listening host; prefers IPv4 when resolving names like `localhost` |
 | `-p, --port <PORT>` | `D_PORT` | `8080` | Listening TCP port (`u16`) |
 | `-r, --root <PATH>` | `D_ROOT` | `.` | Root directory to serve (canonicalized; symlink escapes rejected) |
+| `-c, --config <PATH>` | `D_CONFIG` | unset | Declarative JSON plugin manifest (`SIGHUP` triggers preflight incremental reload) |
 | `-l, --log <LEVEL>` | `RUST_LOG` | `info` | `trace`, `debug`, `info`, `warn`, `error` |
 | `--hidden` | `D_SHOW_HIDDEN` | disabled | Expose dotfiles and allow `?hidden=true\|false` toggling (`1`/`true`/`yes`/`on`) |
 | `--cors` | `D_CORS` | disabled | Add `Access-Control-Allow-Origin: *` and handle `OPTIONS` preflight (`204`) |
@@ -184,29 +190,30 @@ async fn dispatch_once() -> Result<(), Box<dyn std::error::Error>> {
 | Layer | Crates | Responsibility |
 |-------|--------|----------------|
 | **Layer 0** | `crates/frame` | Pure-`std` zero-dependency plugin microkernel (`ScopedService`, `Context`, `Scope`, `Fiber`, `EffectScope`, `Event`, `Loader`, `Inspect`) |
-| **Contracts** | `crates/contracts/{net-api,http-api,files-api,render-api}` | Zero-dependency trait and wire contracts decoupling layers |
-| **Layer 1** | `crates/components/l4-transport` | TCP listener supervision and two-phase graceful connection drain |
-| **Layer 2** | `crates/components/proto-http` | Bounded HTTP/1.1 parser/writer, streaming chunk encoder, lock-free snapshot `HttpRouter` |
-| **Layer 3** | `crates/components/{ext-compression,ext-cors}` | Streaming-aware `br`/`gzip`/`deflate` compression filter and opt-in CORS filter |
-| **Layer 4** | `crates/components/{app-files,doc-render,doc-render-plain,viewer-*}` | Sandboxed file handler, full CommonMark/GFM/highlight renderer & zero-dep `doc-render-plain`, white viewers |
-| **Entries & Assemblies** | `crates/entries/{cli,daemon,mcp}`, `crates/assemblies/{d,d-minimal}` | Pure-`std` `d-cli`, component-agnostic `d-daemon`, optional pure-Rust `d-mcp`, full `d` & lightweight `d-minimal` |
+| **Contracts** | `crates/contracts/{net-api,tls-api,http-api,ws-api,proxy-api,files-api,render-api}` | 7 zero-dependency trait and wire contracts decoupling all layers |
+| **Layer 1** | `crates/components/{l4-transport,l4-tls}` | Listener limits & stats, two-phase drain, and pure-Rust TLS (SNI/ALPN/hot cert reload) |
+| **Layer 2** | `crates/components/{proto-http,proto-ws,proto-tcp}` | Parameter/streaming HTTP/1.1 (`101` upgrade handoff), pure-Rust RFC 6455 WebSocket, and raw TCP engine |
+| **Layer 3** | `crates/components/{ext-proxy,ext-observability,ext-ratelimit,ext-auth,ext-dev-kit,ext-compression,ext-cors}` | L7/L4 reverse proxy, pure-`std` logs/metrics/probes, `429` rate limit, `401`/`403` auth, Mock/Live Reload/Inspector, compression & CORS |
+| **Layer 4** | `crates/components/{app-files,doc-render,doc-render-plain,viewer-*}` | Multi-mount sandboxed files, CommonMark/GFM/HTML (+ optional `sanitize_html`), interchangeable `doc-render-plain`, white viewers |
+| **Entries & Assemblies** | `crates/entries/{cli,daemon,mcp}`, `crates/assemblies/{d,d-minimal}` | Pure-`std` `d-cli`, component-agnostic `d-daemon` (`-c`/`SIGHUP`), optional `d-mcp`, full `d` (17 plugins) & lightweight `d-minimal` (`tokio` only) |
 | **Skills & Tooling** | `skills/{d,d-dev}`, `xtask` | Self-evolving runtime/contributor Skills & pure-`std` workspace governance (`cargo xtask check`, `info`, `test`) |
 
-Ready-to-run sample directories live in [`examples/`](./examples) — see [examples/README.md](./examples/README.md) for guided tours of `demo/`, `code/`, `docs/`, `media/`, and `static-site/`.
+Ready-to-run sample directories live in [`examples/`](./examples) — see [examples/README.md](./examples/README.md) for guided tours of `demo/`, `code/`, `docs/`, `media/`, `static-site/`, and `gateway/`.
 
 ---
 
 ## Testing & Acceptance
 
 ```bash
-cargo xtask check          # Enforce all 8 workspace architecture & skill invariants
+cargo xtask check          # Enforce all 8 workspace architecture & skill invariants across 32 packages
+cargo xtask info           # Verify assembly matrix & 19 zero-external-dep pure crates
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
-cargo clippy -p d --no-default-features -- -D warnings
+cargo clippy -p d --no-default-features --all-targets -- -D warnings
 cargo clippy -p d-minimal --features mcp --all-targets -- -D warnings
-cargo test --workspace     # Full workspace unit, contract, MCP, and integration tests
+cargo test --workspace     # Full workspace unit, contract, MCP, gateway & SIGHUP tests
 cargo test -p d-minimal --features mcp
-scripts/acceptance.sh      # 57 end-to-end HTTP, Markdown, and UI checks
+scripts/acceptance.sh      # End-to-end HTTP, Markdown, UI, gateway, governance & SIGHUP checks
 ```
 
 For comprehensive Chinese usage documentation, see [docs/usage.md](./docs/usage.md).

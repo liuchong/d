@@ -73,20 +73,20 @@
 
         <div class="metrics" aria-label="已验证工作区指标">
             <div class="metric">
-                <strong>21</strong>
+                <strong>32</strong>
                 <span>纯 Virtual Workspace 分层包</span>
             </div>
             <div class="metric">
-                <strong>13</strong>
+                <strong>19</strong>
                 <span>零外部依赖核心 / 契约 / 纯组件包</span>
             </div>
             <div class="metric">
-                <strong>12 + 4</strong>
-                <span>可选 MCP 控制工具 + 实时资源</span>
+                <strong>17 + 12</strong>
+                <span>自发现插件数 + MCP 控制工具</span>
             </div>
             <div class="metric">
-                <strong>57</strong>
-                <span>端到端 HTTP 验收全通过项</span>
+                <strong>-c / HUP</strong>
+                <span>纯 std JSON 清单与无中断热重载</span>
             </div>
         </div>
     </div>
@@ -111,6 +111,7 @@
                     <button class="tab-btn" type="button" role="tab" aria-selected="true" data-scenario-tab="docs">文档与代码浏览</button>
                     <button class="tab-btn" type="button" role="tab" aria-selected="false" data-scenario-tab="static">静态网站托管</button>
                     <button class="tab-btn" type="button" role="tab" aria-selected="false" data-scenario-tab="lan">局域网与 CORS</button>
+                    <button class="tab-btn" type="button" role="tab" aria-selected="false" data-scenario-tab="gateway">网关与热重载 (-c)</button>
                     <button class="tab-btn" type="button" role="tab" aria-selected="false" data-scenario-tab="curl">Range 与 304</button>
                     <button class="tab-btn" type="button" role="tab" aria-selected="false" data-scenario-tab="mcp">MCP 控制与 Skill</button>
                     <button class="tab-btn" type="button" role="tab" aria-selected="false" data-scenario-tab="rust">Rust 库内嵌</button>
@@ -239,8 +240,8 @@ d -r . -p 8080
         <div class="section-head">
             <div>
                 <span class="section-kicker">Architecture</span>
-                <h2 class="section-title">五层单向依赖架构与 21 个 Workspace 包</h2>
-                <p class="section-desc">上层只依赖下层契约包（<code>contracts/*</code>），实现之间零横向直接耦合，由 <code>d</code> 与 <code>d-minimal</code> 按声明式 <code>Loader</code> 装配并支持可选 <code>d-mcp</code> 实时控制。</p>
+                <h2 class="section-title">五层单向依赖架构与 32 个 Workspace 包</h2>
+                <p class="section-desc">上层只依赖下层契约包（<code>contracts/*</code>），实现之间零横向直接耦合，由 <code>d</code>（17 插件全栈网关/文件/开发套件）与 <code>d-minimal</code>（轻量静态版）按声明式 <code>Loader</code> 装配并支持可选 <code>d-mcp</code> 实时控制。</p>
             </div>
             <a class="btn" href="https://github.com/liuchong/d/blob/master/docs/frame.md">了解 frame 微内核设计</a>
         </div>
@@ -252,24 +253,24 @@ d -r . -p 8080
                     <span>纯 std 通用插件微内核</span>
                 </button>
                 <button class="arch-btn" type="button" role="tab" aria-selected="false" data-layer-btn="L1">
-                    <strong>Layer 1 · l4-transport</strong>
-                    <span>TCP 监听监管与两阶段排空</span>
+                    <strong>Layer 1 · l4-transport &amp; l4-tls</strong>
+                    <span>多监听监管、SNI/ALPN 与原子热换证</span>
                 </button>
                 <button class="arch-btn" type="button" role="tab" aria-selected="false" data-layer-btn="L2">
-                    <strong>Layer 2 · proto-http</strong>
-                    <span>HTTP/1.1 解析与原子快照路由</span>
+                    <strong>Layer 2 · proto-{http,ws,tcp}</strong>
+                    <span>HTTP/1.1 · 纯 Rust WS · 原生 TCP</span>
                 </button>
                 <button class="arch-btn" type="button" role="tab" aria-selected="false" data-layer-btn="L3">
                     <strong>Layer 3 · extensions</strong>
-                    <span>流式感知压缩与可选 CORS</span>
+                    <span>反代 · 观测/限流/鉴权 · 开发套件</span>
                 </button>
                 <button class="arch-btn" type="button" role="tab" aria-selected="false" data-layer-btn="L4">
                     <strong>Layer 4 · files &amp; viewers</strong>
-                    <span>文件沙箱、Markdown、代码与媒体页</span>
+                    <span>多挂载文件沙箱、Markdown、代码与媒体页</span>
                 </button>
                 <button class="arch-btn" type="button" role="tab" aria-selected="false" data-layer-btn="entry">
                     <strong>Entries, Assemblies &amp; xtask</strong>
-                    <span>d-cli / d-daemon / d-mcp · d / d-minimal · skills · xtask</span>
+                    <span>d-cli (-c) / d-daemon (SIGHUP) / d-mcp · xtask</span>
                 </button>
             </div>
             <div class="arch-detail">
@@ -337,6 +338,11 @@ d -r . -p 8080
                         <td>沙箱 <code>index.html</code> 托管与 <code>?listing=true</code> 列表切换</td>
                         <td><code>cargo run -- -r examples/static-site</code></td>
                     </tr>
+                    <tr>
+                        <td><code>examples/gateway/</code></td>
+                        <td><code>-c</code> 声明式清单（观测/限流/鉴权/Mock/SSE/Live Reload/<code>SIGHUP</code> 热重载）</td>
+                        <td><code>cargo run -- -c examples/gateway/gateway.json</code></td>
+                    </tr>
                 </tbody>
             </table>
         </div>
@@ -349,7 +355,7 @@ d -r . -p 8080
             <div>
                 <span class="section-kicker">Roadmap</span>
                 <h2 class="section-title">演进路线图</h2>
-                <p class="section-desc">前三个核心重构与产品化阶段已全部交付并通过独立干净重建验收；后续阶段聚焦配置驱动与多协议扩展。</p>
+                <p class="section-desc">阶段 1 至阶段 5 已全部交付并通过 32 包架构门禁、端到端验收及独立干净重建。</p>
             </div>
         </div>
 
@@ -366,28 +372,28 @@ d -r . -p 8080
                     <h3>阶段 2 · 五层重构、契约升级、双装配体与 MCP / Skill 体系</h3>
                     <span class="phase-badge">已完成 · d / d-minimal / d-mcp</span>
                 </div>
-                <p>落地 21 包纯 Virtual Workspace、自建 HTTP/1.1 引擎、零手工包装 <code>ScopedService</code> 接线、可互换 <code>doc-render-plain</code>、可选纯 Rust <code>d-mcp</code>、随版本演进 <code>skills/{d,d-dev}</code> 与 <code>xtask</code> 治理工具。</p>
+                <p>落地纯 Virtual Workspace、自建 HTTP/1.1 引擎、零手工包装 <code>ScopedService</code> 接线、可互换 <code>doc-render-plain</code>、可选纯 Rust <code>d-mcp</code>、<code>skills/{d,d-dev}</code> 与 <code>xtask</code> 治理工具。</p>
             </article>
             <article class="phase done">
                 <div class="phase-head">
                     <h3>阶段 3 · 纯内建 Markdown、词法高亮与极简白色界面</h3>
                     <span class="phase-badge">已完成 · 全栈闭环</span>
                 </div>
-                <p>交付零外部依赖 <code>doc-render</code> 与 <code>viewer-*</code>，实现无冲突媒体/文档路由、全站纯白视觉规范与全套工作区测试及 57 项端到端验收闭环。</p>
+                <p>交付零外部依赖 <code>doc-render</code>（含可选 <code>sanitize_html</code>）与 <code>viewer-*</code>，实现无冲突媒体/文档路由、全站纯白视觉规范与端到端 HTTP 验收闭环。</p>
             </article>
-            <article class="phase">
+            <article class="phase done">
                 <div class="phase-head">
-                    <h3>阶段 4 · 声明式配置热重载与开发工作流套件</h3>
-                    <span class="phase-badge">规划中</span>
+                    <h3>阶段 4 · 声明式配置热重载、治理扩展与开发套件</h3>
+                    <span class="phase-badge">已完成 · -c / SIGHUP</span>
                 </div>
-                <p>声明式配置文件增量 Diff 热更新、不中断在途连接的局部重载、本地 HTTPS、聚合反代、Mock 与实时检视器。</p>
+                <p>交付纯 <code>std</code> <code>-c/--config</code> 与 <code>SIGHUP</code> 增量热重载（不中断无关 SSE/WS 长流）、三大纯 <code>std</code> 治理组件（<code>ext-observability</code>/<code>ext-ratelimit</code>/<code>ext-auth</code>）与 <code>ext-dev-kit</code>。</p>
             </article>
-            <article class="phase">
+            <article class="phase done">
                 <div class="phase-head">
-                    <h3>阶段 5 · WebSocket / 原生 TCP 与通用流量治理</h3>
-                    <span class="phase-badge">规划中</span>
+                    <h3>阶段 5 · 纯 Rust TLS、WebSocket / TCP 与通用反向代理</h3>
+                    <span class="phase-badge">已完成 · GA01–GA28</span>
                 </div>
-                <p>补齐 WebSocket 与自定义 TCP 协议引擎、L7/L4 反向代理、健康检查、限流与指标采集。</p>
+                <p>交付 <code>l4-tls</code>（SNI/ALPN/原子热换证）、纯 Rust RFC 6455 <code>proto-ws</code>、<code>proto-tcp</code> 与 L7/L4 <code>ext-proxy</code>（Keep-Alive 池/LB/主被动健康检查/SSE 与 WS 隧道）。</p>
             </article>
         </div>
     </div>

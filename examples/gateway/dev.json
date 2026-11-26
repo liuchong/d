@@ -1,0 +1,59 @@
+{
+  "plugins": [
+    {
+      "id": "l4-transport",
+      "config": {
+        "short_drain_ms": 100,
+        "long_drain_ms": 2000
+      }
+    },
+    {
+      "id": "proto-http",
+      "config": {
+        "bind_addr": "127.0.0.1:8080"
+      }
+    },
+    { "id": "proto-ws" },
+    {
+      "id": "ext-dev-kit",
+      "config": {
+        "inspect_enabled": true,
+        "inspect_path": "/_d/inspect",
+        "live_reload": {
+          "enabled": true,
+          "watch_dirs": ["./examples/static-site"],
+          "interval_ms": 250,
+          "ws_path": "/_d/livereload",
+          "inject_html": true
+        },
+        "mocks": [
+          {
+            "id": "mock-user",
+            "method": "GET",
+            "path": "/mock/user",
+            "status": 200,
+            "body": "{\"ok\":true,\"role\":\"developer\"}"
+          },
+          {
+            "id": "mock-sse",
+            "method": "GET",
+            "path": "/mock/sse",
+            "status": 200,
+            "sse_chunks": [
+              { "data": "data: chunk-1\n\n", "delay_ms": 0 },
+              { "data": "data: chunk-2\n\n", "delay_ms": 50 }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "app-files",
+      "config": {
+        "root": "./examples/static-site",
+        "mount_prefix": "/",
+        "allow_hidden": false
+      }
+    }
+  ]
+}

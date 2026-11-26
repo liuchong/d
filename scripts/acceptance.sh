@@ -322,6 +322,104 @@ wait "$SERVER_PID" 2>/dev/null || true
 SERVER_PID=""
 
 # ---------------------------------------------------------------------------
+# Phase 3: Gateway manifest (-c), governance, dev-kit & SIGHUP hot reload
+# ---------------------------------------------------------------------------
+
+GW_PORT=$((PORT + 2))
+GW_HOST="http://127.0.0.1:$GW_PORT"
+GW_CFG="$FIXTURE/gateway.json"
+
+write_gw_cfg() {
+    local cors_entry=""
+    if [ "${1:-off}" = "on" ]; then
+        cors_entry=',{"id":"ext-cors","config":{"allow_origin":"https://sighup.example"}}'
+    fi
+    cat > "$GW_CFG" <<EOF
+{
+  "plugins": [
+    {"id":"l4-transport","config":{"short_drain_ms":50,"long_drain_ms":150}},
+    {"id":"proto-http","config":{"bind_addr":"127.0.0.1:${GW_PORT}"}},
+    {"id":"proto-ws"},
+    {"id":"ext-observability","config":{"log_format":"json"}},
+    {"id":"ext-ratelimit","config":{"rules":[{"prefix":"/limited/","rps":10,"burst":1}]}},
+    {"id":"ext-auth","config":{"rules":[{"prefix":"/secret/","bearer_tokens":["acc-tok"]}]}},
+    {"id":"ext-dev-kit","config":{
+      "inspect_enabled": true,
+      "mocks": [
+        {"id":"sec-ok","method":"GET","path":"/secret/data","status":200,"body":"classified"},
+        {"id":"lim-ok","method":"GET","path":"/limited/ping","status":200,"body":"pong"},
+        {"id":"sse-ok","method":"GET","path":"/mock/sse","status":200,"sse_chunks":[
+          {"data":"data: alpha\\n\\n","delay_ms":0},
+          {"data":"data: beta\\n\\n","delay_ms":10}
+        ]}
+      ]
+    }},
+    {"id":"app-files","config":{"root":"$FIXTURE/root","mount_prefix":"/"}}${cors_entry}
+  ]
+}
+EOF
+}
+
+write_gw_cfg off
+echo "==> Phase 3: gateway manifest (-c) on port $GW_PORT"
+"$D_BIN" -c "$GW_CFG" > "$FIXTURE/gw.log" 2>&1 &
+SERVER_PID=$!
+
+for _ in $(seq 1 50); do
+    curl -s -o /dev/null "$GW_HOST/healthz" && break
+    sleep 0.1
+done
+
+check "Gateway /healthz returns 200"     200 "$(http_code "$GW_HOST/healthz")"
+check "Gateway /readyz returns 200"      200 "$(http_code "$GW_HOST/readyz")"
+metrics_body=$(curl -s "$GW_HOST/metrics")
+echo "$metrics_body" | grep -q 'd_http_requests_total' \
+    && ok "Gateway /metrics exposes OpenMetrics counters" || bad "Gateway /metrics exposes OpenMetrics counters"
+
+inspect_body=$(curl -s "$GW_HOST/_d/inspect")
+if echo "$inspect_body" | grep -q '#ffffff' && ! echo "$inspect_body" | grep -qi 'https://'; then
+    ok "Gateway /_d/inspect renders white offline UI"
+else
+    bad "Gateway /_d/inspect renders white offline UI"
+fi
+
+check "Gateway ext-auth rejects missing token (401)" 401 "$(http_code "$GW_HOST/secret/data")"
+check "Gateway ext-auth accepts Bearer token (200)" 200 "$(http_code -H 'Authorization: Bearer acc-tok' "$GW_HOST/secret/data")"
+check "Gateway ext-ratelimit allows first burst (200)" 200 "$(http_code "$GW_HOST/limited/ping")"
+check "Gateway ext-ratelimit blocks excess with 429"   429 "$(http_code "$GW_HOST/limited/ping")"
+
+sse_out=$(curl -sN "$GW_HOST/mock/sse")
+echo "$sse_out" | grep -q 'data: beta' \
+    && ok "Gateway /mock/sse streams SSE chunks" || bad "Gateway /mock/sse streams SSE chunks"
+
+# SIGHUP malformed manifest rejected cleanly
+echo '{"plugins":[{"id":"proto-http","config":{"bind_addr":12345}}]}' > "$GW_CFG"
+kill -HUP "$SERVER_PID"
+sleep 0.15
+check "SIGHUP malformed manifest preserves /healthz" 200 "$(http_code "$GW_HOST/healthz")"
+
+# SIGHUP valid reload activates ext-cors
+write_gw_cfg on
+kill -HUP "$SERVER_PID"
+sighup_cors=""
+for _ in $(seq 1 40); do
+    sighup_cors=$(curl -s -D - -o /dev/null -H 'Origin: https://sighup.example' "$GW_HOST/data.bin" | grep -i '^access-control-allow-origin:' | awk '{print $2}' | tr -d '\r' || true)
+    [ "$sighup_cors" = "https://sighup.example" ] && break
+    sleep 0.05
+done
+check "SIGHUP valid reload activates ext-cors" "https://sighup.example" "$sighup_cors"
+
+kill -TERM "$SERVER_PID"
+for _ in $(seq 1 50); do
+    kill -0 "$SERVER_PID" 2>/dev/null || break
+    sleep 0.1
+done
+grep -q 'Received SIGTERM' "$FIXTURE/gw.log" \
+    && ok "Gateway SIGTERM graceful shutdown" || bad "Gateway SIGTERM graceful shutdown"
+wait "$SERVER_PID" 2>/dev/null || true
+SERVER_PID=""
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 
