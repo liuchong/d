@@ -15,4 +15,4 @@ http-api = { package = "d-http-api", version = "0.1.1", path = "../../contracts/
 files-api = { package = "d-files-api", version = "0.1.1", path = "../../contracts/files-api" }
 render-api = { package = "d-render-api", version = "0.1.1", path = "../../contracts/render-api" }
 d-cli = { version = "0.1.1", path = "../cli" }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net", "sync"] }
