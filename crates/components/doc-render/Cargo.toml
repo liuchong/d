@@ -1,11 +1,13 @@
 [package]
-name = "doc-render"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.88"
-license-file = "../../../LICENSE"
+name = "d-doc-render"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license-file.workspace = true
 description = "Zero-dependency pure-Rust CommonMark+GFM renderer and lexical code highlighter"
 
 [dependencies]
-frame = { path = "../../frame" }
-render-api = { path = "../../contracts/render-api" }
+frame = { package = "d-frame", version = "0.1.1", path = "../../frame" }
+render-api = { package = "d-render-api", version = "0.1.1", path = "../../contracts/render-api" }

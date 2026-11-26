@@ -1,9 +1,11 @@
 [package]
 name = "d-minimal"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.88"
-license-file = "../../../LICENSE"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license-file.workspace = true
 description = "Minimal static HTTP assembly of d using plain rendering and zero compression or rich viewer dependencies"
 
 [features]
@@ -11,19 +13,19 @@ default = []
 mcp = ["dep:d-mcp"]
 
 [dependencies]
-frame = { path = "../../frame" }
-net-api = { path = "../../contracts/net-api" }
-http-api = { path = "../../contracts/http-api" }
-files-api = { path = "../../contracts/files-api" }
-render-api = { path = "../../contracts/render-api" }
-l4-transport = { path = "../../components/l4-transport" }
-proto-http = { path = "../../components/proto-http" }
-ext-cors = { path = "../../components/ext-cors" }
-app-files = { path = "../../components/app-files" }
-doc-render-plain = { path = "../../components/doc-render-plain" }
-d-cli = { path = "../../entries/cli" }
-d-daemon = { path = "../../entries/daemon" }
-d-mcp = { path = "../../entries/mcp", optional = true }
+frame = { package = "d-frame", version = "0.1.1", path = "../../frame" }
+net-api = { package = "d-net-api", version = "0.1.1", path = "../../contracts/net-api" }
+http-api = { package = "d-http-api", version = "0.1.1", path = "../../contracts/http-api" }
+files-api = { package = "d-files-api", version = "0.1.1", path = "../../contracts/files-api" }
+render-api = { package = "d-render-api", version = "0.1.1", path = "../../contracts/render-api" }
+l4-transport = { package = "d-l4-transport", version = "0.1.1", path = "../../components/l4-transport" }
+proto-http = { package = "d-proto-http", version = "0.1.1", path = "../../components/proto-http" }
+ext-cors = { package = "d-ext-cors", version = "0.1.1", path = "../../components/ext-cors" }
+app-files = { package = "d-app-files", version = "0.1.1", path = "../../components/app-files" }
+doc-render-plain = { package = "d-doc-render-plain", version = "0.1.1", path = "../../components/doc-render-plain" }
+d-cli = { version = "0.1.1", path = "../../entries/cli" }
+d-daemon = { version = "0.1.1", path = "../../entries/daemon" }
+d-mcp = { version = "0.1.1", path = "../../entries/mcp", optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net"] }
 
 [dev-dependencies]

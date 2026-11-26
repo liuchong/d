@@ -1,4 +1,4 @@
-use frame::{
+use d_frame::{
     ConfigValue, Context, Deps, EntryPatch, EntryTarget, ErrorKind, Event,
     EventFilter, FiberId, FiberState, FiberStateChanged, FrameError,
     FrameOptions, InsertAnchor, ListenerOptions, Loader, LoaderPlugin,
@@ -145,7 +145,7 @@ impl Drop for TestSpawner {
 }
 
 impl Spawner for TestSpawner {
-    fn spawn(&self, fut: frame::BoxFuture<'static, ()>) {
+    fn spawn(&self, fut: d_frame::BoxFuture<'static, ()>) {
         if let Some(tx) = &self.sender {
             let task = Arc::new(Task {
                 state: Mutex::new(TaskState {
@@ -368,7 +368,7 @@ impl Plugin for DbProvider {
         &self,
         ctx: Context,
         _config: ConfigValue,
-    ) -> frame::BoxFuture<'static, Result<(), FrameError>> {
+    ) -> d_frame::BoxFuture<'static, Result<(), FrameError>> {
         let generation = self.generation;
         let ready = Arc::clone(&self.ready);
         let seen = Arc::clone(&self.seen_self_during_load);
@@ -409,7 +409,7 @@ impl Plugin for DbConsumer {
         &self,
         ctx: Context,
         _config: ConfigValue,
-    ) -> frame::BoxFuture<'static, Result<(), FrameError>> {
+    ) -> d_frame::BoxFuture<'static, Result<(), FrameError>> {
         let activated = Arc::clone(&self.activated);
         Box::pin(async move {
             let db = ctx.require::<DbService>()?;
@@ -503,7 +503,7 @@ impl Plugin for SeqProvider {
         &self,
         ctx: Context,
         _config: ConfigValue,
-    ) -> frame::BoxFuture<'static, Result<(), FrameError>> {
+    ) -> d_frame::BoxFuture<'static, Result<(), FrameError>> {
         let generation = self.0;
         Box::pin(async move {
             ctx.provide(Arc::new(SeqService(generation))).await?;
@@ -529,7 +529,7 @@ impl Plugin for SeqConsumer {
         &self,
         ctx: Context,
         _config: ConfigValue,
-    ) -> frame::BoxFuture<'static, Result<(), FrameError>> {
+    ) -> d_frame::BoxFuture<'static, Result<(), FrameError>> {
         let log = Arc::clone(&self.log);
         Box::pin(async move {
             let svc = ctx.require::<SeqService>()?;
@@ -620,7 +620,7 @@ impl Plugin for TagReader {
         &self,
         ctx: Context,
         _config: ConfigValue,
-    ) -> frame::BoxFuture<'static, Result<(), FrameError>> {
+    ) -> d_frame::BoxFuture<'static, Result<(), FrameError>> {
         let out = Arc::clone(&self.0);
         Box::pin(async move {
             let t = ctx.require::<TagService>()?.0;
@@ -681,7 +681,7 @@ impl Plugin for SlowSetupPlugin {
         &self,
         ctx: Context,
         _config: ConfigValue,
-    ) -> frame::BoxFuture<'static, Result<(), FrameError>> {
+    ) -> d_frame::BoxFuture<'static, Result<(), FrameError>> {
         let entered = self.entered.clone();
         let release = self.release.clone();
         let log = Arc::clone(&self.log);
@@ -828,7 +828,7 @@ impl Plugin for MultiEffectPlugin {
         &self,
         ctx: Context,
         _config: ConfigValue,
-    ) -> frame::BoxFuture<'static, Result<(), FrameError>> {
+    ) -> d_frame::BoxFuture<'static, Result<(), FrameError>> {
         let d1 = Arc::clone(&self.done1);
         let d3 = Arc::clone(&self.done3);
         Box::pin(async move {
@@ -928,7 +928,7 @@ impl Plugin for StorageProvider {
         &self,
         ctx: Context,
         _config: ConfigValue,
-    ) -> frame::BoxFuture<'static, Result<(), FrameError>> {
+    ) -> d_frame::BoxFuture<'static, Result<(), FrameError>> {
         let svc = Arc::clone(&self.0);
         Box::pin(async move {
             ctx.provide(svc).await?;
@@ -951,7 +951,7 @@ impl Plugin for StorageConsumer {
         &self,
         ctx: Context,
         _config: ConfigValue,
-    ) -> frame::BoxFuture<'static, Result<(), FrameError>> {
+    ) -> d_frame::BoxFuture<'static, Result<(), FrameError>> {
         Box::pin(async move {
             let ctx_cleanup = ctx.clone();
             ctx.effect("flush-on-close", move |scope| {
@@ -1033,7 +1033,7 @@ fn f07_events_dispatch_and_teardown() {
 
         // Listener order + prepend + snapshot removal during emit.
         let o1 = Arc::clone(&order);
-        let removed_handle: Arc<Mutex<Option<frame::EffectHandle>>> =
+        let removed_handle: Arc<Mutex<Option<d_frame::EffectHandle>>> =
             Arc::new(Mutex::new(None));
         let rh_clone = Arc::clone(&removed_handle);
         ctx.on::<PingEvent, _>(
@@ -1269,7 +1269,7 @@ impl Plugin for PortPlugin {
         &self,
         ctx: Context,
         config: ConfigValue,
-    ) -> frame::BoxFuture<'static, Result<(), FrameError>> {
+    ) -> d_frame::BoxFuture<'static, Result<(), FrameError>> {
         let effective = Arc::clone(&self.effective);
         let veto = self.veto_port_9999;
         Box::pin(async move {
@@ -1407,7 +1407,7 @@ impl Plugin for RecordingPlugin {
         &self,
         ctx: Context,
         config: ConfigValue,
-    ) -> frame::BoxFuture<'static, Result<(), FrameError>> {
+    ) -> d_frame::BoxFuture<'static, Result<(), FrameError>> {
         let id = self.id.to_string();
         let loads = Arc::clone(&self.loads);
         let unloads = Arc::clone(&self.unloads);
@@ -1605,7 +1605,7 @@ impl Plugin for SecretFailPlugin {
         &self,
         _ctx: Context,
         _config: ConfigValue,
-    ) -> frame::BoxFuture<'static, Result<(), FrameError>> {
+    ) -> d_frame::BoxFuture<'static, Result<(), FrameError>> {
         Box::pin(async move {
             let long_msg = "x".repeat(800);
             Err(FrameError::new(ErrorKind::ActivationFailed, long_msg))
@@ -1702,7 +1702,7 @@ impl ScopedRegistryView {
     fn register(
         &self,
         tag: &'static str,
-    ) -> Result<frame::EffectHandle, FrameError> {
+    ) -> Result<d_frame::EffectHandle, FrameError> {
         let idx = {
             let mut entries = self.svc.state.entries.lock().expect("lock");
             entries.push((tag, true));
@@ -2200,7 +2200,7 @@ impl Plugin for CountedPlugin {
         &self,
         ctx: Context,
         config: ConfigValue,
-    ) -> frame::BoxFuture<'static, Result<(), FrameError>> {
+    ) -> d_frame::BoxFuture<'static, Result<(), FrameError>> {
         let label = self.label;
         let loads = Arc::clone(&self.loads);
         let unloads = Arc::clone(&self.unloads);
@@ -2234,7 +2234,7 @@ fn f16_nested_group_incremental_diff_and_service() {
     block_on(async {
         let loads = Arc::new(Mutex::new(Vec::new()));
         let unloads = Arc::new(Mutex::new(Vec::new()));
-        let resolver: Arc<dyn frame::Resolver> = Arc::new(
+        let resolver: Arc<dyn d_frame::Resolver> = Arc::new(
             StaticResolver::new()
                 .register(
                     "a",

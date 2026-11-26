@@ -2,7 +2,7 @@
 //! Range/ETag/304/HEAD/RFC5987, index.html, sort/hidden, and white listing UI
 //! (`T-H08`, `T-H09`, `T-H10`, `A22`).
 
-use app_files::{FilesAppPlugin, FilesConfig, mime_for_path};
+use d_app_files::{FilesAppPlugin, FilesConfig, mime_for_path};
 use frame::{BoxFuture, ConfigValue, Context, FrameOptions, Spawner};
 use http_api::{HttpRequest, Method, RouterService, StatusCode};
 use proto_http::HttpEnginePlugin;

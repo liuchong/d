@@ -102,7 +102,9 @@ impl ConnectionHandler for HttpConnectionDriver {
         Box::pin(async move {
             let mut reader = ConnReader::new(io);
             loop {
-                match reader.read_head(&config, meta.remote_addr, &drain).await
+                match reader
+                    .read_head(&config, meta.remote_addr, meta.tls, &drain)
+                    .await
                 {
                     Ok(Some(head)) => {
                         let version = head.request.version;

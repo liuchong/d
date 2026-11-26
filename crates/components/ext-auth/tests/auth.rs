@@ -1,7 +1,7 @@
 //! Integration tests for `ext-auth` (`GA17`):
 //! Bearer tokens, Basic credentials, IP CIDR allow/deny, and secret schema flags.
 
-use ext_auth::{AuthConfig, AuthPlugin, AuthRule, IpCidr};
+use d_ext_auth::{AuthConfig, AuthPlugin, AuthRule, IpCidr};
 use frame::{
     BoxFuture, ConfigValue, Context, EffectHandle, ErrorKind, FrameError,
     FrameOptions, Plugin, Spawner,
@@ -79,6 +79,7 @@ impl Router for TestRouter {
                 version: req.version,
                 headers: req.headers.clone(),
                 remote_addr: req.remote_addr,
+                is_tls: req.is_tls,
                 started_at: Instant::now(),
             };
             let mut ran = Vec::new();

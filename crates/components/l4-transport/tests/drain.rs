@@ -1,7 +1,7 @@
 //! BDD/TDD tests for Layer 1 L4 transport connection ledger and two-phase drain (`T-H02`).
 
+use d_l4_transport::{TokioSpawner, TransportConfig, TransportPlugin};
 use frame::{Context, FrameOptions};
-use l4_transport::{TokioSpawner, TransportConfig, TransportPlugin};
 use net_api::{
     BoxStreamIo, ConnectionHandler, ConnectionMeta, DrainSignal, ListenOptions,
     TransportService,

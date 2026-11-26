@@ -500,6 +500,7 @@ pub struct HttpRequest {
     pub headers: Headers,
     pub body: BodyKind,
     pub remote_addr: Option<SocketAddr>,
+    pub is_tls: bool,
 }
 
 impl HttpRequest {
@@ -517,6 +518,7 @@ impl HttpRequest {
             headers: Headers::new(),
             body: BodyKind::Empty,
             remote_addr: None,
+            is_tls: false,
         }
     }
 
@@ -556,6 +558,7 @@ impl HttpRequest {
             headers: self.headers.clone(),
             is_head: self.method == Method::Head,
             remote_addr: self.remote_addr,
+            is_tls: self.is_tls,
             started_at: std::time::Instant::now(),
         }
     }
@@ -632,6 +635,7 @@ pub struct RequestMeta {
     pub headers: Headers,
     pub is_head: bool,
     pub remote_addr: Option<SocketAddr>,
+    pub is_tls: bool,
     pub started_at: std::time::Instant,
 }
 

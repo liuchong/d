@@ -7,6 +7,7 @@ use net_api::BoxStreamIo;
 use rustls::client::danger::{
     HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier,
 };
+use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName, UnixTime};
 use rustls::server::{ClientHello, ResolvesServerCert};
 use rustls::sign::CertifiedKey;
@@ -16,7 +17,7 @@ use rustls::{
 };
 use std::collections::HashMap;
 use std::fmt;
-use std::io::{self, BufReader};
+use std::io;
 use std::sync::{Arc, RwLock};
 use tls_api::{
     NegotiatedTls, SniCertConfig, TlsAcceptor, TlsClientConfig, TlsConnector,
@@ -118,9 +119,8 @@ fn compile_certified_key(
     key_pem: &str,
     path_prefix: &str,
 ) -> Result<Arc<CertifiedKey>, ValidationIssue> {
-    let mut cert_reader = BufReader::new(cert_pem.as_bytes());
     let certs: Vec<CertificateDer<'static>> =
-        rustls_pemfile::certs(&mut cert_reader)
+        CertificateDer::pem_slice_iter(cert_pem.as_bytes())
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| ValidationIssue {
                 path: format!("{path_prefix}.cert_pem"),
@@ -133,17 +133,13 @@ fn compile_certified_key(
         });
     }
 
-    let mut key_reader = BufReader::new(key_pem.as_bytes());
     let key: PrivateKeyDer<'static> =
-        rustls_pemfile::private_key(&mut key_reader)
-            .map_err(|e| ValidationIssue {
+        PrivateKeyDer::from_pem_slice(key_pem.as_bytes()).map_err(|e| {
+            ValidationIssue {
                 path: format!("{path_prefix}.key_pem"),
                 message: format!("invalid private key PEM: {e}"),
-            })?
-            .ok_or_else(|| ValidationIssue {
-                path: format!("{path_prefix}.key_pem"),
-                message: "private key PEM contains no private key".to_string(),
-            })?;
+            }
+        })?;
 
     let signing_key = rustls::crypto::ring::sign::any_supported_type(&key)
         .map_err(|e| ValidationIssue {
@@ -624,8 +620,7 @@ fn build_client_config(cfg: &TlsClientConfig) -> io::Result<Arc<ClientConfig>> {
             .with_no_client_auth()
     } else if let Some(ca_pem) = &cfg.ca_cert_pem {
         let mut store = RootCertStore::empty();
-        let mut reader = BufReader::new(ca_pem.as_bytes());
-        for item in rustls_pemfile::certs(&mut reader) {
+        for item in CertificateDer::pem_slice_iter(ca_pem.as_bytes()) {
             let cert = item.map_err(|e| {
                 io::Error::new(
                     io::ErrorKind::InvalidInput,

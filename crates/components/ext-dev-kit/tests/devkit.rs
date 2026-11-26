@@ -2,9 +2,9 @@
 //! static & SSE Mocks, Live Reload watcher WS push + inline HTML injection,
 //! and white `#ffffff` zero-CDN `/_d/inspect` SSE timeline + replay.
 
-use ext_dev_kit::livereload::LiveReloadConfig;
-use ext_dev_kit::mock::{MockRule, MockSseChunk};
-use ext_dev_kit::{DevKitConfig, DevKitPlugin};
+use d_ext_dev_kit::livereload::LiveReloadConfig;
+use d_ext_dev_kit::mock::{MockRule, MockSseChunk};
+use d_ext_dev_kit::{DevKitConfig, DevKitPlugin};
 use frame::{ConfigValue, Context, FrameOptions};
 use http_api::{BodyKind, HttpRequest, Method, RouterService, StatusCode};
 use l4_transport::{TokioSpawner, TransportConfig, TransportPlugin};

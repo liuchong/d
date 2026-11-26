@@ -1,13 +1,13 @@
 //! BDD/TDD tests for Layer 2 HTTP/1.1 parser bounds, streaming chunk flush,
 //! and snapshot router effect lifecycle (`T-H03`, `T-H04`, `T-H05`).
 
+use d_proto_http::{BoundServerInfo, HttpConfig, HttpEnginePlugin, fn_handler};
 use frame::{ConfigValue, Context, FrameOptions};
 use http_api::{
     FilterOutcome, HttpFilter, HttpRequest, HttpResponse, Method, RequestMeta,
     RouteMatch, RouteSpec, RouterService, StatusCode, stream_channel,
 };
 use l4_transport::{TokioSpawner, TransportPlugin};
-use proto_http::{BoundServerInfo, HttpConfig, HttpEnginePlugin, fn_handler};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;

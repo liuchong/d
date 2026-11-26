@@ -528,51 +528,55 @@ mod tests {
             );
         };
 
-        add("frame", "crates/frame", vec![]);
-        add("net-api", "crates/contracts/net-api", vec![ws_dep("frame")]);
+        add("d-frame", "crates/frame", vec![]);
         add(
-            "render-api",
+            "d-net-api",
+            "crates/contracts/net-api",
+            vec![ws_dep("d-frame")],
+        );
+        add(
+            "d-render-api",
             "crates/contracts/render-api",
-            vec![ws_dep("frame")],
+            vec![ws_dep("d-frame")],
         );
         add(
-            "l4-transport",
+            "d-l4-transport",
             "crates/components/l4-transport",
-            vec![ws_dep("frame"), ws_dep("net-api"), ext_dep("tokio")],
+            vec![ws_dep("d-frame"), ws_dep("d-net-api"), ext_dep("tokio")],
         );
         add(
-            "doc-render",
+            "d-doc-render",
             "crates/components/doc-render",
-            vec![ws_dep("frame"), ws_dep("render-api")],
+            vec![ws_dep("d-frame"), ws_dep("d-render-api")],
         );
         add(
-            "doc-render-plain",
+            "d-doc-render-plain",
             "crates/components/doc-render-plain",
-            vec![ws_dep("frame"), ws_dep("render-api")],
+            vec![ws_dep("d-frame"), ws_dep("d-render-api")],
         );
         add(
             "d-daemon",
             "crates/entries/daemon",
-            vec![ws_dep("frame"), ws_dep("net-api"), ext_dep("tokio")],
+            vec![ws_dep("d-frame"), ws_dep("d-net-api"), ext_dep("tokio")],
         );
         add(
             "d",
             "crates/assemblies/d",
             vec![
-                ws_dep("frame"),
+                ws_dep("d-frame"),
                 ws_dep("d-daemon"),
-                ws_dep("l4-transport"),
-                ws_dep("doc-render"),
+                ws_dep("d-l4-transport"),
+                ws_dep("d-doc-render"),
             ],
         );
         add(
             "d-minimal",
             "crates/assemblies/d-minimal",
             vec![
-                ws_dep("frame"),
+                ws_dep("d-frame"),
                 ws_dep("d-daemon"),
-                ws_dep("l4-transport"),
-                ws_dep("doc-render-plain"),
+                ws_dep("d-l4-transport"),
+                ws_dep("d-doc-render-plain"),
             ],
         );
         add("xtask", "xtask", vec![]);
@@ -580,27 +584,27 @@ mod tests {
         WorkspaceGraph {
             root: std::path::PathBuf::from("."),
             arch: ArchConfig {
-                kernel: vec!["frame".into()],
-                contracts: vec!["net-api".into(), "render-api".into()],
+                kernel: vec!["d-frame".into()],
+                contracts: vec!["d-net-api".into(), "d-render-api".into()],
                 components: vec![
-                    "l4-transport".into(),
-                    "doc-render".into(),
-                    "doc-render-plain".into(),
+                    "d-l4-transport".into(),
+                    "d-doc-render".into(),
+                    "d-doc-render-plain".into(),
                 ],
                 entries: vec!["d-daemon".into()],
                 assemblies: vec!["d".into(), "d-minimal".into()],
                 tools: vec!["xtask".into()],
                 zero_external_deps: vec![
-                    "frame".into(),
-                    "net-api".into(),
-                    "render-api".into(),
-                    "doc-render".into(),
-                    "doc-render-plain".into(),
+                    "d-frame".into(),
+                    "d-net-api".into(),
+                    "d-render-api".into(),
+                    "d-doc-render".into(),
+                    "d-doc-render-plain".into(),
                     "xtask".into(),
                 ],
                 minimal_assembly: Some("d-minimal".into()),
-                minimal_forbidden: vec!["doc-render".into(), "brotli".into()],
-                multi_impl_contracts: vec!["render-api".into()],
+                minimal_forbidden: vec!["d-doc-render".into(), "brotli".into()],
+                multi_impl_contracts: vec!["d-render-api".into()],
             },
             packages,
         }
@@ -635,14 +639,14 @@ mod tests {
     fn r_arch_2_rejects_external_dep_in_zero_external_deps_crate() {
         let mut g = valid_synthetic_graph();
         g.packages
-            .get_mut("doc-render")
+            .get_mut("d-doc-render")
             .unwrap()
             .deps
             .push(ext_dep("mock-external"));
         let v = check_architecture(&g);
         assert!(
             v.iter()
-                .any(|x| x.rule == "R-ARCH-2" && x.package == "doc-render")
+                .any(|x| x.rule == "R-ARCH-2" && x.package == "d-doc-render")
         );
     }
 
@@ -650,14 +654,14 @@ mod tests {
     fn r_arch_3_rejects_kernel_dependency() {
         let mut g = valid_synthetic_graph();
         g.packages
-            .get_mut("frame")
+            .get_mut("d-frame")
             .unwrap()
             .deps
             .push(ext_dep("libc"));
         let v = check_architecture(&g);
         assert!(
             v.iter()
-                .any(|x| x.rule == "R-ARCH-3" && x.package == "frame")
+                .any(|x| x.rule == "R-ARCH-3" && x.package == "d-frame")
         );
     }
 
@@ -665,14 +669,14 @@ mod tests {
     fn r_arch_4_rejects_contract_depending_on_component() {
         let mut g = valid_synthetic_graph();
         g.packages
-            .get_mut("net-api")
+            .get_mut("d-net-api")
             .unwrap()
             .deps
-            .push(ws_dep("l4-transport"));
+            .push(ws_dep("d-l4-transport"));
         let v = check_architecture(&g);
         assert!(
             v.iter()
-                .any(|x| x.rule == "R-ARCH-4" && x.package == "net-api")
+                .any(|x| x.rule == "R-ARCH-4" && x.package == "d-net-api")
         );
     }
 
@@ -680,14 +684,14 @@ mod tests {
     fn r_arch_5_rejects_component_to_component_dependency() {
         let mut g = valid_synthetic_graph();
         g.packages
-            .get_mut("l4-transport")
+            .get_mut("d-l4-transport")
             .unwrap()
             .deps
-            .push(ws_dep("doc-render"));
+            .push(ws_dep("d-doc-render"));
         let v = check_architecture(&g);
         assert!(
             v.iter()
-                .any(|x| x.rule == "R-ARCH-5" && x.package == "l4-transport")
+                .any(|x| x.rule == "R-ARCH-5" && x.package == "d-l4-transport")
         );
     }
 
@@ -698,7 +702,7 @@ mod tests {
             .get_mut("d-daemon")
             .unwrap()
             .deps
-            .push(ws_dep("l4-transport"));
+            .push(ws_dep("d-l4-transport"));
         let v = check_architecture(&g);
         assert!(
             v.iter()
@@ -713,7 +717,7 @@ mod tests {
             .get_mut("d-minimal")
             .unwrap()
             .deps
-            .push(ws_dep("doc-render"));
+            .push(ws_dep("d-doc-render"));
         g.packages
             .get_mut("d-minimal")
             .unwrap()
@@ -732,39 +736,39 @@ mod tests {
         let mut g = valid_synthetic_graph();
         g.arch
             .components
-            .extend(["l4-tls".into(), "ext-proxy".into()]);
+            .extend(["d-l4-tls".into(), "d-ext-proxy".into()]);
         g.arch.minimal_forbidden.extend([
-            "l4-tls".into(),
-            "ext-proxy".into(),
+            "d-l4-tls".into(),
+            "d-ext-proxy".into(),
             "rustls".into(),
         ]);
         g.packages.insert(
-            "l4-tls".into(),
+            "d-l4-tls".into(),
             PackageInfo {
-                name: "l4-tls".into(),
+                name: "d-l4-tls".into(),
                 manifest_dir: "crates/components/l4-tls".into(),
                 deps: vec![ext_dep("rustls")],
             },
         );
         g.packages.insert(
-            "ext-proxy".into(),
+            "d-ext-proxy".into(),
             PackageInfo {
-                name: "ext-proxy".into(),
+                name: "d-ext-proxy".into(),
                 manifest_dir: "crates/components/ext-proxy".into(),
-                deps: vec![ws_dep("net-api")],
+                deps: vec![ws_dep("d-net-api")],
             },
         );
         let dm = g.packages.get_mut("d-minimal").unwrap();
-        dm.deps.push(ws_dep("l4-tls"));
-        dm.deps.push(ws_dep("ext-proxy"));
+        dm.deps.push(ws_dep("d-l4-tls"));
+        dm.deps.push(ws_dep("d-ext-proxy"));
 
         let v = check_architecture(&g);
         let r7: Vec<_> = v.iter().filter(|x| x.rule == "R-ARCH-7").collect();
         assert!(
-            r7.iter().any(|x| x.message.contains("l4-tls"))
-                && r7.iter().any(|x| x.message.contains("ext-proxy"))
+            r7.iter().any(|x| x.message.contains("d-l4-tls"))
+                && r7.iter().any(|x| x.message.contains("d-ext-proxy"))
                 && r7.iter().any(|x| x.message.contains("rustls")),
-            "expected R-ARCH-7 violations for l4-tls, ext-proxy, and rustls: {r7:?}"
+            "expected R-ARCH-7 violations for d-l4-tls, d-ext-proxy, and rustls: {r7:?}"
         );
     }
 
@@ -772,20 +776,20 @@ mod tests {
     fn r_arch_8_rejects_cycle_and_single_impl_contract() {
         let mut g = valid_synthetic_graph();
         g.packages
-            .get_mut("net-api")
+            .get_mut("d-net-api")
             .unwrap()
             .deps
-            .push(ws_dep("render-api"));
+            .push(ws_dep("d-render-api"));
         g.packages
-            .get_mut("render-api")
+            .get_mut("d-render-api")
             .unwrap()
             .deps
-            .push(ws_dep("net-api"));
+            .push(ws_dep("d-net-api"));
         g.packages
-            .get_mut("doc-render-plain")
+            .get_mut("d-doc-render-plain")
             .unwrap()
             .deps
-            .retain(|d| d.name != "render-api");
+            .retain(|d| d.name != "d-render-api");
         let v = check_architecture(&g);
         let r8: Vec<_> = v.iter().filter(|x| x.rule == "R-ARCH-8").collect();
         assert!(

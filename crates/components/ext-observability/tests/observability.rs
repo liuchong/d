@@ -1,7 +1,7 @@
 //! Integration tests for `ext-observability` (`GA15`):
 //! access logs (JSON/text), `/healthz`, `/readyz`, and `/metrics`.
 
-use ext_observability::{
+use d_ext_observability::{
     AccessLogFormat, ObservabilityConfig, ObservabilityPlugin,
 };
 use frame::{
@@ -81,6 +81,7 @@ impl Router for TestRouter {
                 version: req.version,
                 headers: req.headers.clone(),
                 remote_addr: req.remote_addr,
+                is_tls: req.is_tls,
                 started_at: Instant::now(),
             };
             let mut ran = Vec::new();

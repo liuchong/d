@@ -1,7 +1,7 @@
 //! Integration tests for `ext-ratelimit` (`GA16`):
 //! token-bucket allowance, 429 Too Many Requests + Retry-After, and refill recovery.
 
-use ext_ratelimit::{RateLimitConfig, RateLimitPlugin, RateLimitRule};
+use d_ext_ratelimit::{RateLimitConfig, RateLimitPlugin, RateLimitRule};
 use frame::{
     BoxFuture, ConfigValue, Context, EffectHandle, ErrorKind, FrameError,
     FrameOptions, Plugin, Spawner,
@@ -79,6 +79,7 @@ impl Router for TestRouter {
                 version: req.version,
                 headers: req.headers.clone(),
                 remote_addr: req.remote_addr,
+                is_tls: req.is_tls,
                 started_at: Instant::now(),
             };
             let mut ran = Vec::new();

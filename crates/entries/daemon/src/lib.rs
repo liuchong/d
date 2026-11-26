@@ -450,6 +450,7 @@ pub async fn run_cli_daemon_with_control<F, M, Fut>(
     }
 }
 
+#[cfg(unix)]
 async fn reload_config_manifest(app: &AppHandle, path: &std::path::Path) {
     let entries = match load_entries_from_json_file(path) {
         Ok(e) => e,

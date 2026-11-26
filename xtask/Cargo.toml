@@ -1,9 +1,12 @@
 [package]
 name = "xtask"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.88"
-license-file = "../LICENSE"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license-file.workspace = true
+publish = false
 description = "Zero-dependency architecture verification, inspection, and incremental test runner for d"
 
 [dependencies]

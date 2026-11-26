@@ -1,16 +1,18 @@
 [package]
-name = "proto-tcp"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.88"
-license-file = "../../../LICENSE"
+name = "d-proto-tcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license-file.workspace = true
 description = "Layer 2 raw TCP and declarative L4 stream forwarding engine for d"
 
 [dependencies]
-frame = { path = "../../frame" }
-net-api = { path = "../../contracts/net-api" }
+frame = { package = "d-frame", version = "0.1.1", path = "../../frame" }
+net-api = { package = "d-net-api", version = "0.1.1", path = "../../contracts/net-api" }
 tokio = { version = "1", features = ["net", "io-util", "sync", "time", "rt", "macros"] }
 
 [dev-dependencies]
-l4-transport = { path = "../l4-transport" }
+l4-transport = { package = "d-l4-transport", path = "../l4-transport" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }

@@ -256,6 +256,7 @@ impl ConnReader {
         &mut self,
         config: &HttpConfig,
         remote_addr: SocketAddr,
+        is_tls: bool,
         drain: &Arc<dyn DrainSignal>,
     ) -> Result<Option<ParsedHead>, ParseRejection> {
         if !self.wait_first_byte(config.idle_timeout, drain).await? {
@@ -321,6 +322,7 @@ impl ConnReader {
                 headers,
                 body,
                 remote_addr: Some(remote_addr),
+                is_tls,
             },
             keep_alive,
             pump,

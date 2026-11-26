@@ -1,6 +1,6 @@
 //! BDD/TDD tests for Layer 3 streaming-aware compression (`T-H06`).
 
-use ext_compression::{CompressionConfig, CompressionPlugin};
+use d_ext_compression::{CompressionConfig, CompressionPlugin};
 use flate2::read::{GzDecoder, ZlibDecoder};
 use frame::{ConfigValue, Context, FrameOptions, Spawner};
 use http_api::{

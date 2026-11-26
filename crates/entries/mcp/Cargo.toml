@@ -1,16 +1,18 @@
 [package]
 name = "d-mcp"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.88"
-license-file = "../../../LICENSE"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license-file.workspace = true
 description = "Optional, configurable pure-Rust MCP control server for dynamic state and config management of d"
 
 [dependencies]
-frame = { path = "../../frame" }
-http-api = { path = "../../contracts/http-api" }
-d-cli = { path = "../cli" }
-d-daemon = { path = "../daemon" }
+frame = { package = "d-frame", version = "0.1.1", path = "../../frame" }
+http-api = { package = "d-http-api", version = "0.1.1", path = "../../contracts/http-api" }
+d-cli = { version = "0.1.1", path = "../cli" }
+d-daemon = { version = "0.1.1", path = "../daemon" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "io-std", "sync", "time"] }
 
 [dev-dependencies]

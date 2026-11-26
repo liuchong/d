@@ -6,22 +6,31 @@
 use d::{Options, build_spec};
 use d_daemon::{build_from_spec, parse_entries_from_json};
 use http_api::{HttpRequest, Method, StatusCode};
+#[cfg(unix)]
 use std::io::Write;
+#[cfg(unix)]
 use std::net::{SocketAddr, TcpListener};
+#[cfg(unix)]
 use std::process::{Child, Command, Stdio};
+#[cfg(unix)]
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
+#[cfg(unix)]
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+#[cfg(unix)]
 use tokio::net::TcpStream;
 
+#[cfg(unix)]
 struct ChildGuard(Option<Child>);
 
+#[cfg(unix)]
 impl ChildGuard {
     fn pid(&self) -> u32 {
         self.0.as_ref().expect("child").id()
     }
 }
 
+#[cfg(unix)]
 impl Drop for ChildGuard {
     fn drop(&mut self) {
         if let Some(mut c) = self.0.take() {
@@ -31,11 +40,13 @@ impl Drop for ChildGuard {
     }
 }
 
+#[cfg(unix)]
 fn free_loopback_addr() -> SocketAddr {
     let l = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
     l.local_addr().unwrap()
 }
 
+#[cfg(unix)]
 fn write_json(path: &std::path::Path, content: &str) {
     let mut f = std::fs::File::create(path).expect("create manifest");
     f.write_all(content.as_bytes()).expect("write manifest");
@@ -208,6 +219,7 @@ async fn full_gateway_stack_and_mcp_discover_all_17_plugins() {
     std::fs::write(root.join("index.html"), "<h1>gw</h1>").unwrap();
 
     let mut spec = build_spec(root.clone(), Options::default(), None);
+    let root_json = root.display().to_string().replace('\\', "\\\\");
     let manifest = format!(
         r#"{{
   "plugins": [
@@ -223,14 +235,13 @@ async fn full_gateway_stack_and_mcp_discover_all_17_plugins() {
     {{"id":"ext-dev-kit","config":{{"inspect_enabled":true}}}},
     {{"id":"ext-compression"}},
     {{"id":"ext-cors"}},
-    {{"id":"app-files","config":{{"root":"{}"}}}},
+    {{"id":"app-files","config":{{"root":"{root_json}"}}}},
     {{"id":"doc-render"}},
     {{"id":"viewer-markdown"}},
     {{"id":"viewer-code"}},
     {{"id":"viewer-media"}}
   ]
 }}"#,
-        root.display()
     );
     spec.entries = parse_entries_from_json(&manifest).expect("manifest");
     let app = build_from_spec(spec, false)

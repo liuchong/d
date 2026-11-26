@@ -156,6 +156,7 @@ fn build_request_head(
         let _ = write!(head, "Content-Length: {len}\r\n");
     }
 
+    let proto = if req.is_tls { "https" } else { "http" };
     let client_ip = req
         .remote_addr
         .map_or_else(|| "127.0.0.1".to_string(), |a| a.ip().to_string());
@@ -165,14 +166,19 @@ fn build_request_head(
     };
     let _ = write!(head, "X-Forwarded-For: {xff}\r\n");
     if !req.headers.contains("x-forwarded-proto") {
-        head.push_str("X-Forwarded-Proto: http\r\n");
+        let _ = write!(head, "X-Forwarded-Proto: {proto}\r\n");
     }
     if let Some(h) = orig_host
         && !req.headers.contains("x-forwarded-host")
     {
         let _ = write!(head, "X-Forwarded-Host: {h}\r\n");
     }
-    let _ = write!(head, "Forwarded: for={client_ip};proto=http\r\n");
+    let for_token = if req.remote_addr.is_some_and(|a| a.is_ipv6()) {
+        format!("\"[{client_ip}]\"")
+    } else {
+        client_ip
+    };
+    let _ = write!(head, "Forwarded: for={for_token};proto={proto}\r\n");
 
     for (ek, ev) in &route.extra_headers {
         let _ = write!(head, "{ek}: {ev}\r\n");
@@ -580,6 +586,8 @@ async fn forward_http(
         None
     };
 
+    let is_stream_body = matches!(req.body, BodyKind::Stream { .. });
+    let is_empty_body = matches!(req.body, BodyKind::Empty);
     let mut body_opt = Some(std::mem::replace(&mut req.body, BodyKind::Empty));
     let mut skip_idx: Option<usize> = None;
     let max_attempts = if can_retry_backend { 2 } else { 1 };
@@ -649,7 +657,8 @@ async fn forward_http(
             {
                 if was_pooled
                     && !retried_stale
-                    && !matches!(req.body, BodyKind::Stream { .. })
+                    && !is_stream_body
+                    && (can_retry_backend || is_empty_body)
                 {
                     retried_stale = true;
                     body_for_send = match &retry_body_copy {
@@ -678,7 +687,8 @@ async fn forward_http(
                 Err(e) => {
                     if was_pooled
                         && !retried_stale
-                        && !matches!(req.body, BodyKind::Stream { .. })
+                        && !is_stream_body
+                        && (can_retry_backend || is_empty_body)
                     {
                         retried_stale = true;
                         body_for_send = match &retry_body_copy {

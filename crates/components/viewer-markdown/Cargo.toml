@@ -1,13 +1,15 @@
 [package]
-name = "viewer-markdown"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.88"
-license-file = "../../../LICENSE"
+name = "d-viewer-markdown"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license-file.workspace = true
 description = "Layer 4 minimalist white Markdown viewer plugin for d"
 
 [dependencies]
-frame = { path = "../../frame" }
-http-api = { path = "../../contracts/http-api" }
-files-api = { path = "../../contracts/files-api" }
-render-api = { path = "../../contracts/render-api" }
+frame = { package = "d-frame", version = "0.1.1", path = "../../frame" }
+http-api = { package = "d-http-api", version = "0.1.1", path = "../../contracts/http-api" }
+files-api = { package = "d-files-api", version = "0.1.1", path = "../../contracts/files-api" }
+render-api = { package = "d-render-api", version = "0.1.1", path = "../../contracts/render-api" }

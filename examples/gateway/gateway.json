@@ -18,8 +18,8 @@
       "id": "ext-observability",
       "config": {
         "log_format": "json",
-        "health_path": "/healthz",
-        "ready_path": "/readyz",
+        "healthz_path": "/healthz",
+        "readyz_path": "/readyz",
         "metrics_path": "/metrics"
       }
     },

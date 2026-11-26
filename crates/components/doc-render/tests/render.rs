@@ -2,7 +2,7 @@
 //! CJK/ASCII heading anchors, footnotes, GFM tables/tasks, and syntax highlight
 //! (`T-M01`, `T-M02`, `T-M05`).
 
-use doc_render::DefaultRenderer;
+use d_doc_render::DefaultRenderer;
 use render_api::{MarkdownOptions, Renderer};
 use std::sync::Arc;
 

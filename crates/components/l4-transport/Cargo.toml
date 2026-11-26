@@ -1,13 +1,15 @@
 [package]
-name = "l4-transport"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.88"
-license-file = "../../../LICENSE"
+name = "d-l4-transport"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license-file.workspace = true
 description = "Layer 1 TCP transport listener and two-phase graceful drain for d"
 
 [dependencies]
-frame = { path = "../../frame" }
-net-api = { path = "../../contracts/net-api" }
-tls-api = { path = "../../contracts/tls-api" }
+frame = { package = "d-frame", version = "0.1.1", path = "../../frame" }
+net-api = { package = "d-net-api", version = "0.1.1", path = "../../contracts/net-api" }
+tls-api = { package = "d-tls-api", version = "0.1.1", path = "../../contracts/tls-api" }
 tokio = { version = "1", features = ["net", "io-util", "sync", "time", "rt", "macros"] }

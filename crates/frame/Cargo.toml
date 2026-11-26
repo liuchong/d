@@ -1,9 +1,11 @@
 [package]
-name = "frame"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.88"
-license-file = "../../LICENSE"
+name = "d-frame"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license-file.workspace = true
 description = "Zero-dependency plugin microkernel with scoped services, reactive fibers, and structured async effects"
 
 [dependencies]

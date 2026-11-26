@@ -1,20 +1,22 @@
 [package]
-name = "ext-dev-kit"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.88"
-license-file = "../../../LICENSE"
+name = "d-ext-dev-kit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license-file.workspace = true
 description = "Layer 3 development workflow kit: declarative Mocks, zero-CDN Live Reload, and white /_d/inspect UI for d"
 
 [dependencies]
-frame = { path = "../../frame" }
-http-api = { path = "../../contracts/http-api" }
-ws-api = { path = "../../contracts/ws-api" }
+frame = { package = "d-frame", version = "0.1.1", path = "../../frame" }
+http-api = { package = "d-http-api", version = "0.1.1", path = "../../contracts/http-api" }
+ws-api = { package = "d-ws-api", version = "0.1.1", path = "../../contracts/ws-api" }
 tokio = { version = "1", features = ["fs", "sync", "time", "rt", "macros"] }
 
 [dev-dependencies]
-l4-transport = { path = "../l4-transport" }
-proto-http = { path = "../proto-http" }
-proto-ws = { path = "../proto-ws" }
+l4-transport = { package = "d-l4-transport", path = "../l4-transport" }
+proto-http = { package = "d-proto-http", path = "../proto-http" }
+proto-ws = { package = "d-proto-ws", path = "../proto-ws" }
 tempfile = "3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }

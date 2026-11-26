@@ -209,28 +209,33 @@ mod tests {
                 },
             );
         };
-        add("frame", "crates/frame", &[]);
-        add("http-api", "crates/contracts/http-api", &["frame"]);
-        add("render-api", "crates/contracts/render-api", &["frame"]);
+        add("d-frame", "crates/frame", &[]);
+        add("d-http-api", "crates/contracts/http-api", &["d-frame"]);
+        add("d-render-api", "crates/contracts/render-api", &["d-frame"]);
         add(
-            "proto-http",
+            "d-proto-http",
             "crates/components/proto-http",
-            &["frame", "http-api"],
+            &["d-frame", "d-http-api"],
         );
         add(
-            "doc-render-plain",
+            "d-doc-render-plain",
             "crates/components/doc-render-plain",
-            &["frame", "render-api"],
+            &["d-frame", "d-render-api"],
         );
         add(
             "d",
             "crates/assemblies/d",
-            &["frame", "http-api", "proto-http"],
+            &["d-frame", "d-http-api", "d-proto-http"],
         );
         add(
             "d-minimal",
             "crates/assemblies/d-minimal",
-            &["frame", "http-api", "proto-http", "doc-render-plain"],
+            &[
+                "d-frame",
+                "d-http-api",
+                "d-proto-http",
+                "d-doc-render-plain",
+            ],
         );
 
         WorkspaceGraph {
@@ -247,13 +252,13 @@ mod tests {
             &g,
             &["crates/components/doc-render-plain/src/lib.rs".to_string()],
         );
-        assert_eq!(seeds, BTreeSet::from(["doc-render-plain".to_string()]));
+        assert_eq!(seeds, BTreeSet::from(["d-doc-render-plain".to_string()]));
 
         let closure = reverse_closure(&g, &seeds);
         assert_eq!(
             closure,
             BTreeSet::from([
-                "doc-render-plain".to_string(),
+                "d-doc-render-plain".to_string(),
                 "d-minimal".to_string(),
             ])
         );

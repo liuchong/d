@@ -1,17 +1,19 @@
 [package]
-name = "ext-compression"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.88"
-license-file = "../../../LICENSE"
+name = "d-ext-compression"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license-file.workspace = true
 description = "Layer 3 streaming-aware response compression extension for d"
 
 [dependencies]
-frame = { path = "../../frame" }
-http-api = { path = "../../contracts/http-api" }
+frame = { package = "d-frame", version = "0.1.1", path = "../../frame" }
+http-api = { package = "d-http-api", version = "0.1.1", path = "../../contracts/http-api" }
 flate2 = "1"
 brotli = "8"
 
 [dev-dependencies]
-proto-http = { path = "../proto-http" }
+proto-http = { package = "d-proto-http", path = "../proto-http" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

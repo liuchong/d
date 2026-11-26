@@ -1,13 +1,13 @@
 //! Integration tests for Layer 2 raw TCP engine (`proto-tcp`):
 //! raw handler registration, bidirectional forwarding rules, and clean port release.
 
+use d_proto_tcp::{
+    TcpConfig, TcpEnginePlugin, TcpForwardRule, TcpRegistryService,
+};
 use frame::{ConfigValue, Context, ErrorKind, FrameOptions, Plugin};
 use l4_transport::{TokioSpawner, TransportConfig, TransportPlugin};
 use net_api::{
     BoxStreamIo, ConnectionHandler, ConnectionMeta, DrainSignal, ListenOptions,
-};
-use proto_tcp::{
-    TcpConfig, TcpEnginePlugin, TcpForwardRule, TcpRegistryService,
 };
 use std::collections::BTreeMap;
 use std::future::poll_fn;

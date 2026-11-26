@@ -4,7 +4,7 @@
 //! - GA13: SSE zero-buffer chunked passthrough & WebSocket 101 bidirectional proxy tunnel
 //! - GA14: L4 TCP proxy forwarding & upstream header timeout -> 504 Gateway Timeout
 
-use ext_proxy::{
+use d_ext_proxy::{
     BackendConfig, HealthCheckConfig, HttpProxyRouteConfig,
     LoadBalanceStrategy, ProxyConfig, ProxyPlugin, TcpProxyRouteConfig,
     UpstreamConfig, UpstreamPoolService,
@@ -515,6 +515,131 @@ async fn proxy_active_health_check_and_timeout_504() {
     assert!(
         slow.starts_with("HTTP/1.1 504 "),
         "expected 504, got: {slow}"
+    );
+
+    ctx.dispose().await.unwrap();
+}
+
+#[tokio::test]
+async fn stale_pooled_post_with_body_does_not_retry_empty_and_ipv6_tls_forwarded()
+ {
+    let upstream_ln = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let upstream_addr = upstream_ln.local_addr().unwrap();
+    let second_conns = Arc::new(AtomicUsize::new(0));
+    let second_conns_srv = Arc::clone(&second_conns);
+    let captured = Arc::new(tokio::sync::Mutex::new(String::new()));
+    let captured_srv = Arc::clone(&captured);
+
+    tokio::spawn(async move {
+        // Conn 1: serve GET /warm keep-alive, then immediately close socket to make pool stale.
+        if let Ok((mut s1, _)) = upstream_ln.accept().await {
+            let mut buf = [0u8; 1024];
+            let _ = s1.read(&mut buf).await;
+            let _ = s1
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\nConnection: keep-alive\r\n\r\nwarm",
+                )
+                .await;
+            drop(s1);
+        }
+        // Any subsequent fresh dials (for IPv6 TLS header test).
+        while let Ok((mut s, _)) = upstream_ln.accept().await {
+            second_conns_srv.fetch_add(1, Ordering::Relaxed);
+            let mut buf = [0u8; 4096];
+            if let Ok(n) = s.read(&mut buf).await {
+                let text = String::from_utf8_lossy(&buf[..n]).into_owned();
+                *captured_srv.lock().await = text;
+            }
+            let _ = s
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
+                )
+                .await;
+        }
+    });
+
+    let ctx = Context::new(FrameOptions::new(Arc::new(TokioSpawner)));
+    ctx.plugin(
+        TransportPlugin::new(TransportConfig {
+            short_drain_timeout: Duration::from_millis(40),
+            long_drain_timeout: Duration::from_millis(60),
+            max_connections: None,
+        }),
+        ConfigValue::Null,
+    )
+    .unwrap();
+    ctx.plugin(
+        HttpEnginePlugin::new(HttpConfig {
+            bind_addr: Some("127.0.0.1:0".parse().unwrap()),
+            ..HttpConfig::default()
+        }),
+        ConfigValue::Null,
+    )
+    .unwrap();
+    ctx.plugin(
+        ProxyPlugin::new(ProxyConfig {
+            upstreams: vec![UpstreamConfig {
+                max_idle_per_backend: 4,
+                ..UpstreamConfig::new(
+                    "u",
+                    vec![BackendConfig::plain(upstream_addr)],
+                )
+            }],
+            http_routes: vec![HttpProxyRouteConfig {
+                id: "all".to_string(),
+                host: None,
+                match_prefix: "/".to_string(),
+                strip_prefix: None,
+                preserve_host: false,
+                upstream: "u".to_string(),
+                websocket: false,
+                retry_idempotent: true,
+                extra_headers: Vec::new(),
+            }],
+            tcp_routes: Vec::new(),
+        }),
+        ConfigValue::Null,
+    )
+    .unwrap();
+    ctx.settle().await;
+
+    let router = ctx.get::<RouterService>().unwrap().as_ref().clone();
+
+    // 1. Warm pool with GET /warm -> 200, backend then drops conn 1.
+    let warm = router
+        .dispatch(http_api::HttpRequest::new(http_api::Method::Get, "/warm"))
+        .await;
+    assert_eq!(warm.status, StatusCode::OK);
+    tokio::time::sleep(Duration::from_millis(30)).await;
+
+    // 2. Non-idempotent POST with non-empty Bytes body hits stale pooled socket:
+    // must NOT silently retry with empty body -> fails cleanly with 502 and 0 extra dials!
+    let mut post_req =
+        http_api::HttpRequest::new(http_api::Method::Post, "/submit");
+    post_req.body = http_api::BodyKind::Bytes(b"important=payload".to_vec());
+    let post_resp = router.dispatch(post_req).await;
+    assert_eq!(post_resp.status, StatusCode::BAD_GATEWAY);
+    assert_eq!(
+        second_conns.load(Ordering::Relaxed),
+        0,
+        "non-empty POST must never retry on a stale pooled socket with empty body"
+    );
+
+    // 3. IPv6 + is_tls=true request forwards quoted RFC 7239 Forwarded and https proto.
+    let mut ipv6_tls =
+        http_api::HttpRequest::new(http_api::Method::Get, "/probe");
+    ipv6_tls.remote_addr = Some("[::1]:54321".parse().unwrap());
+    ipv6_tls.is_tls = true;
+    let tls_resp = router.dispatch(ipv6_tls).await;
+    assert_eq!(tls_resp.status, StatusCode::OK);
+    let raw_fwd = captured.lock().await.clone();
+    assert!(
+        raw_fwd.contains("Forwarded: for=\"[::1]\";proto=https\r\n"),
+        "expected quoted RFC 7239 IPv6 Forwarded, got:\n{raw_fwd}"
+    );
+    assert!(
+        raw_fwd.contains("X-Forwarded-Proto: https\r\n"),
+        "expected X-Forwarded-Proto: https, got:\n{raw_fwd}"
     );
 
     ctx.dispose().await.unwrap();

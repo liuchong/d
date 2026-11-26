@@ -1,6 +1,6 @@
 //! BDD/TDD tests for Layer 3 zero-dependency CORS filter (`T-H07`).
 
-use ext_cors::CorsPlugin;
+use d_ext_cors::CorsPlugin;
 use frame::{
     BoxFuture, ConfigValue, Context, EffectHandle, ErrorKind, FrameError,
     FrameOptions, Spawner,

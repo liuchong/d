@@ -67,74 +67,82 @@ default-members = [
     "crates/assemblies/d",
 ]
 
+[workspace.package]
+version = "0.1.1"
+edition = "2024"
+rust-version = "1.88"
+authors = ["Liu Chong <mail@liuchong.io>"]
+repository = "https://github.com/liuchong/d"
+license-file = "LICENSE"
+
 [workspace.metadata.architecture]
-kernel = ["frame"]
-contracts = ["net-api", "tls-api", "http-api", "ws-api", "proxy-api", "files-api", "render-api"]
+kernel = ["d-frame"]
+contracts = ["d-net-api", "d-tls-api", "d-http-api", "d-ws-api", "d-proxy-api", "d-files-api", "d-render-api"]
 components = [
-    "l4-transport",
-    "l4-tls",
-    "proto-http",
-    "proto-ws",
-    "proto-tcp",
-    "ext-proxy",
-    "ext-observability",
-    "ext-ratelimit",
-    "ext-auth",
-    "ext-dev-kit",
-    "ext-compression",
-    "ext-cors",
-    "app-files",
-    "doc-render",
-    "doc-render-plain",
-    "viewer-markdown",
-    "viewer-code",
-    "viewer-media",
+    "d-l4-transport",
+    "d-l4-tls",
+    "d-proto-http",
+    "d-proto-ws",
+    "d-proto-tcp",
+    "d-ext-proxy",
+    "d-ext-observability",
+    "d-ext-ratelimit",
+    "d-ext-auth",
+    "d-ext-dev-kit",
+    "d-ext-compression",
+    "d-ext-cors",
+    "d-app-files",
+    "d-doc-render",
+    "d-doc-render-plain",
+    "d-viewer-markdown",
+    "d-viewer-code",
+    "d-viewer-media",
 ]
 entries = ["d-cli", "d-daemon", "d-mcp"]
 assemblies = ["d", "d-minimal"]
 tools = ["xtask"]
 zero_external_deps = [
-    "frame",
-    "net-api",
-    "tls-api",
-    "http-api",
-    "ws-api",
-    "proxy-api",
-    "files-api",
-    "render-api",
-    "ext-observability",
-    "ext-ratelimit",
-    "ext-auth",
-    "ext-cors",
-    "doc-render",
-    "doc-render-plain",
-    "viewer-markdown",
-    "viewer-code",
-    "viewer-media",
+    "d-frame",
+    "d-net-api",
+    "d-tls-api",
+    "d-http-api",
+    "d-ws-api",
+    "d-proxy-api",
+    "d-files-api",
+    "d-render-api",
+    "d-ext-observability",
+    "d-ext-ratelimit",
+    "d-ext-auth",
+    "d-ext-cors",
+    "d-doc-render",
+    "d-doc-render-plain",
+    "d-viewer-markdown",
+    "d-viewer-code",
+    "d-viewer-media",
     "d-cli",
     "xtask",
 ]
 minimal_assembly = "d-minimal"
 minimal_forbidden = [
-    "l4-tls",
-    "proto-ws",
-    "proto-tcp",
-    "ext-proxy",
-    "ext-observability",
-    "ext-ratelimit",
-    "ext-auth",
-    "ext-dev-kit",
-    "ext-compression",
-    "doc-render",
-    "viewer-markdown",
-    "viewer-code",
-    "viewer-media",
+    "d-l4-tls",
+    "d-proto-ws",
+    "d-proto-tcp",
+    "d-ext-proxy",
+    "d-ext-observability",
+    "d-ext-ratelimit",
+    "d-ext-auth",
+    "d-ext-dev-kit",
+    "d-ext-compression",
+    "d-doc-render",
+    "d-viewer-markdown",
+    "d-viewer-code",
+    "d-viewer-media",
     "brotli",
     "flate2",
     "rustls",
     "tokio-rustls",
 ]
-multi_impl_contracts = ["render-api"]
+multi_impl_contracts = ["d-render-api"]
 
 [profile.release]
 opt-level = 3
