@@ -1,0 +1,19 @@
+[package]
+name = "proto-ws"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license-file = "../../../LICENSE"
+description = "Layer 2 zero-WS-dep pure-Rust RFC 6455 WebSocket engine for d"
+
+[dependencies]
+frame = { path = "../../frame" }
+net-api = { path = "../../contracts/net-api" }
+http-api = { path = "../../contracts/http-api" }
+ws-api = { path = "../../contracts/ws-api" }
+tokio = { version = "1", features = ["sync", "time", "rt", "macros"] }
+
+[dev-dependencies]
+l4-transport = { path = "../l4-transport" }
+proto-http = { path = "../proto-http" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }

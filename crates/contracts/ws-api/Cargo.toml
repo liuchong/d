@@ -1,0 +1,11 @@
+[package]
+name = "ws-api"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license-file = "../../../LICENSE"
+description = "Zero-dependency Layer 2 WebSocket session and registry contracts for d"
+
+[dependencies]
+frame = { path = "../../frame" }
+http-api = { path = "../http-api" }

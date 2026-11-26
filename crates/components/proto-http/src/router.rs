@@ -6,6 +6,7 @@ use http_api::{
     RouteMatch, RouteSpec, Router, StatusCode,
 };
 use std::cmp::Reverse;
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -47,7 +48,8 @@ impl RouterInner {
         routes.sort_by_key(|r| {
             let host_rank = u8::from(r.spec.host.is_some());
             let (kind_rank, len) = match &r.spec.matcher {
-                RouteMatch::Exact(s) => (3u8, s.len()),
+                RouteMatch::Exact(s) => (4u8, s.len()),
+                RouteMatch::Param(s) => (3u8, s.len()),
                 RouteMatch::Prefix(s) => (2u8, s.len()),
                 RouteMatch::CatchAll => (1u8, 0),
             };
@@ -92,31 +94,70 @@ impl HttpRouter {
     }
 }
 
-fn route_matches(entry: &RouteEntry, req: &HttpRequest) -> bool {
+/// Match a parameterized pattern (`/users/:id/files/*rest`) against a normalized path.
+pub fn match_param_pattern(
+    pattern: &str,
+    path: &str,
+) -> Option<BTreeMap<String, String>> {
+    let p_segs: Vec<&str> =
+        pattern.split('/').filter(|s| !s.is_empty()).collect();
+    let r_segs: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    let mut params = BTreeMap::new();
+
+    for (idx, seg) in p_segs.iter().enumerate() {
+        if let Some(rest_name) = seg.strip_prefix('*') {
+            if !rest_name.is_empty() {
+                params.insert(rest_name.to_string(), r_segs[idx..].join("/"));
+            }
+            return Some(params);
+        }
+        let actual = *r_segs.get(idx)?;
+        if let Some(param_name) = seg.strip_prefix(':') {
+            if param_name.is_empty() || actual.is_empty() {
+                return None;
+            }
+            params.insert(param_name.to_string(), actual.to_string());
+        } else if *seg != actual {
+            return None;
+        }
+    }
+
+    if r_segs.len() == p_segs.len() {
+        Some(params)
+    } else {
+        None
+    }
+}
+
+fn route_matches(
+    entry: &RouteEntry,
+    req: &HttpRequest,
+) -> Option<BTreeMap<String, String>> {
     if let Some(expected_host) = &entry.spec.host {
-        let Some(actual) = req.headers.get("host") else {
-            return false;
-        };
+        let actual = req.headers.get("host")?;
         let normalized = if expected_host.contains(':') {
             actual
         } else {
             actual.split(':').next().unwrap_or(actual)
         };
         if !normalized.eq_ignore_ascii_case(expected_host) {
-            return false;
+            return None;
         }
     }
 
     if let Some(methods) = &entry.spec.methods
         && !methods.iter().any(|m| m == &req.method)
     {
-        return false;
+        return None;
     }
 
     match &entry.spec.matcher {
-        RouteMatch::Exact(path) => &req.path == path,
-        RouteMatch::Prefix(prefix) => req.path.starts_with(prefix),
-        RouteMatch::CatchAll => true,
+        RouteMatch::Exact(path) => (&req.path == path).then(BTreeMap::new),
+        RouteMatch::Param(pattern) => match_param_pattern(pattern, &req.path),
+        RouteMatch::Prefix(prefix) => {
+            req.path.starts_with(prefix).then(BTreeMap::new)
+        }
+        RouteMatch::CatchAll => Some(BTreeMap::new()),
     }
 }
 
@@ -200,10 +241,15 @@ impl Router for HttpRouter {
             let mut resp = if let Some(resp) = short_circuit {
                 resp
             } else {
-                let req_in = cur_req.expect("request must exist");
-                if let Some(route) =
-                    snap.routes.iter().find(|r| route_matches(r, &req_in))
-                {
+                let mut req_in = cur_req.expect("request must exist");
+                let matched = snap
+                    .routes
+                    .iter()
+                    .find_map(|r| route_matches(r, &req_in).map(|p| (r, p)));
+                if let Some((route, params)) = matched {
+                    if !params.is_empty() {
+                        req_in.path_params = params;
+                    }
                     route.handler.call(req_in).await
                 } else {
                     HttpResponse::text(StatusCode::NOT_FOUND, "Not Found")

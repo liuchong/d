@@ -1,6 +1,6 @@
 //! Self-built HTTP/1.1 streaming response serializer.
 
-use http_api::{BodyKind, HttpResponse, Version};
+use http_api::{BodyKind, HttpResponse, UpgradeHandler, Version};
 use net_api::{BoxStreamIo, DrainSignal};
 use std::fmt::Write as _;
 use std::future::poll_fn;
@@ -9,8 +9,15 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// Result of writing an HTTP response over a connection.
+pub(crate) enum WriteOutcome {
+    KeepAlive,
+    Close,
+    Upgraded(Arc<dyn UpgradeHandler>),
+}
+
 /// Write one HTTP/1.x response over `io`, honoring `HEAD`, fixed-length streams,
-/// and `streaming: true` immediate chunked flushes.
+/// `streaming: true` immediate chunked flushes, and `101` upgrade handoffs.
 pub(crate) async fn write_response(
     io: &mut BoxStreamIo,
     version: Version,
@@ -18,10 +25,31 @@ pub(crate) async fn write_response(
     keep_alive: bool,
     mut resp: HttpResponse,
     drain: &Arc<dyn DrainSignal>,
-) -> io::Result<bool> {
+) -> io::Result<WriteOutcome> {
     if !resp.headers.contains("date") {
         resp.headers
             .insert("Date", format_imf_fixdate(SystemTime::now()));
+    }
+
+    let mut body = std::mem::replace(&mut resp.body, BodyKind::Empty);
+
+    if let BodyKind::Upgrade(handler) = body {
+        drain.mark_long_lived();
+        let mut head = String::with_capacity(512);
+        let _ = write!(
+            head,
+            "{} {} {}\r\n",
+            version.as_str(),
+            resp.status.as_u16(),
+            resp.status.reason_phrase()
+        );
+        for (k, v) in resp.headers.iter() {
+            let _ = write!(head, "{k}: {v}\r\n");
+        }
+        head.push_str("\r\n");
+        write_all_io(io, head.as_bytes()).await?;
+        flush_io(io).await?;
+        return Ok(WriteOutcome::Upgraded(handler));
     }
 
     let body_forbidden = is_head
@@ -31,8 +59,6 @@ pub(crate) async fn write_response(
 
     let mut force_close = !keep_alive || drain.is_draining();
     let mut use_chunked = false;
-
-    let mut body = std::mem::replace(&mut resp.body, BodyKind::Empty);
 
     if let BodyKind::Stream {
         streaming: true, ..
@@ -52,7 +78,7 @@ pub(crate) async fn write_response(
         body = BodyKind::Empty;
     } else {
         match &body {
-            BodyKind::Empty => {
+            BodyKind::Empty | BodyKind::Upgrade(_) => {
                 if !resp.headers.contains("content-length") {
                     resp.headers.insert("Content-Length", "0");
                 }
@@ -111,7 +137,7 @@ pub(crate) async fn write_response(
     write_all_io(io, head.as_bytes()).await?;
 
     match body {
-        BodyKind::Empty => {
+        BodyKind::Empty | BodyKind::Upgrade(_) => {
             flush_io(io).await?;
         }
         BodyKind::Bytes(data) => {
@@ -161,7 +187,11 @@ pub(crate) async fn write_response(
         }
     }
 
-    Ok(final_keep_alive)
+    if final_keep_alive {
+        Ok(WriteOutcome::KeepAlive)
+    } else {
+        Ok(WriteOutcome::Close)
+    }
 }
 
 async fn write_all_io(io: &mut BoxStreamIo, data: &[u8]) -> io::Result<()> {

@@ -190,7 +190,8 @@ fn should_exempt(
         BodyKind::Empty => true,
         BodyKind::Stream {
             streaming: true, ..
-        } => true,
+        }
+        | BodyKind::Upgrade(_) => true,
         BodyKind::Stream {
             content_length,
             streaming: false,

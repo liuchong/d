@@ -5,7 +5,8 @@ use frame::{
     BoxFuture, Context as FrameContext, EffectHandle, FrameError,
     ScopedService, Service,
 };
-use std::collections::VecDeque;
+use net_api::{BoxStreamIo, DrainSignal};
+use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 use std::future::poll_fn;
 use std::io;
@@ -93,20 +94,27 @@ fn is_tchar(b: &u8) -> bool {
 pub struct StatusCode(pub u16);
 
 impl StatusCode {
+    pub const SWITCHING_PROTOCOLS: Self = Self(101);
     pub const OK: Self = Self(200);
     pub const NO_CONTENT: Self = Self(204);
     pub const PARTIAL_CONTENT: Self = Self(206);
     pub const MOVED_PERMANENTLY: Self = Self(301);
     pub const NOT_MODIFIED: Self = Self(304);
     pub const BAD_REQUEST: Self = Self(400);
+    pub const UNAUTHORIZED: Self = Self(401);
     pub const FORBIDDEN: Self = Self(403);
     pub const NOT_FOUND: Self = Self(404);
     pub const METHOD_NOT_ALLOWED: Self = Self(405);
     pub const PAYLOAD_TOO_LARGE: Self = Self(413);
     pub const URI_TOO_LONG: Self = Self(414);
     pub const RANGE_NOT_SATISFIABLE: Self = Self(416);
+    pub const UPGRADE_REQUIRED: Self = Self(426);
+    pub const TOO_MANY_REQUESTS: Self = Self(429);
     pub const HEADER_FIELDS_TOO_LARGE: Self = Self(431);
     pub const INTERNAL_SERVER_ERROR: Self = Self(500);
+    pub const BAD_GATEWAY: Self = Self(502);
+    pub const SERVICE_UNAVAILABLE: Self = Self(503);
+    pub const GATEWAY_TIMEOUT: Self = Self(504);
     pub const HTTP_VERSION_NOT_SUPPORTED: Self = Self(505);
 
     /// Return the raw integer status code.
@@ -136,10 +144,13 @@ impl StatusCode {
             413 => "Payload Too Large",
             414 => "URI Too Long",
             416 => "Range Not Satisfiable",
+            426 => "Upgrade Required",
+            429 => "Too Many Requests",
             431 => "Request Header Fields Too Large",
             500 => "Internal Server Error",
             502 => "Bad Gateway",
             503 => "Service Unavailable",
+            504 => "Gateway Timeout",
             505 => "HTTP Version Not Supported",
             _ => "Unknown",
         }
@@ -371,7 +382,19 @@ impl AsyncByteStream for StreamReceiver {
     }
 }
 
-/// HTTP message payload representation supporting zero-buffer streaming.
+/// Post-`101 Switching Protocols` connection ownership handoff callback.
+pub trait UpgradeHandler: Send + Sync + 'static {
+    /// Take exclusive ownership of the upgraded socket stream, any pre-buffered
+    /// bytes already read past HTTP headers, and the Layer 1 [`DrainSignal`].
+    fn on_upgrade(
+        &self,
+        io: BoxStreamIo,
+        leftover: Vec<u8>,
+        drain: Arc<dyn DrainSignal>,
+    ) -> BoxFuture<'static, ()>;
+}
+
+/// HTTP message payload representation supporting zero-buffer streaming and protocol upgrade.
 pub enum BodyKind {
     Empty,
     Bytes(Vec<u8>),
@@ -382,6 +405,8 @@ pub enum BodyKind {
         /// and the HTTP writer flushes each chunk immediately.
         streaming: bool,
     },
+    /// Protocol upgrade handoff triggered after writing the `101` response headers.
+    Upgrade(Arc<dyn UpgradeHandler>),
 }
 
 impl fmt::Debug for BodyKind {
@@ -398,6 +423,7 @@ impl fmt::Debug for BodyKind {
                 .field("content_length", content_length)
                 .field("streaming", streaming)
                 .finish_non_exhaustive(),
+            Self::Upgrade(_) => f.write_str("BodyKind::Upgrade(..)"),
         }
     }
 }
@@ -408,14 +434,14 @@ impl BodyKind {
         matches!(self, Self::Empty)
     }
 
-    /// Return `true` if this is a live unbuffered stream.
+    /// Return `true` if this is a live unbuffered stream or upgraded tunnel.
     pub fn is_streaming(&self) -> bool {
         matches!(
             self,
             Self::Stream {
                 streaming: true,
                 ..
-            }
+            } | Self::Upgrade(_)
         )
     }
 
@@ -425,6 +451,7 @@ impl BodyKind {
             Self::Empty => Some(0),
             Self::Bytes(b) => Some(b.len() as u64),
             Self::Stream { content_length, .. } => *content_length,
+            Self::Upgrade(_) => None,
         }
     }
 
@@ -432,7 +459,7 @@ impl BodyKind {
     pub fn into_bytes(self) -> BoxFuture<'static, io::Result<Vec<u8>>> {
         Box::pin(async move {
             match self {
-                Self::Empty => Ok(Vec::new()),
+                Self::Empty | Self::Upgrade(_) => Ok(Vec::new()),
                 Self::Bytes(b) => Ok(b),
                 Self::Stream { mut reader, .. } => {
                     let mut out = Vec::new();
@@ -468,6 +495,7 @@ pub struct HttpRequest {
     pub raw_uri: String,
     pub path: String,
     pub query: Option<String>,
+    pub path_params: BTreeMap<String, String>,
     pub version: Version,
     pub headers: Headers,
     pub body: BodyKind,
@@ -484,11 +512,17 @@ impl HttpRequest {
             raw_uri,
             path,
             query,
+            path_params: BTreeMap::new(),
             version: Version::Http11,
             headers: Headers::new(),
             body: BodyKind::Empty,
             remote_addr: None,
         }
+    }
+
+    /// Look up a route path parameter extracted by [`RouteMatch::Param`].
+    pub fn path_param(&self, key: &str) -> Option<&str> {
+        self.path_params.get(key).map(String::as_str)
     }
 
     /// Insert or replace a header and return `self`.
@@ -521,6 +555,8 @@ impl HttpRequest {
             version: self.version,
             headers: self.headers.clone(),
             is_head: self.method == Method::Head,
+            remote_addr: self.remote_addr,
+            started_at: std::time::Instant::now(),
         }
     }
 }
@@ -595,6 +631,8 @@ pub struct RequestMeta {
     pub version: Version,
     pub headers: Headers,
     pub is_head: bool,
+    pub remote_addr: Option<SocketAddr>,
+    pub started_at: std::time::Instant,
 }
 
 /// Outgoing HTTP response returned by handlers and filters.
@@ -681,6 +719,19 @@ impl HttpResponse {
         }
     }
 
+    /// Construct a protocol upgrade response (such as `101 Switching Protocols`).
+    pub fn upgrade(
+        status: StatusCode,
+        headers: Headers,
+        handler: Arc<dyn UpgradeHandler>,
+    ) -> Self {
+        Self {
+            status,
+            headers,
+            body: BodyKind::Upgrade(handler),
+        }
+    }
+
     /// Insert or replace a response header and return `self`.
     pub fn with_header(
         mut self,
@@ -702,6 +753,8 @@ impl HttpResponse {
 pub enum RouteMatch {
     /// Matches an exact decoded/normalized request path.
     Exact(String),
+    /// Matches path segments with `:param` single-segment captures and trailing `*rest` capture.
+    Param(String),
     /// Matches requests whose path starts with this prefix.
     Prefix(String),
     /// Matches any remaining path as fallback.

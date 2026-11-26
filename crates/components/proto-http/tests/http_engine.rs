@@ -347,3 +347,204 @@ async fn router_effect_lifecycle_and_snapshot_isolation() {
 
     ctx.dispose().await.expect("dispose");
 }
+
+#[tokio::test]
+async fn param_routing_and_priority_ranking() {
+    let (ctx, router, _addr) = setup_http_server().await;
+
+    let _prefix = router
+        .mount_route(
+            &ctx,
+            RouteSpec::new("prefix", RouteMatch::Prefix("/v1/agents".into())),
+            fn_handler(|_| async {
+                HttpResponse::text(StatusCode::OK, "prefix")
+            }),
+        )
+        .unwrap();
+    let _param = router
+        .mount_route(
+            &ctx,
+            RouteSpec::new(
+                "param",
+                RouteMatch::Param("/v1/agents/:agent_id/files/*rest".into()),
+            ),
+            fn_handler(|req| async move {
+                let a = req.path_param("agent_id").unwrap_or("");
+                let r = req.path_param("rest").unwrap_or("");
+                HttpResponse::text(StatusCode::OK, format!("param:{a}:{r}"))
+            }),
+        )
+        .unwrap();
+    let _exact = router
+        .mount_route(
+            &ctx,
+            RouteSpec::new(
+                "exact",
+                RouteMatch::Exact("/v1/agents/sys/files/health".into()),
+            ),
+            fn_handler(|_| async {
+                HttpResponse::text(StatusCode::OK, "exact")
+            }),
+        )
+        .unwrap();
+
+    let r_exact = router
+        .dispatch(HttpRequest::new(Method::Get, "/v1/agents/sys/files/health"))
+        .await;
+    assert_eq!(
+        String::from_utf8(r_exact.body.into_bytes().await.unwrap()).unwrap(),
+        "exact"
+    );
+
+    let r_param = router
+        .dispatch(HttpRequest::new(
+            Method::Get,
+            "/v1/agents/a42/files/sub/notes.md",
+        ))
+        .await;
+    assert_eq!(
+        String::from_utf8(r_param.body.into_bytes().await.unwrap()).unwrap(),
+        "param:a42:sub/notes.md"
+    );
+
+    let r_prefix = router
+        .dispatch(HttpRequest::new(Method::Get, "/v1/agents/other"))
+        .await;
+    assert_eq!(
+        String::from_utf8(r_prefix.body.into_bytes().await.unwrap()).unwrap(),
+        "prefix"
+    );
+
+    ctx.dispose().await.expect("dispose");
+}
+
+#[tokio::test]
+async fn streaming_request_body_and_max_limit_413() {
+    use http_api::BodyKind;
+
+    let ctx = Context::new(FrameOptions::new(Arc::new(TokioSpawner)));
+    ctx.plugin(TransportPlugin::default(), ConfigValue::Null)
+        .expect("transport");
+    ctx.plugin(
+        HttpEnginePlugin::new(HttpConfig {
+            bind_addr: Some("127.0.0.1:0".parse().unwrap()),
+            stream_body_threshold: 16,
+            max_body_bytes: 256,
+            ..HttpConfig::default()
+        }),
+        ConfigValue::Null,
+    )
+    .expect("http");
+    ctx.settle().await;
+    let router = ctx.get::<RouterService>().unwrap().as_ref().clone();
+    let addr = ctx.get::<BoundServerInfo>().unwrap().local_addr;
+
+    let _echo = router
+        .mount_route(
+            &ctx,
+            RouteSpec::new("up", RouteMatch::Exact("/up".into())),
+            fn_handler(|req| async move {
+                let is_stream = matches!(req.body, BodyKind::Stream { .. });
+                let bytes = req.body.into_bytes().await.unwrap_or_default();
+                HttpResponse::text(
+                    StatusCode::OK,
+                    format!("stream={is_stream}:len={}", bytes.len()),
+                )
+            }),
+        )
+        .unwrap();
+
+    // Fixed length above stream_body_threshold (40 > 16) arrives as BodyKind::Stream.
+    let body_40 = "a".repeat(40);
+    let req_40 = format!(
+        "POST /up HTTP/1.1\r\nHost: localhost\r\nContent-Length: 40\r\nConnection: close\r\n\r\n{body_40}"
+    );
+    let resp_40 =
+        String::from_utf8_lossy(&send_raw(addr, req_40.as_bytes()).await)
+            .into_owned();
+    assert!(resp_40.contains("stream=true:len=40"), "got: {resp_40}");
+
+    // Chunked exceeding max_body_bytes (256) rejects with 413.
+    let big_chunk = "b".repeat(300);
+    let req_big = format!(
+        "POST /up HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n{:x}\r\n{}\r\n0\r\n\r\n",
+        big_chunk.len(),
+        big_chunk
+    );
+    let resp_big =
+        String::from_utf8_lossy(&send_raw(addr, req_big.as_bytes()).await)
+            .into_owned();
+    assert!(resp_big.starts_with("HTTP/1.1 413 "), "got: {resp_big}");
+
+    ctx.dispose().await.expect("dispose");
+}
+
+#[tokio::test]
+async fn upgrade_handoff_writes_101_and_passes_leftover_bytes() {
+    use http_api::{Headers, UpgradeHandler};
+    use net_api::{BoxStreamIo, DrainSignal};
+    use std::future::poll_fn;
+    use std::pin::Pin;
+
+    struct RawEchoUpgrade;
+    impl UpgradeHandler for RawEchoUpgrade {
+        fn on_upgrade(
+            &self,
+            mut io: BoxStreamIo,
+            leftover: Vec<u8>,
+            _drain: Arc<dyn DrainSignal>,
+        ) -> frame::BoxFuture<'static, ()> {
+            Box::pin(async move {
+                let mut reply = b"LEFT:".to_vec();
+                reply.extend_from_slice(&leftover);
+                let mut off = 0;
+                while off < reply.len() {
+                    let n = poll_fn(|cx| {
+                        Pin::new(&mut *io).poll_write(cx, &reply[off..])
+                    })
+                    .await
+                    .unwrap();
+                    off += n;
+                }
+                let _ = poll_fn(|cx| Pin::new(&mut *io).poll_flush(cx)).await;
+                let _ =
+                    poll_fn(|cx| Pin::new(&mut *io).poll_shutdown(cx)).await;
+            })
+        }
+    }
+
+    let (ctx, router, addr) = setup_http_server().await;
+    let _up = router
+        .mount_route(
+            &ctx,
+            RouteSpec::new("raw-up", RouteMatch::Exact("/tunnel".into())),
+            fn_handler(|_| async {
+                let mut h = Headers::new();
+                h.insert("Upgrade", "custom");
+                h.insert("Connection", "Upgrade");
+                HttpResponse::upgrade(
+                    StatusCode::SWITCHING_PROTOCOLS,
+                    h,
+                    Arc::new(RawEchoUpgrade),
+                )
+            }),
+        )
+        .unwrap();
+
+    let mut stream = TcpStream::connect(addr).await.unwrap();
+    // Write HTTP upgrade header AND trailing payload bytes in the very same segment!
+    stream
+        .write_all(b"GET /tunnel HTTP/1.1\r\nHost: localhost\r\nConnection: Upgrade\r\nUpgrade: custom\r\n\r\npipelined-bytes")
+        .await
+        .unwrap();
+    let mut out = Vec::new();
+    stream.read_to_end(&mut out).await.unwrap();
+    let text = String::from_utf8_lossy(&out);
+    assert!(
+        text.starts_with("HTTP/1.1 101 Switching Protocols\r\n"),
+        "{text}"
+    );
+    assert!(text.ends_with("LEFT:pipelined-bytes"), "{text}");
+
+    ctx.dispose().await.expect("dispose");
+}

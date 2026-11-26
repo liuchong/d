@@ -1,17 +1,20 @@
-//! Self-built HTTP/1.1 incremental wire parser with strict resource limits.
+//! Self-built HTTP/1.1 incremental wire parser with streaming request body support.
 
 use crate::HttpConfig;
 use http_api::{
-    BodyKind, Headers, HttpRequest, Method, StatusCode, Version,
-    split_uri_target,
+    AsyncByteStream, BodyKind, Headers, HttpRequest, Method, StatusCode,
+    Version, split_uri_target,
 };
 use net_api::{BoxStreamIo, DrainSignal};
+use std::collections::BTreeMap;
 use std::future::poll_fn;
 use std::io;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::Duration;
+use tokio::sync::mpsc;
 
 /// Wire-level parse failure mapped cleanly onto an HTTP error status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,13 +50,38 @@ impl ParseRejection {
     }
 }
 
-/// Parsed HTTP/1.x request together with connection persistence decision.
-pub(crate) struct ParsedRequest {
-    pub(crate) request: HttpRequest,
-    pub(crate) keep_alive: bool,
+struct MpscByteStream(mpsc::Receiver<io::Result<Vec<u8>>>);
+
+impl AsyncByteStream for MpscByteStream {
+    fn poll_next(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<io::Result<Vec<u8>>>> {
+        self.0.poll_recv(cx)
+    }
 }
 
-/// Buffered incremental reader preserving leftover bytes across pipelined HTTP/1.1 requests.
+/// Incremental body pumping plan produced when request body uses streaming.
+pub(crate) enum BodyPump {
+    None,
+    Fixed {
+        remaining: usize,
+        tx: mpsc::Sender<io::Result<Vec<u8>>>,
+    },
+    Chunked {
+        tx: mpsc::Sender<io::Result<Vec<u8>>>,
+    },
+}
+
+/// Parsed HTTP/1.x request together with persistence decision and optional body pump.
+pub(crate) struct ParsedHead {
+    pub(crate) request: HttpRequest,
+    pub(crate) keep_alive: bool,
+    pub(crate) pump: BodyPump,
+}
+
+/// Buffered incremental reader preserving leftover bytes across pipelined HTTP/1.1
+/// requests and protocol upgrades.
 pub(crate) struct ConnReader {
     io: BoxStreamIo,
     buf: Vec<u8>,
@@ -73,6 +101,11 @@ impl ConnReader {
 
     pub(crate) fn into_io(self) -> BoxStreamIo {
         self.io
+    }
+
+    pub(crate) fn take_io_and_leftover(self) -> (BoxStreamIo, Vec<u8>) {
+        let leftover = self.buf[self.pos..].to_vec();
+        (self.io, leftover)
     }
 
     pub(crate) fn io_mut(&mut self) -> &mut BoxStreamIo {
@@ -153,7 +186,6 @@ impl ConnReader {
                 self.consume(pos + 2);
                 return Ok(line);
             }
-            // Reject early if already buffered beyond bound without finding CRLF.
             if self.available().len() > max_len + 2 {
                 return Err(too_long);
             }
@@ -186,19 +218,50 @@ impl ConnReader {
         Ok(out)
     }
 
-    /// Parse the next HTTP/1.x request from the connection.
-    /// Returns `Ok(None)` on clean EOF or graceful idle drain shutdown.
-    pub(crate) async fn read_request(
+    async fn stream_exact_chunks(
+        &mut self,
+        mut remaining: usize,
+        tx: &mpsc::Sender<io::Result<Vec<u8>>>,
+        timeout: Duration,
+    ) -> Result<(), ParseRejection> {
+        while remaining > 0 {
+            if self.available().is_empty() {
+                match self.fill_more(timeout).await {
+                    Ok(0) | Err(_) => {
+                        let _ = tx
+                            .send(Err(io::Error::new(
+                                io::ErrorKind::UnexpectedEof,
+                                "unexpected EOF in request body",
+                            )))
+                            .await;
+                        return Err(ParseRejection::BadRequest);
+                    }
+                    Ok(_) => {}
+                }
+            }
+            let take = remaining.min(self.available().len()).min(16 * 1024);
+            let chunk = self.available()[..take].to_vec();
+            self.consume(take);
+            remaining -= take;
+            if tx.send(Ok(chunk)).await.is_err() {
+                return Err(ParseRejection::BadRequest);
+            }
+        }
+        Ok(())
+    }
+
+    /// Parse request line + headers, eagerly buffering small bodies and returning a
+    /// streaming [`BodyPump`] for chunked or oversized bodies.
+    pub(crate) async fn read_head(
         &mut self,
         config: &HttpConfig,
         remote_addr: SocketAddr,
         drain: &Arc<dyn DrainSignal>,
-    ) -> Result<Option<ParsedRequest>, ParseRejection> {
+    ) -> Result<Option<ParsedHead>, ParseRejection> {
         if !self.wait_first_byte(config.idle_timeout, drain).await? {
             return Ok(None);
         }
 
-        // Skip optional leading empty CRLF per RFC 9112 Section 2.2 (at most a couple).
         let req_line = loop {
             let line = self
                 .read_line_bounded(
@@ -242,35 +305,33 @@ impl ConnReader {
             headers.append(name, value);
         }
 
-        let body = self
-            .read_body(&headers, config.max_body_bytes, config.idle_timeout)
-            .await?;
-
+        let (body, pump) = self.prepare_body(&headers, config).await?;
         let keep_alive =
             compute_keep_alive(version, &headers, drain.is_draining());
         let (path, query) = split_uri_target(&raw_uri);
 
-        Ok(Some(ParsedRequest {
+        Ok(Some(ParsedHead {
             request: HttpRequest {
                 method,
                 raw_uri,
                 path,
                 query,
+                path_params: BTreeMap::new(),
                 version,
                 headers,
                 body,
                 remote_addr: Some(remote_addr),
             },
             keep_alive,
+            pump,
         }))
     }
 
-    async fn read_body(
+    async fn prepare_body(
         &mut self,
         headers: &Headers,
-        max_body_bytes: usize,
-        timeout: Duration,
-    ) -> Result<BodyKind, ParseRejection> {
+        config: &HttpConfig,
+    ) -> Result<(BodyKind, BodyPump), ParseRejection> {
         let has_te = headers.contains("transfer-encoding");
         let cls: Vec<&str> = headers.get_all("content-length").collect();
 
@@ -289,12 +350,15 @@ impl ConnReader {
             if !is_chunked {
                 return Err(ParseRejection::BadRequest);
             }
-            let bytes = self.read_chunked_body(max_body_bytes, timeout).await?;
-            return Ok(if bytes.is_empty() {
-                BodyKind::Empty
-            } else {
-                BodyKind::Bytes(bytes)
-            });
+            let (tx, rx) = mpsc::channel(16);
+            return Ok((
+                BodyKind::Stream {
+                    reader: Box::new(MpscByteStream(rx)),
+                    content_length: None,
+                    streaming: true,
+                },
+                BodyPump::Chunked { tx },
+            ));
         }
 
         if !cls.is_empty() {
@@ -313,62 +377,103 @@ impl ConnReader {
                 }
             }
             let len = parsed_len.unwrap_or(0);
-            if len > max_body_bytes {
+            if len > config.max_body_bytes {
                 return Err(ParseRejection::PayloadTooLarge);
             }
             if len == 0 {
-                return Ok(BodyKind::Empty);
+                return Ok((BodyKind::Empty, BodyPump::None));
             }
-            let bytes = self.read_exact_bytes(len, timeout).await?;
-            return Ok(BodyKind::Bytes(bytes));
+            if len <= config.stream_body_threshold {
+                let bytes =
+                    self.read_exact_bytes(len, config.idle_timeout).await?;
+                return Ok((BodyKind::Bytes(bytes), BodyPump::None));
+            }
+            let (tx, rx) = mpsc::channel(16);
+            return Ok((
+                BodyKind::Stream {
+                    reader: Box::new(MpscByteStream(rx)),
+                    content_length: Some(len as u64),
+                    streaming: false,
+                },
+                BodyPump::Fixed { remaining: len, tx },
+            ));
         }
 
-        Ok(BodyKind::Empty)
+        Ok((BodyKind::Empty, BodyPump::None))
     }
 
-    async fn read_chunked_body(
+    /// Pump remaining streaming request body chunks while enforcing `max_body_bytes`.
+    pub(crate) async fn pump_body(
         &mut self,
+        pump: BodyPump,
         max_body_bytes: usize,
         timeout: Duration,
-    ) -> Result<Vec<u8>, ParseRejection> {
-        let mut out = Vec::new();
-        loop {
-            let size_line = self
-                .read_line_bounded(1024, timeout, ParseRejection::BadRequest)
-                .await?;
-            let size_str = std::str::from_utf8(&size_line)
-                .map_err(|_| ParseRejection::BadRequest)?
-                .split(';')
-                .next()
-                .unwrap_or("")
-                .trim();
-            if size_str.is_empty() {
-                return Err(ParseRejection::BadRequest);
+    ) -> Result<(), ParseRejection> {
+        match pump {
+            BodyPump::None => Ok(()),
+            BodyPump::Fixed { remaining, tx } => {
+                if remaining > max_body_bytes {
+                    let _ = tx
+                        .send(Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "payload too large",
+                        )))
+                        .await;
+                    return Err(ParseRejection::PayloadTooLarge);
+                }
+                self.stream_exact_chunks(remaining, &tx, timeout).await
             }
-            let size = usize::from_str_radix(size_str, 16)
-                .map_err(|_| ParseRejection::BadRequest)?;
-            if size == 0 {
+            BodyPump::Chunked { tx } => {
+                let mut total = 0usize;
                 loop {
-                    let trailer = self
+                    let size_line = self
                         .read_line_bounded(
-                            8192,
+                            1024,
                             timeout,
-                            ParseRejection::HeaderFieldsTooLarge,
+                            ParseRejection::BadRequest,
                         )
                         .await?;
-                    if trailer.is_empty() {
-                        return Ok(out);
+                    let size_str = std::str::from_utf8(&size_line)
+                        .map_err(|_| ParseRejection::BadRequest)?
+                        .split(';')
+                        .next()
+                        .unwrap_or("")
+                        .trim();
+                    if size_str.is_empty() {
+                        return Err(ParseRejection::BadRequest);
+                    }
+                    let size = usize::from_str_radix(size_str, 16)
+                        .map_err(|_| ParseRejection::BadRequest)?;
+                    if size == 0 {
+                        loop {
+                            let trailer = self
+                                .read_line_bounded(
+                                    8192,
+                                    timeout,
+                                    ParseRejection::HeaderFieldsTooLarge,
+                                )
+                                .await?;
+                            if trailer.is_empty() {
+                                return Ok(());
+                            }
+                        }
+                    }
+                    if total.saturating_add(size) > max_body_bytes {
+                        let _ = tx
+                            .send(Err(io::Error::new(
+                                io::ErrorKind::InvalidData,
+                                "payload too large",
+                            )))
+                            .await;
+                        return Err(ParseRejection::PayloadTooLarge);
+                    }
+                    total += size;
+                    self.stream_exact_chunks(size, &tx, timeout).await?;
+                    let crlf = self.read_exact_bytes(2, timeout).await?;
+                    if crlf != b"\r\n" {
+                        return Err(ParseRejection::BadRequest);
                     }
                 }
-            }
-            if out.len().saturating_add(size) > max_body_bytes {
-                return Err(ParseRejection::PayloadTooLarge);
-            }
-            let chunk = self.read_exact_bytes(size, timeout).await?;
-            out.extend_from_slice(&chunk);
-            let crlf = self.read_exact_bytes(2, timeout).await?;
-            if crlf != b"\r\n" {
-                return Err(ParseRejection::BadRequest);
             }
         }
     }
