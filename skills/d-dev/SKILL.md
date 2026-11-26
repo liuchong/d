@@ -11,11 +11,11 @@ Develop and extend `d` while keeping the 5-layer Virtual Workspace, `frame` micr
 
 Read [Architecture Rules](references/architecture-rules.md) for all 8 automated `cargo xtask check` rules. Never bypass them:
 
-1. **`crates/frame`** (`kernel`) is pure `std` with zero dependencies.
-2. **`crates/contracts/*`** (`contracts`) contain traits/types only and depend solely on `frame` and fellow contracts.
-3. **`crates/components/*`** (`components`) never depend on sibling components, `entries`, or `assemblies`. Bind resources via `ctx.use_service::<S>()` so caller fiber teardown auto-cleans effects.
+1. **`crates/frame`** (`d-frame`, `kernel`) is pure `std` with zero dependencies.
+2. **`crates/contracts/*`** (`d-*-api`, `contracts`) contain traits/types only and depend solely on `d-frame` and fellow contracts.
+3. **`crates/components/*`** (`d-*`, `components`) never depend on sibling components, `entries`, or `assemblies`. Bind resources via `ctx.use_service::<S>()` so caller fiber teardown auto-cleans effects.
 4. **`crates/entries/*`** (`d-cli`, `d-daemon`, `d-mcp`) never depend on `crates/components/*`.
-5. **`crates/assemblies/*`** (`d`, `d-minimal`) declaratively assemble components via `StaticResolver` + `PluginEntry` + `ConfigValue`. Keep `d-minimal` free of `l4-tls`, `proto-ws`, `proto-tcp`, `ext-proxy`, `ext-observability`, `ext-ratelimit`, `ext-auth`, `ext-dev-kit`, `ext-compression`, `doc-render`, `viewer-*`, `brotli`, `flate2`, `rustls`, and `tokio-rustls`.
+5. **`crates/assemblies/*`** (`d`, `d-minimal`) declaratively assemble components via `StaticResolver` + `PluginEntry` + `ConfigValue`. Keep `d-minimal` free of `d-l4-tls`, `d-proto-ws`, `d-proto-tcp`, `d-ext-proxy`, `d-ext-observability`, `d-ext-ratelimit`, `d-ext-auth`, `d-ext-dev-kit`, `d-ext-compression`, `d-doc-render`, `d-viewer-*`, `brotli`, `flate2`, `rustls`, and `tokio-rustls`.
 
 ## Adding or Extending Components So MCP & Skills Stay In Sync
 

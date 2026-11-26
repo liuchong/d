@@ -118,7 +118,7 @@
               "cmd" "# 方式 1：stdio MCP 控制专属实例（日志自动切到 stderr）\nd -r ./docs --no-http --mcp-stdio --mcp-allow-shutdown\n\n# 方式 2：开启 HTTP + 受 Bearer Token 保护的 Streamable HTTP MCP\nd -H 127.0.0.1 -p 8080 -r ./public --mcp-http 127.0.0.1:18081 --mcp-token secret"
               "note" "通过 d_catalog / d_inspect / d_set_plugin_config / d_apply_patches 动态发现插件 Schema 并实时调整状态与配置，配合 skills/{d,d-dev} 随项目同步演进。")
       "rust" (js-object
-               "cmd" "use d::{Options, create_app_with_options};\nuse http_api::{HttpRequest, Method};\n\nlet app = create_app_with_options(\n    \"./examples/docs\",\n    Options { allow_hidden: false, cors: false },\n).await;\nlet resp = app.dispatch(HttpRequest::new(Method::Get, \"/guide.md\")).await;\napp.dispose().await?;"
+               "cmd" "use d::{Options, create_app_with_options};\nuse d_http_api::{HttpRequest, Method};\n\nlet app = create_app_with_options(\n    \"./examples/docs\",\n    Options { allow_hidden: false, cors: false },\n).await;\nlet resp = app.dispatch(HttpRequest::new(Method::Get, \"/guide.md\")).await;\napp.dispose().await?;"
                "note" "除 CLI 守护进程外，也可零端口直接在内存中装配完整 5 层插件树并向 RouterService 派发请求。")))
 
   (defun bind-scenarios ()

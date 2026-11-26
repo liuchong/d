@@ -75,7 +75,7 @@ cargo run -- -r docs -p 8080
 | `--mcp-read-only` | `D_MCP_READ_ONLY` | 关闭 | 禁用所有 MCP 写操作工具，仅保留检视/预检/探测 |
 | `--mcp-allow-shutdown` | `D_MCP_ALLOW_SHUTDOWN` | 关闭 | 允许 MCP `d_shutdown` 工具 |
 | `-h, --help` | — | — | 打印帮助信息并退出（返回码 `0`） |
-| `-V, --version` | — | — | 打印版本信息（如 `d 0.1.0`）并退出（返回码 `0`） |
+| `-V, --version` | — | — | 打印版本信息（如 `d 0.1.1`）并退出（返回码 `0`） |
 
 配置优先级与解析细节：
 
@@ -207,7 +207,7 @@ d -H 0.0.0.0 -p 8080 -r ./share --cors
 
 ```rust
 use d::{AppHandle, Options, create_app_with_options, start_with_options};
-use http_api::{HttpRequest, Method};
+use d_http_api::{HttpRequest, Method};
 use std::net::SocketAddr;
 
 /// 方式 A：在指定 SocketAddr 上启动完整 HTTP/1.1 服务直到收到 SIGINT / SIGTERM
@@ -248,7 +248,7 @@ async fn run_in_memory() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-需要自定义底层配置或挂载额外业务插件时，可使用 `d::build_runtime(root, options, bind_addr)`，并通过 `app.context()` 访问第 0 层微内核 `frame::Context`，或直接通过 `app.router()` 挂载自定义路由与过滤器。
+需要自定义底层配置或挂载额外业务插件时，可使用 `d::build_runtime(root, options, bind_addr)`，并通过 `app.context()` 访问第 0 层微内核 `d_frame::Context`，或直接通过 `app.router()` 挂载自定义路由与过滤器。
 
 ---
 

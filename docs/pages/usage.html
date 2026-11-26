@@ -390,7 +390,7 @@ cargo run -- -r docs -p 8080</code></pre>
             <div class="code-frame">
                 <button class="copy-btn copy-float" type="button" data-copy-target="#rust-embed-code">复制</button>
                 <pre><code id="rust-embed-code">use d::{Options, create_app_with_options, start_with_options};
-use http_api::{HttpRequest, Method};
+use d_http_api::{HttpRequest, Method};
 use std::net::SocketAddr;
 
 pub async fn run_server() -&gt; Result&lt;(), Box&lt;dyn std::error::Error&gt;&gt; {

@@ -146,7 +146,7 @@ curl -i --compressed -r 0-99 http://localhost:8080/data.bin
 ```rust
 use std::net::SocketAddr;
 use d::{Options, create_app_with_options, start_with_options};
-use http_api::{HttpRequest, Method};
+use d_http_api::{HttpRequest, Method};
 
 // 1. Start full HTTP/1.1 daemon until SIGINT/SIGTERM
 async fn serve() -> Result<(), Box<dyn std::error::Error>> {
@@ -187,14 +187,14 @@ async fn dispatch_once() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Workspace Crates & Examples
 
-| Layer | Crates | Responsibility |
+| Layer | Crates (`crates.io` name) | Responsibility |
 |-------|--------|----------------|
-| **Layer 0** | `crates/frame` | Pure-`std` zero-dependency plugin microkernel (`ScopedService`, `Context`, `Scope`, `Fiber`, `EffectScope`, `Event`, `Loader`, `Inspect`) |
-| **Contracts** | `crates/contracts/{net-api,tls-api,http-api,ws-api,proxy-api,files-api,render-api}` | 7 zero-dependency trait and wire contracts decoupling all layers |
-| **Layer 1** | `crates/components/{l4-transport,l4-tls}` | Listener limits & stats, two-phase drain, and pure-Rust TLS (SNI/ALPN/hot cert reload) |
-| **Layer 2** | `crates/components/{proto-http,proto-ws,proto-tcp}` | Parameter/streaming HTTP/1.1 (`101` upgrade handoff), pure-Rust RFC 6455 WebSocket, and raw TCP engine |
-| **Layer 3** | `crates/components/{ext-proxy,ext-observability,ext-ratelimit,ext-auth,ext-dev-kit,ext-compression,ext-cors}` | L7/L4 reverse proxy, pure-`std` logs/metrics/probes, `429` rate limit, `401`/`403` auth, Mock/Live Reload/Inspector, compression & CORS |
-| **Layer 4** | `crates/components/{app-files,doc-render,doc-render-plain,viewer-*}` | Multi-mount sandboxed files, CommonMark/GFM/HTML (+ optional `sanitize_html`), interchangeable `doc-render-plain`, white viewers |
+| **Layer 0** | `crates/frame` (`d-frame`) | Pure-`std` zero-dependency plugin microkernel (`ScopedService`, `Context`, `Scope`, `Fiber`, `EffectScope`, `Event`, `Loader`, `Inspect`) |
+| **Contracts** | `crates/contracts/{net-api,tls-api,http-api,ws-api,proxy-api,files-api,render-api}` (`d-*-api`) | 7 zero-dependency trait and wire contracts decoupling all layers |
+| **Layer 1** | `crates/components/{l4-transport,l4-tls}` (`d-l4-*`) | Listener limits & stats, two-phase drain, and pure-Rust TLS (SNI/ALPN/hot cert reload) |
+| **Layer 2** | `crates/components/{proto-http,proto-ws,proto-tcp}` (`d-proto-*`) | Parameter/streaming HTTP/1.1 (`101` upgrade handoff), pure-Rust RFC 6455 WebSocket, and raw TCP engine |
+| **Layer 3** | `crates/components/{ext-proxy,ext-observability,ext-ratelimit,ext-auth,ext-dev-kit,ext-compression,ext-cors}` (`d-ext-*`) | L7/L4 reverse proxy, pure-`std` logs/metrics/probes, `429` rate limit, `401`/`403` auth, Mock/Live Reload/Inspector, compression & CORS |
+| **Layer 4** | `crates/components/{app-files,doc-render,doc-render-plain,viewer-*}` (`d-app-files`, `d-doc-render*`, `d-viewer-*`) | Multi-mount sandboxed files, CommonMark/GFM/HTML (+ optional `sanitize_html`), interchangeable `d-doc-render-plain`, white viewers |
 | **Entries & Assemblies** | `crates/entries/{cli,daemon,mcp}`, `crates/assemblies/{d,d-minimal}` | Pure-`std` `d-cli`, component-agnostic `d-daemon` (`-c`/`SIGHUP`), optional `d-mcp`, full `d` (17 plugins) & lightweight `d-minimal` (`tokio` only) |
 | **Skills & Tooling** | `skills/{d,d-dev}`, `xtask` | Self-evolving runtime/contributor Skills & pure-`std` workspace governance (`cargo xtask check`, `info`, `test`) |
 
