@@ -15,31 +15,31 @@ default = ["mcp"]
 mcp = ["dep:d-mcp"]
 
 [dependencies]
-frame = { package = "d-frame", version = "0.1.1", path = "../../frame" }
-net-api = { package = "d-net-api", version = "0.1.1", path = "../../contracts/net-api" }
-http-api = { package = "d-http-api", version = "0.1.1", path = "../../contracts/http-api" }
-files-api = { package = "d-files-api", version = "0.1.1", path = "../../contracts/files-api" }
-render-api = { package = "d-render-api", version = "0.1.1", path = "../../contracts/render-api" }
-l4-transport = { package = "d-l4-transport", version = "0.1.1", path = "../../components/l4-transport" }
-l4-tls = { package = "d-l4-tls", version = "0.1.1", path = "../../components/l4-tls" }
-proto-http = { package = "d-proto-http", version = "0.1.1", path = "../../components/proto-http" }
-proto-ws = { package = "d-proto-ws", version = "0.1.1", path = "../../components/proto-ws" }
-proto-tcp = { package = "d-proto-tcp", version = "0.1.1", path = "../../components/proto-tcp" }
-ext-proxy = { package = "d-ext-proxy", version = "0.1.1", path = "../../components/ext-proxy" }
-ext-observability = { package = "d-ext-observability", version = "0.1.1", path = "../../components/ext-observability" }
-ext-ratelimit = { package = "d-ext-ratelimit", version = "0.1.1", path = "../../components/ext-ratelimit" }
-ext-auth = { package = "d-ext-auth", version = "0.1.1", path = "../../components/ext-auth" }
-ext-dev-kit = { package = "d-ext-dev-kit", version = "0.1.1", path = "../../components/ext-dev-kit" }
-ext-compression = { package = "d-ext-compression", version = "0.1.1", path = "../../components/ext-compression" }
-ext-cors = { package = "d-ext-cors", version = "0.1.1", path = "../../components/ext-cors" }
-app-files = { package = "d-app-files", version = "0.1.1", path = "../../components/app-files" }
-doc-render = { package = "d-doc-render", version = "0.1.1", path = "../../components/doc-render" }
-viewer-markdown = { package = "d-viewer-markdown", version = "0.1.1", path = "../../components/viewer-markdown" }
-viewer-code = { package = "d-viewer-code", version = "0.1.1", path = "../../components/viewer-code" }
-viewer-media = { package = "d-viewer-media", version = "0.1.1", path = "../../components/viewer-media" }
-d-cli = { version = "0.1.1", path = "../../entries/cli" }
-d-daemon = { version = "0.1.1", path = "../../entries/daemon" }
-d-mcp = { version = "0.1.1", path = "../../entries/mcp", optional = true }
+frame = { package = "d-frame", path = "../../frame" }
+net-api = { package = "d-net-api", path = "../../contracts/net-api" }
+http-api = { package = "d-http-api", path = "../../contracts/http-api" }
+files-api = { package = "d-files-api", path = "../../contracts/files-api" }
+render-api = { package = "d-render-api", path = "../../contracts/render-api" }
+l4-transport = { package = "d-l4-transport", path = "../../components/l4-transport" }
+l4-tls = { package = "d-l4-tls", path = "../../components/l4-tls" }
+proto-http = { package = "d-proto-http", path = "../../components/proto-http" }
+proto-ws = { package = "d-proto-ws", path = "../../components/proto-ws" }
+proto-tcp = { package = "d-proto-tcp", path = "../../components/proto-tcp" }
+ext-proxy = { package = "d-ext-proxy", path = "../../components/ext-proxy" }
+ext-observability = { package = "d-ext-observability", path = "../../components/ext-observability" }
+ext-ratelimit = { package = "d-ext-ratelimit", path = "../../components/ext-ratelimit" }
+ext-auth = { package = "d-ext-auth", path = "../../components/ext-auth" }
+ext-dev-kit = { package = "d-ext-dev-kit", path = "../../components/ext-dev-kit" }
+ext-compression = { package = "d-ext-compression", path = "../../components/ext-compression" }
+ext-cors = { package = "d-ext-cors", path = "../../components/ext-cors" }
+app-files = { package = "d-app-files", path = "../../components/app-files" }
+doc-render = { package = "d-doc-render", path = "../../components/doc-render" }
+viewer-markdown = { package = "d-viewer-markdown", path = "../../components/viewer-markdown" }
+viewer-code = { package = "d-viewer-code", path = "../../components/viewer-code" }
+viewer-media = { package = "d-viewer-media", path = "../../components/viewer-media" }
+d-cli = { path = "../../entries/cli" }
+d-daemon = { path = "../../entries/daemon" }
+d-mcp = { path = "../../entries/mcp", optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net"] }
 
 [dev-dependencies]

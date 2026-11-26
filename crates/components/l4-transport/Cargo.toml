@@ -7,9 +7,10 @@ authors.workspace = true
 repository.workspace = true
 license-file.workspace = true
 description = "Layer 1 TCP transport listener and two-phase graceful drain for d"
+publish = false
 
 [dependencies]
-frame = { package = "d-frame", version = "0.1.1", path = "../../frame" }
-net-api = { package = "d-net-api", version = "0.1.1", path = "../../contracts/net-api" }
-tls-api = { package = "d-tls-api", version = "0.1.1", path = "../../contracts/tls-api" }
+frame = { package = "d-frame", path = "../../frame" }
+net-api = { package = "d-net-api", path = "../../contracts/net-api" }
+tls-api = { package = "d-tls-api", path = "../../contracts/tls-api" }
 tokio = { version = "1", features = ["net", "io-util", "sync", "time", "rt", "macros"] }

@@ -7,12 +7,13 @@ authors.workspace = true
 repository.workspace = true
 license-file.workspace = true
 description = "Optional, configurable pure-Rust MCP control server for dynamic state and config management of d"
+publish = false
 
 [dependencies]
-frame = { package = "d-frame", version = "0.1.1", path = "../../frame" }
-http-api = { package = "d-http-api", version = "0.1.1", path = "../../contracts/http-api" }
-d-cli = { version = "0.1.1", path = "../cli" }
-d-daemon = { version = "0.1.1", path = "../daemon" }
+frame = { package = "d-frame", path = "../../frame" }
+http-api = { package = "d-http-api", path = "../../contracts/http-api" }
+d-cli = { path = "../cli" }
+d-daemon = { path = "../daemon" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "io-std", "sync", "time"] }
 
 [dev-dependencies]

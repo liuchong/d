@@ -12,6 +12,7 @@ Root `Cargo.toml` defines `[workspace.metadata.architecture]`, statically verifi
 | `R-ARCH-6` | Entries | `d-cli`, `d-daemon`, `d-mcp` never depend on `crates/components/*`, `assemblies/*`, or `tools`. |
 | `R-ARCH-7` | Assemblies | `assemblies/*` never depend on sibling `assemblies/*` or `tools`; `d-minimal` never transitively includes any crate in `minimal_forbidden` (`d-l4-tls`, `d-proto-ws`, `d-proto-tcp`, `d-ext-proxy`, `d-ext-observability`, `d-ext-ratelimit`, `d-ext-auth`, `d-ext-dev-kit`, `d-ext-compression`, `d-doc-render`, `d-viewer-*`, `brotli`, `flate2`, `rustls`, `tokio-rustls`). |
 | `R-ARCH-8` | DAG, Multi-Impl & Skills | Workspace dependency DAG is acyclic; `d-render-api` has >= 2 distinct component implementations (`d-doc-render`, `d-doc-render-plain`); bundled `skills/{d,d-dev}/SKILL.md` have valid YAML frontmatter and zero broken local references. |
+| `R-ARCH-9` | Single-Crate Publish | Only packages listed in `publish_allowlist` (`["d"]`) are publishable to `crates.io`; all other 31 workspace crates enforce `publish = false`. Publishing uses `cargo xtask publish-d` to stage a self-contained single `d` crate with zero internal `crates.io` dependencies. |
 
 ## Incremental Testing
 

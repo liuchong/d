@@ -7,7 +7,7 @@
 
 ## 一、产品定位与基本用法
 
-`d` 是一个单二进制网络守护进程、通用反向代理与零外链文件/文档服务器，由独立零依赖微内核 `d-frame`、纯 Rust TLS、自建 HTTP/1.1 与 RFC 6455 WebSocket 引擎、L7/L4 反向代理、纯 `std` 治理扩展与纯 Rust 文档渲染/展示层装配而成（全工作区 31 个 `d-*` 可发布包）。
+`d` 是一个单二进制网络守护进程、通用反向代理与零外链文件/文档服务器，由独立零依赖微内核 `d-frame`、纯 Rust TLS、自建 HTTP/1.1 与 RFC 6455 WebSocket 引擎、L7/L4 反向代理、纯 `std` 治理扩展与纯 Rust 文档渲染/展示层装配而成（工作区内部划分为 32 个包，对外 crates.io 仅发布单一自包含包 `d`）。
 
 `d` **不区分“开发模式”和“生产模式”**——运行在工程师本机支撑目录浏览、Markdown 预览、代码审阅和本地联调的场景，与线上静态托管一样属于 `d` 的核心正式场景，使用同一套 HTTP/1.1 状态机、路径沙箱与连接排空机制。
 
@@ -207,7 +207,7 @@ d -H 0.0.0.0 -p 8080 -r ./share --cors
 
 ```rust
 use d::{AppHandle, Options, create_app_with_options, start_with_options};
-use d_http_api::{HttpRequest, Method};
+use d::http_api::{HttpRequest, Method};
 use std::net::SocketAddr;
 
 /// 方式 A：在指定 SocketAddr 上启动完整 HTTP/1.1 服务直到收到 SIGINT / SIGTERM
@@ -248,7 +248,7 @@ async fn run_in_memory() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-需要自定义底层配置或挂载额外业务插件时，可使用 `d::build_runtime(root, options, bind_addr)`，并通过 `app.context()` 访问第 0 层微内核 `d_frame::Context`，或直接通过 `app.router()` 挂载自定义路由与过滤器。
+需要自定义底层配置或挂载额外业务插件时，可使用 `d::build_runtime(root, options, bind_addr)`，并通过 `app.context()` 访问第 0 层微内核 `d::frame::Context`，或直接通过 `app.router()` 挂载自定义路由与过滤器。
 
 ---
 
@@ -282,7 +282,7 @@ scripts/acceptance.sh
 
 ## 九、网关清单、反向代理与开发工作流套件（`-c` / `SIGHUP`）
 
-通过 `-c <PATH>`（或 `D_CONFIG`）可直接装配全栈 17 个内置插件（JSON 清单中的插件 ID 使用精简短名，如 `l4-tls`、`ext-proxy`、`app-files`，对应的 crates.io 库包名统一为 `d-*` 前缀，如 `d-l4-tls`、`d-ext-proxy`、`d-app-files`），无“开发模式 / 生产模式”内部切换：
+通过 `-c <PATH>`（或 `D_CONFIG`）可直接装配全栈 17 个内置插件（JSON 清单中的插件 ID 使用精简短名，如 `l4-tls`、`ext-proxy`、`app-files`，均内置打包在单包 `d` 中，工作区其余子包仅作内部编译隔离且 `publish = false`），无“开发模式 / 生产模式”内部切换：
 
 - **传输与纯 Rust TLS（`l4-transport` / `l4-tls`）**：支持 `max_connections`、`ListenOptions` 多监听、`TlsAcceptor` SNI/ALPN 与 `Loader` 原子热换证（旧 TLS 长流不中断）。
 - **协议引擎（`proto-http` / `proto-ws` / `proto-tcp`）**：支持 `:param` / `*rest` 路径参数路由、大包与 chunked 请求体流式透传（超 `max_body_bytes` 返回 `413`）、`101 Upgrade` 移交、纯 Rust RFC 6455 WebSocket 引擎及原生 TCP 端口转发。

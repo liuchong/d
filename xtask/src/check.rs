@@ -26,6 +26,7 @@ pub fn check_architecture(graph: &WorkspaceGraph) -> Vec<Violation> {
     check_minimal_exclusion(graph, &mut violations);
     check_acyclic_and_multi_impl(graph, &layer_map, &mut violations);
     check_skills_integrity(&graph.root, &mut violations);
+    check_publish_allowlist(graph, &mut violations);
 
     violations
 }
@@ -118,7 +119,7 @@ pub fn run_check(graph: &WorkspaceGraph) -> i32 {
     let violations = check_architecture(graph);
     if violations.is_empty() {
         println!(
-            "Architecture check passed: {} workspace packages verified across all 8 rules.",
+            "Architecture check passed: {} workspace packages verified across all 9 rules.",
             graph.packages.len()
         );
         0
@@ -491,6 +492,48 @@ pub(crate) fn component_implementations_of(
     impls
 }
 
+/// Enforce `R-ARCH-9`: only packages listed in `publish_allowlist` may be publishable.
+fn check_publish_allowlist(
+    graph: &WorkspaceGraph,
+    violations: &mut Vec<Violation>,
+) {
+    let allow: BTreeSet<&str> = graph
+        .arch
+        .publish_allowlist
+        .iter()
+        .map(String::as_str)
+        .collect();
+    for pkg_name in &graph.arch.publish_allowlist {
+        match graph.packages.get(pkg_name) {
+            None => violations.push(Violation {
+                rule: "R-ARCH-9",
+                package: pkg_name.clone(),
+                message:
+                    "listed in `publish_allowlist` but missing from workspace"
+                        .to_string(),
+            }),
+            Some(pkg) if !pkg.publishable => violations.push(Violation {
+                rule: "R-ARCH-9",
+                package: pkg_name.clone(),
+                message:
+                    "listed in `publish_allowlist` but sets `publish = false`"
+                        .to_string(),
+            }),
+            Some(_) => {}
+        }
+    }
+    for (name, pkg) in &graph.packages {
+        if pkg.publishable && !allow.contains(name.as_str()) {
+            violations.push(Violation {
+                rule: "R-ARCH-9",
+                package: name.clone(),
+                message: "package is publishable (`publish = false` missing) and not in `publish_allowlist`"
+                    .to_string(),
+            });
+        }
+    }
+}
+
 #[allow(dead_code)]
 fn _keep_arch_referenced(_: &ArchConfig) {}
 
@@ -523,6 +566,7 @@ mod tests {
                 PackageInfo {
                     name: name.to_string(),
                     manifest_dir: dir.to_string(),
+                    publishable: name == "d",
                     deps,
                 },
             );
@@ -605,6 +649,7 @@ mod tests {
                 minimal_assembly: Some("d-minimal".into()),
                 minimal_forbidden: vec!["d-doc-render".into(), "brotli".into()],
                 multi_impl_contracts: vec!["d-render-api".into()],
+                publish_allowlist: vec!["d".into()],
             },
             packages,
         }
@@ -625,6 +670,7 @@ mod tests {
             PackageInfo {
                 name: "rogue".into(),
                 manifest_dir: "crates/rogue".into(),
+                publishable: false,
                 deps: vec![],
             },
         );
@@ -747,6 +793,7 @@ mod tests {
             PackageInfo {
                 name: "d-l4-tls".into(),
                 manifest_dir: "crates/components/l4-tls".into(),
+                publishable: false,
                 deps: vec![ext_dep("rustls")],
             },
         );
@@ -755,6 +802,7 @@ mod tests {
             PackageInfo {
                 name: "d-ext-proxy".into(),
                 manifest_dir: "crates/components/ext-proxy".into(),
+                publishable: false,
                 deps: vec![ws_dep("d-net-api")],
             },
         );
@@ -832,5 +880,17 @@ mod tests {
         check_skills_integrity(&base, &mut clean);
         assert!(clean.is_empty(), "expected no skill violations: {clean:?}");
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn r_arch_9_rejects_non_allowlisted_publishable_package() {
+        let mut g = valid_synthetic_graph();
+        g.packages.get_mut("d-frame").unwrap().publishable = true;
+        let v = check_architecture(&g);
+        assert!(
+            v.iter()
+                .any(|x| x.rule == "R-ARCH-9" && x.package == "d-frame"),
+            "expected R-ARCH-9 violation for d-frame: {v:?}"
+        );
     }
 }

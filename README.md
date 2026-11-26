@@ -21,7 +21,7 @@
 
 ## Key Capabilities
 
-- **Layered plugin architecture (5 layers, 32 workspace crates — 31 publishable `d-*` crates on crates.io + `xtask`, 19 zero-external-dep pure crates)**:
+- **Layered plugin architecture (5 layers, 32 workspace crates — `publish_allowlist = ["d"]` enforces publishing only the single self-contained `d` crate to crates.io, 19 zero-external-dep pure crates)**:
   - Layer 0 (`d-frame`): zero-dependency pure-`std` microkernel (`ScopedService`, `PluginSchema`, `Context`, `Scope`, `Fiber`, `EffectHandle`, `Event`, `Loader`, `Inspect`).
   - Layer 1 (`d-l4-transport`, `d-l4-tls` via `d-net-api`/`d-tls-api`): multi-listener TCP (`max_connections`, `stats`), two-phase graceful connection drain, and pure-Rust TLS 1.2/1.3 (`rustls`) with SNI, ALPN, and atomic zero-drop hot certificate reload.
   - Layer 2 (`d-proto-http`, `d-proto-ws`, `d-proto-tcp` via `d-http-api`/`d-ws-api`): custom bounded HTTP/1.1 parser & streaming chunked writer (`RouteMatch::Param :name/*rest`, streaming request bodies, `101 Upgrade` handoff), lock-free snapshot `HttpRouter`, pure-Rust RFC 6455 WebSocket engine (only `tokio`), and raw TCP service/forwarding.
@@ -146,7 +146,7 @@ curl -i --compressed -r 0-99 http://localhost:8080/data.bin
 ```rust
 use std::net::SocketAddr;
 use d::{Options, create_app_with_options, start_with_options};
-use d_http_api::{HttpRequest, Method};
+use d::http_api::{HttpRequest, Method};
 
 // 1. Start full HTTP/1.1 daemon until SIGINT/SIGTERM
 async fn serve() -> Result<(), Box<dyn std::error::Error>> {
@@ -187,7 +187,7 @@ async fn dispatch_once() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Workspace Crates & Examples
 
-| Layer | Crates (`crates.io` name) | Responsibility |
+| Layer | Workspace Crates (`publish = false` except `d`) | Responsibility |
 |-------|--------|----------------|
 | **Layer 0** | `crates/frame` (`d-frame`) | Pure-`std` zero-dependency plugin microkernel (`ScopedService`, `Context`, `Scope`, `Fiber`, `EffectScope`, `Event`, `Loader`, `Inspect`) |
 | **Contracts** | `crates/contracts/{net-api,tls-api,http-api,ws-api,proxy-api,files-api,render-api}` (`d-*-api`) | 7 zero-dependency trait and wire contracts decoupling all layers |
@@ -205,8 +205,9 @@ Ready-to-run sample directories live in [`examples/`](./examples) — see [examp
 ## Testing & Acceptance
 
 ```bash
-cargo xtask check          # Enforce all 8 workspace architecture & skill invariants across 32 packages
-cargo xtask info           # Verify assembly matrix & 19 zero-external-dep pure crates
+cargo xtask check             # Enforce all 9 workspace architecture, skill & publish-allowlist invariants across 32 packages
+cargo xtask info              # Verify assembly matrix & 19 zero-external-dep pure crates
+cargo xtask publish-d --dry-run  # Verify self-contained single-crate `d` bundle for crates.io
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo clippy -p d --no-default-features --all-targets -- -D warnings

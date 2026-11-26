@@ -7,9 +7,10 @@ authors.workspace = true
 repository.workspace = true
 license-file.workspace = true
 description = "Layer 4 minimalist white Markdown viewer plugin for d"
+publish = false
 
 [dependencies]
-frame = { package = "d-frame", version = "0.1.1", path = "../../frame" }
-http-api = { package = "d-http-api", version = "0.1.1", path = "../../contracts/http-api" }
-files-api = { package = "d-files-api", version = "0.1.1", path = "../../contracts/files-api" }
-render-api = { package = "d-render-api", version = "0.1.1", path = "../../contracts/render-api" }
+frame = { package = "d-frame", path = "../../frame" }
+http-api = { package = "d-http-api", path = "../../contracts/http-api" }
+files-api = { package = "d-files-api", path = "../../contracts/files-api" }
+render-api = { package = "d-render-api", path = "../../contracts/render-api" }

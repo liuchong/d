@@ -7,5 +7,6 @@ authors.workspace = true
 repository.workspace = true
 license-file.workspace = true
 description = "Zero-dependency plugin microkernel with scoped services, reactive fibers, and structured async effects"
+publish = false
 
 [dependencies]

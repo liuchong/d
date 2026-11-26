@@ -195,7 +195,7 @@ workspace/                          # 32 个 Workspace 包（其中 19 个零外
 │       ├── d/                      #   主产物 `d`（注册全部 17 个组件，支持默认 + -c 清单，含默认 mcp 特性）
 │       └── d-minimal/              #   轻量静态托管版 `d-minimal`（仅含 tokio，支持 --features mcp，零重依赖与扩展）
 ├── skills/                         # 随版本演进的 Agent Skills（`skills/d` 运行控管、`skills/d-dev` 扩展维护）
-├── xtask/                          # 纯 std 架构门禁（32 包 8 规则）、装配矩阵检视与受影响闭包测试工具
+├── xtask/                          # 纯 std 架构门禁（32 包 9 规则，含 publish_allowlist=["d"]）、装配矩阵检视、受影响闭包测试与单包 d 打包工具
 ├── examples/                       # 各类典型使用示例集（含 examples/gateway/）
 ├── scripts/                        # 端到端 HTTP、网关与热重载验收脚本
 └── docs/                           # 精简设计文档与项目主页源码
@@ -299,6 +299,6 @@ workspace/                          # 32 个 Workspace 包（其中 19 个零外
 4. **阶段 4：声明式配置驱动、热重载、治理三件套与开发工作流提效扩展（已落地）**
    - 落地 `-c/--config`（`D_CONFIG`）纯 `std` JSON 清单解析、`SIGHUP` 全量预检增量热重载与 `/readyz` 探针，实测无关长连接（SSE/WS）热重载不断流；
    - 交付零外依治理三件套（`ext-observability`、`ext-ratelimit`、`ext-auth`）、开发工作流提效套件（`ext-dev-kit`）、`app-files` 多前缀/多 Host 挂载及 `doc-render` `sanitize_html`。
-5. **阶段 5：纯 Rust TLS、WebSocket / 原生 TCP、通用反向代理与 `d-*` crates.io 命名空间发版就绪（已落地）**
+5. **阶段 5：纯 Rust TLS、WebSocket / 原生 TCP、通用反向代理与单包 `d` `0.1.1` 发版规范落地（已落地）**
    - 交付 `d-tls-api` + `d-l4-tls`（SNI/ALPN/原子热换证，零 `cargo audit` 警告）、`d-ws-api` + 纯 Rust RFC 6455 `d-proto-ws`、`d-proto-tcp` 与 `d-proxy-api` + `d-ext-proxy`（Keep-Alive 池、三种 LB、主被动健康检查、RFC 7239 `Forwarded`、SSE 穿透与 WS 隧道）；
-   - 将非 `d-*` 前缀的 26 个子包统一规范为 `d-*` 命名空间并升版至 `0.1.1`（全部 31 个待发布包 + `xtask` 设为 `publish = false`），通过跨平台 CI（Linux/macOS/Windows）、32 包架构检查与独立干净重建。
+   - 通过 `[workspace.metadata.architecture] publish_allowlist = ["d"]` 与 `R-ARCH-9` 强制规定 crates.io 仅发布单个自包含 crate `d 0.1.1`（其余 31 个工作区内部子包一律 `publish = false`，通过 `cargo xtask publish-d` 打包验证并发布），通过跨平台 CI（Linux/macOS/Windows）、32 包架构检查与独立干净重建。

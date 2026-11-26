@@ -2,7 +2,7 @@
 
 ## 一、定位、边界与零外部依赖原则
 
-`d-frame` 位于工作区 `crates/frame/`（对外发布 crate 名 `d-frame`），是整个系统的第 0 层通用运行时插件微内核。
+`d-frame` 位于工作区 `crates/frame/`（工作区内部包，`publish = false`，随单包 `d` 一并打包发布），是整个系统的第 0 层通用运行时插件微内核。
 
 - **独立边界**：`d-frame` 只负责模块之间的空间依赖组合、时间资源生命周期、事件通信、声明式装配与脱敏拓扑检视；**不包含任何网络协议、套接字、文件系统、配置文本格式解析或业务应用语义**。
 - **零外部依赖**：`crates/frame/` **仅依赖 Rust 标准库（`std`）**，不引入任何第三方库，保证极快的编译速度、零供应链包袱与可随时拆仓开源发布的纯粹性。
@@ -14,7 +14,7 @@
 ## 二、包内模块划分
 
 ```text
-crates/frame/             # crates.io 包名 d-frame，仅依赖 Rust std
+crates/frame/             # 工作区内部包 d-frame（publish = false），仅依赖 Rust std
 ├── Cargo.toml          # 无 [dependencies]，仅依赖 Rust std
 └── src/
     ├── lib.rs          # 公开 API 重导出与包级文档

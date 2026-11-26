@@ -198,6 +198,7 @@ mod tests {
                 PackageInfo {
                     name: name.to_string(),
                     manifest_dir: dir.to_string(),
+                    publishable: name == "d",
                     deps: deps
                         .iter()
                         .map(|d| DepEdge {

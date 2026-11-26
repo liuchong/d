@@ -7,9 +7,10 @@ authors.workspace = true
 repository.workspace = true
 license-file.workspace = true
 description = "Zero-dependency Layer 3 structured access logging, OpenMetrics /metrics, and /healthz /readyz probes for d"
+publish = false
 
 [dependencies]
-frame = { package = "d-frame", version = "0.1.1", path = "../../frame" }
-net-api = { package = "d-net-api", version = "0.1.1", path = "../../contracts/net-api" }
-http-api = { package = "d-http-api", version = "0.1.1", path = "../../contracts/http-api" }
-proxy-api = { package = "d-proxy-api", version = "0.1.1", path = "../../contracts/proxy-api" }
+frame = { package = "d-frame", path = "../../frame" }
+net-api = { package = "d-net-api", path = "../../contracts/net-api" }
+http-api = { package = "d-http-api", path = "../../contracts/http-api" }
+proxy-api = { package = "d-proxy-api", path = "../../contracts/proxy-api" }

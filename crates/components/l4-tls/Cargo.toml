@@ -7,11 +7,12 @@ authors.workspace = true
 repository.workspace = true
 license-file.workspace = true
 description = "Layer 1 pure-Rust TLS termination, SNI, ALPN, and atomic cert hot-reload for d"
+publish = false
 
 [dependencies]
-frame = { package = "d-frame", version = "0.1.1", path = "../../frame" }
-net-api = { package = "d-net-api", version = "0.1.1", path = "../../contracts/net-api" }
-tls-api = { package = "d-tls-api", version = "0.1.1", path = "../../contracts/tls-api" }
+frame = { package = "d-frame", path = "../../frame" }
+net-api = { package = "d-net-api", path = "../../contracts/net-api" }
+tls-api = { package = "d-tls-api", path = "../../contracts/tls-api" }
 tokio = { version = "1", features = ["io-util", "net", "rt", "sync", "time"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }

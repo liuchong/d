@@ -51,7 +51,7 @@
                 </div>
                 <h1>单二进制 <span class="mono">d</span>，把微内核网关、反代与文档工作流装进一条命令。</h1>
                 <p class="hero-lead">
-                    立足零依赖微内核 <code>d-frame</code>、多监听 L4 与纯 Rust TLS（SNI/ALPN/热换证）、自建 HTTP/1.1 / RFC 6455 WebSocket / TCP 协议引擎、L7/L4 通用反向代理、纯 <code>std</code> 治理三件套、声明式 <code>-c</code> / <code>SIGHUP</code> 无损重载与可选 <code>d-mcp</code> 控制面，并内置纯 Rust CommonMark+GFM / 白名单净化与词法高亮。共 31 个 <code>d-*</code> crates.io 可发布包。
+                    立足零依赖微内核 <code>d-frame</code>、多监听 L4 与纯 Rust TLS（SNI/ALPN/热换证）、自建 HTTP/1.1 / RFC 6455 WebSocket / TCP 协议引擎、L7/L4 通用反向代理、纯 <code>std</code> 治理三件套、声明式 <code>-c</code> / <code>SIGHUP</code> 无损重载与可选 <code>d-mcp</code> 控制面，并内置纯 Rust CommonMark+GFM / 白名单净化与词法高亮。crates.io 仅发布单一自包含包 <code>d</code>（其余 31 个工作区内部包强制 <code>publish = false</code>）。
                 </p>
                 <div class="hero-actions">
                     <a class="btn btn-primary" href="pages/usage.html">交互式命令与使用手册</a>
@@ -255,7 +255,7 @@ d -r . -p 8080
             <div>
                 <span class="section-kicker">Architecture</span>
                 <h2 class="section-title">五层单向依赖架构与 32 个 Workspace 包</h2>
-                <p class="section-desc">上层只依赖下层契约包（<code>crates/contracts/*</code>，发布为 <code>d-*-api</code>），实现之间零横向直接耦合，由 <code>d</code>（17 插件全栈网关/文件/开发套件）与 <code>d-minimal</code>（轻量静态版）按声明式 <code>Loader</code> 装配（含 31 个 <code>d-*</code> crates.io 可发布包与 <code>xtask</code> 治理工具）并支持可选 <code>d-mcp</code> 实时控制。</p>
+                <p class="section-desc">上层只依赖下层契约包（<code>crates/contracts/*</code>），实现之间零横向直接耦合，由 <code>d</code>（17 插件全栈网关/文件/开发套件）与 <code>d-minimal</code>（轻量静态版）按声明式 <code>Loader</code> 装配（<code>R-ARCH-9</code> 强制 crates.io 仅发布单包 <code>d</code>，其余 31 个内部包一律 <code>publish = false</code>，由 <code>xtask</code> 校验 9 条架构规则）并支持可选 <code>d-mcp</code> 实时控制。</p>
             </div>
             <a class="btn" href="https://github.com/liuchong/d/blob/master/docs/frame.md">了解 d-frame 微内核设计</a>
         </div>
@@ -386,7 +386,7 @@ d -r . -p 8080
                     <h3>阶段 2 · 五层重构、契约升级、双装配体与 MCP / Skill 体系</h3>
                     <span class="phase-badge">已完成 · d / d-minimal / d-mcp</span>
                 </div>
-                <p>落地 31 个 <code>d-*</code> crates.io 可发布包、自建 HTTP/1.1 引擎、零手工包装 <code>ScopedService</code> 接线、可互换 <code>d-doc-render-plain</code>、可选纯 Rust <code>d-mcp</code>、<code>skills/{d,d-dev}</code> 与 <code>xtask</code> 治理工具。</p>
+                <p>落地 32 包分层架构（<code>publish_allowlist = ["d"]</code> 强制仅发布单包 <code>d</code>）、自建 HTTP/1.1 引擎、零手工包装 <code>ScopedService</code> 接线、可互换 <code>d-doc-render-plain</code>、可选纯 Rust <code>d-mcp</code>、<code>skills/{d,d-dev}</code> 与 <code>xtask</code> 治理工具。</p>
             </article>
             <article class="phase done">
                 <div class="phase-head">

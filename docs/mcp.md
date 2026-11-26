@@ -64,7 +64,7 @@ d -H 127.0.0.1 -p 8080 -r ./public \
 ### 只读与自发现工具
 
 1. `d_server_info`：返回当前装配体名（`d` / `d-minimal`）、版本、实时 HTTP `local_addr`、当前日志级别、MCP 策略与纤程状态统计。
-2. `d_catalog`：实时读取 `LoaderService::catalog()`，列出当前装配体注册的全部运行期插件 ID（主装配体 `d` 自动发现全部 17 个组件：含 `l4-tls`、`proto-ws`、`proto-tcp`、`ext-proxy`、`ext-observability`、`ext-ratelimit`、`ext-auth`、`ext-dev-kit` 等，对应 crates.io 包名为 `d-*` 前缀）、描述、必选/可选依赖与带类型的 `Plugin::schema()` 配置字段（新组件或新配置项自动出现，无需修改 `d-mcp`；`ext-auth.rules`、`l4-tls` 私钥等敏感字段自动标记 `sensitive`）。
+2. `d_catalog`：实时读取 `LoaderService::catalog()`，列出当前装配体注册的全部运行期插件 ID（主装配体 `d` 自动发现全部 17 个组件：含 `l4-tls`、`proto-ws`、`proto-tcp`、`ext-proxy`、`ext-observability`、`ext-ratelimit`、`ext-auth`、`ext-dev-kit` 等，已全部随单包 `d` 一起分发）、描述、必选/可选依赖与带类型的 `Plugin::schema()` 配置字段（新组件或新配置项自动出现，无需修改 `d-mcp`；`ext-auth.rules`、`l4-tls` 私钥等敏感字段自动标记 `sensitive`）。
 3. `d_inspect`：返回完整实时拓扑、脱敏条目配置与脱敏 `FrameSnapshot`。
 4. `d_validate_patches`：对 `EntryPatch` 变更清单执行无副作用 `preflight` 干跑校验，返回预期清单或结构化 `ValidationIssue`。
 5. `d_http_probe`：向当前活的 `RouterService` 派发内存 HTTP 请求（支持自定义 `method`、`uri`、`headers`），返回状态码、响应头与正文预览（上限 16 KiB）。

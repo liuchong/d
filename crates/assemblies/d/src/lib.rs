@@ -12,9 +12,11 @@ use ext_dev_kit::DevKitPlugin;
 use ext_observability::ObservabilityPlugin;
 use ext_proxy::ProxyPlugin;
 use ext_ratelimit::RateLimitPlugin;
+pub use frame;
 use frame::{
     ConfigValue, EntryTarget, FrameError, PluginEntry, StaticResolver,
 };
+pub use http_api;
 use l4_tls::TlsPlugin;
 use l4_transport::TransportPlugin;
 use proto_http::HttpEnginePlugin;

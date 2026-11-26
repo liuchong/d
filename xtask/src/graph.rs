@@ -55,6 +55,7 @@ pub struct DepEdge {
 pub struct PackageInfo {
     pub name: String,
     pub manifest_dir: String,
+    pub publishable: bool,
     pub deps: Vec<DepEdge>,
 }
 
@@ -70,6 +71,7 @@ pub struct ArchConfig {
     pub minimal_assembly: Option<String>,
     pub minimal_forbidden: Vec<String>,
     pub multi_impl_contracts: Vec<String>,
+    pub publish_allowlist: Vec<String>,
 }
 
 impl ArchConfig {
@@ -165,6 +167,11 @@ impl WorkspaceGraph {
                 .and_then(JsonValue::as_str)
                 .ok_or("package missing `manifest_path`")?;
             let manifest_dir = relative_dir(&root, Path::new(manifest_path));
+            let publishable = match pkg.get("publish") {
+                None | Some(JsonValue::Null) => true,
+                Some(JsonValue::Array(arr)) => !arr.is_empty(),
+                _ => false,
+            };
 
             let deps_arr = pkg
                 .get("dependencies")
@@ -204,6 +211,7 @@ impl WorkspaceGraph {
                 PackageInfo {
                     name,
                     manifest_dir,
+                    publishable,
                     deps,
                 },
             );
@@ -266,6 +274,7 @@ fn parse_arch_config(val: &JsonValue) -> Result<ArchConfig, String> {
             "multi_impl_contracts",
             false,
         )?,
+        publish_allowlist: parse_string_list(val, "publish_allowlist", true)?,
     })
 }
 

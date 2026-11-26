@@ -143,6 +143,7 @@ minimal_forbidden = [
     "tokio-rustls",
 ]
 multi_impl_contracts = ["d-render-api"]
+publish_allowlist = ["d"]
 
 [profile.release]
 opt-level = 3

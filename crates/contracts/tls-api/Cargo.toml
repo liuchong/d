@@ -7,7 +7,8 @@ authors.workspace = true
 repository.workspace = true
 license-file.workspace = true
 description = "Zero-dependency Layer 1 TLS acceptor and connector contracts for d"
+publish = false
 
 [dependencies]
-frame = { package = "d-frame", version = "0.1.1", path = "../../frame" }
-net-api = { package = "d-net-api", version = "0.1.1", path = "../net-api" }
+frame = { package = "d-frame", path = "../../frame" }
+net-api = { package = "d-net-api", path = "../net-api" }

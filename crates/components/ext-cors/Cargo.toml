@@ -7,7 +7,8 @@ authors.workspace = true
 repository.workspace = true
 license-file.workspace = true
 description = "Layer 3 zero-dependency CORS filter extension for d"
+publish = false
 
 [dependencies]
-frame = { package = "d-frame", version = "0.1.1", path = "../../frame" }
-http-api = { package = "d-http-api", version = "0.1.1", path = "../../contracts/http-api" }
+frame = { package = "d-frame", path = "../../frame" }
+http-api = { package = "d-http-api", path = "../../contracts/http-api" }

@@ -7,12 +7,13 @@ authors.workspace = true
 repository.workspace = true
 license-file.workspace = true
 description = "Component-agnostic daemon host runtime and lifecycle harness for d assemblies"
+publish = false
 
 [dependencies]
-frame = { package = "d-frame", version = "0.1.1", path = "../../frame" }
-net-api = { package = "d-net-api", version = "0.1.1", path = "../../contracts/net-api" }
-http-api = { package = "d-http-api", version = "0.1.1", path = "../../contracts/http-api" }
-files-api = { package = "d-files-api", version = "0.1.1", path = "../../contracts/files-api" }
-render-api = { package = "d-render-api", version = "0.1.1", path = "../../contracts/render-api" }
-d-cli = { version = "0.1.1", path = "../cli" }
+frame = { package = "d-frame", path = "../../frame" }
+net-api = { package = "d-net-api", path = "../../contracts/net-api" }
+http-api = { package = "d-http-api", path = "../../contracts/http-api" }
+files-api = { package = "d-files-api", path = "../../contracts/files-api" }
+render-api = { package = "d-render-api", path = "../../contracts/render-api" }
+d-cli = { path = "../cli" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net", "sync"] }

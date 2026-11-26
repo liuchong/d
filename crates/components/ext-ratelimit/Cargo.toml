@@ -7,7 +7,8 @@ authors.workspace = true
 repository.workspace = true
 license-file.workspace = true
 description = "Zero-dependency Layer 3 token-bucket rate limiting filter for d"
+publish = false
 
 [dependencies]
-frame = { package = "d-frame", version = "0.1.1", path = "../../frame" }
-http-api = { package = "d-http-api", version = "0.1.1", path = "../../contracts/http-api" }
+frame = { package = "d-frame", path = "../../frame" }
+http-api = { package = "d-http-api", path = "../../contracts/http-api" }

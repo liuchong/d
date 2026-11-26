@@ -7,5 +7,6 @@ authors.workspace = true
 repository.workspace = true
 license-file.workspace = true
 description = "Thin CLI, environment, and stderr logging shell for d"
+publish = false
 
 [dependencies]

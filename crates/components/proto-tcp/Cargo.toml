@@ -7,10 +7,11 @@ authors.workspace = true
 repository.workspace = true
 license-file.workspace = true
 description = "Layer 2 raw TCP and declarative L4 stream forwarding engine for d"
+publish = false
 
 [dependencies]
-frame = { package = "d-frame", version = "0.1.1", path = "../../frame" }
-net-api = { package = "d-net-api", version = "0.1.1", path = "../../contracts/net-api" }
+frame = { package = "d-frame", path = "../../frame" }
+net-api = { package = "d-net-api", path = "../../contracts/net-api" }
 tokio = { version = "1", features = ["net", "io-util", "sync", "time", "rt", "macros"] }
 
 [dev-dependencies]
