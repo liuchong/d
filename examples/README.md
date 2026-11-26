@@ -71,6 +71,16 @@ cargo run -- -r examples/static-site
 访问 `/` 即打开站点。想看文件列表时用 `?listing=true` 绕过：
 <http://localhost:8080/?listing=true>。
 
+## 示例 6：网关、反向代理与开发工作流 `gateway/`
+
+```bash
+cargo run -- -c examples/gateway/gateway.json
+# 或本地开发提效套件（Mock / SSE / Live Reload / /_d/inspect）
+cargo run -- -c examples/gateway/dev.json
+```
+
+参见 [examples/gateway/README.md](./gateway/README.md) 了解 `/healthz`、`/readyz`、`/metrics`、`ext-ratelimit`、`ext-auth`、`ext-proxy` 及 `SIGHUP` 无中断热重载验证方式。
+
 ## 命令行玩法（curl）
 
 启动任意示例后：

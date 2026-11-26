@@ -7,7 +7,7 @@
 
 ## 一、产品定位与基本用法
 
-`d` 是一个单二进制网络守护进程与零外链文件/文档服务器，由独立零依赖微内核 `frame`、自建 HTTP/1.1 流式引擎、流式感知扩展与纯 Rust 文档渲染/展示层装配而成。
+`d` 是一个单二进制网络守护进程、通用反向代理与零外链文件/文档服务器，由独立零依赖微内核 `d-frame`、纯 Rust TLS、自建 HTTP/1.1 与 RFC 6455 WebSocket 引擎、L7/L4 反向代理、纯 `std` 治理扩展与纯 Rust 文档渲染/展示层装配而成（全工作区 31 个 `d-*` 可发布包）。
 
 `d` **不区分“开发模式”和“生产模式”**——运行在工程师本机支撑目录浏览、Markdown 预览、代码审阅和本地联调的场景，与线上静态托管一样属于 `d` 的核心正式场景，使用同一套 HTTP/1.1 状态机、路径沙箱与连接排空机制。
 
@@ -167,7 +167,7 @@ d -H 0.0.0.0 -p 8080 -r ./share --cors
 
 ### 2. 原生嵌入式 HTML 透传与安全净化
 
-与把全文转义后再交由浏览器脚本解析不同，`doc-render` 在 Markdown 解析与渲染期原生保留块级与行内 HTML 标签（例如 `<details>`、`<summary>`、`<figure>`、`<figcaption>`、`<img>`、`<table>`、`<video>`、`<audio>`、`<kbd>`、`<div>` 及内联属性），非常适合技术手册常见的折叠细节、图文图注与多栏表格。面向公网或不受信内容时，可在 `doc-render` 插件配置中开启 `{"sanitize_html": true}` 启用内置零外依白名单 HTML 净化（剥离 `<script>`/`<iframe>`、事件处理器及 `javascript:` 链接），同时契约层保留 `MarkdownOptions::sanitizer` 自定义钩子。
+与把全文转义后再交由浏览器脚本解析不同，`d-doc-render`（插件 ID `doc-render`）在 Markdown 解析与渲染期原生保留块级与行内 HTML 标签（例如 `<details>`、`<summary>`、`<figure>`、`<figcaption>`、`<img>`、`<table>`、`<video>`、`<audio>`、`<kbd>`、`<div>` 及内联属性），非常适合技术手册常见的折叠细节、图文图注与多栏表格。面向公网或不受信内容时，可在 `doc-render` 插件配置中开启 `{"sanitize_html": true}` 启用内置零外依严格白名单 HTML 净化（严格标签/属性白名单、引号感知扫描、URI HTML 实体解码与危险标签未闭合截断），同时契约层保留 `MarkdownOptions::sanitizer` 自定义钩子。
 
 ### 3. 内建词法高亮覆盖语言
 
@@ -282,7 +282,7 @@ scripts/acceptance.sh
 
 ## 九、网关清单、反向代理与开发工作流套件（`-c` / `SIGHUP`）
 
-通过 `-c <PATH>`（或 `D_CONFIG`）可直接装配全栈 17 个内置插件，无“开发模式 / 生产模式”内部切换：
+通过 `-c <PATH>`（或 `D_CONFIG`）可直接装配全栈 17 个内置插件（JSON 清单中的插件 ID 使用精简短名，如 `l4-tls`、`ext-proxy`、`app-files`，对应的 crates.io 库包名统一为 `d-*` 前缀，如 `d-l4-tls`、`d-ext-proxy`、`d-app-files`），无“开发模式 / 生产模式”内部切换：
 
 - **传输与纯 Rust TLS（`l4-transport` / `l4-tls`）**：支持 `max_connections`、`ListenOptions` 多监听、`TlsAcceptor` SNI/ALPN 与 `Loader` 原子热换证（旧 TLS 长流不中断）。
 - **协议引擎（`proto-http` / `proto-ws` / `proto-tcp`）**：支持 `:param` / `*rest` 路径参数路由、大包与 chunked 请求体流式透传（超 `max_body_bytes` 返回 `413`）、`101 Upgrade` 移交、纯 Rust RFC 6455 WebSocket 引擎及原生 TCP 端口转发。

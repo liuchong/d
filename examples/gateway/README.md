@@ -36,14 +36,14 @@ curl -i -H "Authorization: Bearer replace-with-token" http://127.0.0.1:8080/admi
   "config": {
     "upstreams": [
       {
-        "name": "agent-backend",
-        "lb": "least_conn",
+        "id": "agent-backend",
+        "strategy": "least_conn",
         "backends": [{ "addr": "127.0.0.1:9000", "weight": 1 }],
         "active_health_check": { "interval_ms": 2000, "timeout_ms": 500, "path": "/healthz" }
       }
     ],
     "http_routes": [
-      { "id": "api-proxy", "prefix": "/v1/", "strip_prefix": "/v1", "upstream": "agent-backend" }
+      { "id": "api-proxy", "match_prefix": "/v1/", "strip_prefix": "/v1", "upstream": "agent-backend" }
     ]
   }
 }

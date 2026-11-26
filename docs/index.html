@@ -3,8 +3,8 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>d — 模块化网络守护进程与零外链文件服务器</title>
-    <meta name="description" content="d 是基于零依赖微内核 frame、自建 HTTP/1.1 流式引擎、流式压缩与纯 Rust Markdown/词法高亮构建的单二进制网络守护进程。">
+    <title>d — 模块化网络守护进程、通用反向代理与零外链文件服务器</title>
+    <meta name="description" content="d 是基于零依赖微内核 d-frame、纯 Rust TLS、自建 HTTP/1.1 与 RFC 6455 WebSocket 引擎、L7/L4 反向代理、纯 std 治理套件与纯 Rust Markdown/词法高亮构建的单二进制网络守护进程。">
     <link rel="icon" type="image/svg+xml" href="pages/assets/logo.svg">
     <link rel="stylesheet" href="pages/assets/style.css">
     <script type="importmap">
@@ -47,12 +47,11 @@
             <div class="hero-main">
                 <div class="eyebrow">
                     <span class="eyebrow-dot" aria-hidden="true"></span>
-                    <span>Rust 2024 · 自建 HTTP/1.1 · 零外链纯白底</span>
+                    <span>Rust 2024 · 自建 HTTP/1.1 &amp; WS · 纯 Rust TLS · 零外链纯白底</span>
                 </div>
-                <h1>单二进制 <span class="mono">d</span>，把五层微内核与文档工作流装进一条命令。</h1>
+                <h1>单二进制 <span class="mono">d</span>，把微内核网关、反代与文档工作流装进一条命令。</h1>
                 <p class="hero-lead">
-                    立足零依赖微内核 <code>frame</code>、L4 连接优雅排空、自建 HTTP/1.1 无锁快照路由，以及纯 Rust 服务端
-                    CommonMark+GFM / 原生嵌入式 HTML / 词法高亮，既可直接托管线上静态资源，也把本地编码阅读与联调作为同一套正式生产场景。
+                    立足零依赖微内核 <code>d-frame</code>、多监听 L4 与纯 Rust TLS（SNI/ALPN/热换证）、自建 HTTP/1.1 / RFC 6455 WebSocket / TCP 协议引擎、L7/L4 通用反向代理、纯 <code>std</code> 治理三件套、声明式 <code>-c</code> / <code>SIGHUP</code> 无损重载与可选 <code>d-mcp</code> 控制面，并内置纯 Rust CommonMark+GFM / 白名单净化与词法高亮。共 31 个 <code>d-*</code> crates.io 可发布包。
                 </p>
                 <div class="hero-actions">
                     <a class="btn btn-primary" href="pages/usage.html">交互式命令与使用手册</a>
@@ -146,33 +145,48 @@ d -r . -p 8080
         <div class="grid">
             <article class="card">
                 <span class="card-tag">L0 Microkernel</span>
-                <h3>零依赖插件微内核</h3>
-                <p><code>crates/frame</code> 纯 <code>std</code> 实现作用域服务、纤程依赖级联重建、结构化异步效应 LIFO 回滚、四类强类型事件与配置预检。</p>
+                <h3>零依赖插件微内核（<code>d-frame</code>）</h3>
+                <p>纯 <code>std</code> 实现 <code>ScopedService</code>、作用域隔离与同域继承、纤程级联重建、结构化异步效应 LIFO 回滚、四类强类型事件与增量 <code>Loader</code>。</p>
             </article>
             <article class="card">
-                <span class="card-tag">HTTP/1.1 Engine</span>
-                <h3>自建 HTTP/1.1 与无锁路由</h3>
-                <p>自建解析边界（<code>400</code>/<code>413</code>/<code>414</code>/<code>431</code>/<code>505</code>）、<code>streaming: true</code> 零缓冲 chunked 输出与 <code>ArcSwap</code> 风格原子快照路由器。</p>
+                <span class="card-tag">L1 Transport &amp; TLS</span>
+                <h3>多监听传输与纯 Rust TLS</h3>
+                <p><code>d-l4-transport</code> 提供 <code>max_connections</code> 限制与两阶段优雅排空；<code>d-l4-tls</code> 隔离 <code>rustls</code>，支持 SNI、ALPN 与运行期原子热换证不杀旧会话。</p>
+            </article>
+            <article class="card">
+                <span class="card-tag">L2 Protocol Engines</span>
+                <h3>HTTP/1.1 · 纯 Rust WS · 原生 TCP</h3>
+                <p><code>d-proto-http</code> 支持 <code>:param/*rest</code>、分块流式请求体、<code>413</code> 限额与 <code>101</code> 移交；<code>d-proto-ws</code> 仅依 <code>tokio</code> 实现纯 Rust RFC 6455；<code>d-proto-tcp</code> 承载四层字节流。</p>
+            </article>
+            <article class="card">
+                <span class="card-tag">L3 Reverse Proxy</span>
+                <h3>通用 L7/L4 反向代理（<code>d-ext-proxy</code>）</h3>
+                <p>HTTP/1.1 Keep-Alive 连接池、RR/LC/WRR 均衡、主被动健康检查与熔断、RFC 7239 <code>Forwarded</code>、SSE 零缓冲穿透、WS <code>101</code> 双向隧道与 TCP 透传。</p>
+            </article>
+            <article class="card">
+                <span class="card-tag">L3 Governance</span>
+                <h3>三大纯 <code>std</code> 零外依治理组件</h3>
+                <p><code>d-ext-observability</code>（JSON 访问日志 / <code>/metrics</code> / <code>/healthz</code> / <code>/readyz</code>）、<code>d-ext-ratelimit</code>（IP 令牌桶 <code>429</code>）与 <code>d-ext-auth</code>（常量时间 Bearer/Basic/CIDR <code>401/403</code>）。</p>
+            </article>
+            <article class="card">
+                <span class="card-tag">L3 Dev Workflow</span>
+                <h3>内置开发提效套件（<code>d-ext-dev-kit</code>）</h3>
+                <p>声明式静态与延迟 SSE Mock、零外链 Live Reload，以及纯白 <code>#ffffff</code> <code>/_d/inspect</code>（含 SSE/WS 时间线与请求一键重放）。</p>
             </article>
             <article class="card">
                 <span class="card-tag">Markdown &amp; Highlight</span>
-                <h3>纯 Rust GFM + 嵌入式 HTML</h3>
-                <p>服务端直接完成表格对齐、复选框、脚注、中英文唯一锚点、原生 HTML 标签透传与多语言词法高亮，彻底零外网脚本。</p>
+                <h3>纯 Rust GFM + 严格白名单净化</h3>
+                <p><code>d-doc-render</code> 服务端完成表格对齐、脚注、中英文锚点、多语言词法高亮与可选 <code>sanitize_html</code> 严格白名单（标签/属性过滤 + URI 实体解码）。</p>
             </article>
             <article class="card">
-                <span class="card-tag">White Minimal UI</span>
-                <h3>统一极简白色纸面体系</h3>
-                <p>全站采用 <code>#ffffff</code> 画布、<code>#f6f8fa</code> 辅底、<code>#e5e7eb</code> 细线与 <code>#0969da</code> 强调蓝，无深色杂糅、无彩色胶囊、无 emoji 堆砌。</p>
+                <span class="card-tag">White Minimal UI &amp; Files</span>
+                <h3>多挂载白底文件与流式压缩</h3>
+                <p><code>d-app-files</code> 与 <code>d-viewer-*</code> 支持 <code>mount_prefix</code>/<code>host</code> 多挂载、<code>Range/ETag/304</code>、RFC 5987 下载、<code>#ffffff</code> 零外链界面与 <code>d-ext-compression</code>/<code>d-ext-cors</code>。</p>
             </article>
             <article class="card">
-                <span class="card-tag">Streaming Filter</span>
-                <h3>流式感知压缩与可选 CORS</h3>
-                <p>按 <code>br &gt; gzip &gt; deflate</code> 协商；自动豁免 SSE、<code>206</code>、<code>304</code>、<code>HEAD</code>、已压缩音视频字体及小体积实体；CORS 默认关闭。</p>
-            </article>
-            <article class="card">
-                <span class="card-tag">Security &amp; RFC 9110</span>
-                <h3>沙箱安全、Range 与 304</h3>
-                <p>路径穿越与符号链接逃逸 <code>canonicalize</code> 校验、隐藏点文件默认隔离、精确字节切片 <code>206/416</code>、<code>ETag/IMS 304</code> 与 RFC 5987 下载。</p>
+                <span class="card-tag">Entries, Reload &amp; MCP</span>
+                <h3><code>-c</code> / <code>SIGHUP</code> 无损重载与 <code>d-mcp</code></h3>
+                <p><code>d-cli</code> / <code>d-daemon</code> 实现纯 <code>std</code> JSON 清单与 <code>SIGHUP</code> 预检拒载及无中断热更（不杀无关 SSE/WS）；可选 <code>d-mcp</code> 自发现 17 插件并配套 <code>skills/{d,d-dev}</code>。</p>
             </article>
         </div>
     </div>
@@ -241,31 +255,31 @@ d -r . -p 8080
             <div>
                 <span class="section-kicker">Architecture</span>
                 <h2 class="section-title">五层单向依赖架构与 32 个 Workspace 包</h2>
-                <p class="section-desc">上层只依赖下层契约包（<code>contracts/*</code>），实现之间零横向直接耦合，由 <code>d</code>（17 插件全栈网关/文件/开发套件）与 <code>d-minimal</code>（轻量静态版）按声明式 <code>Loader</code> 装配并支持可选 <code>d-mcp</code> 实时控制。</p>
+                <p class="section-desc">上层只依赖下层契约包（<code>crates/contracts/*</code>，发布为 <code>d-*-api</code>），实现之间零横向直接耦合，由 <code>d</code>（17 插件全栈网关/文件/开发套件）与 <code>d-minimal</code>（轻量静态版）按声明式 <code>Loader</code> 装配（含 31 个 <code>d-*</code> crates.io 可发布包与 <code>xtask</code> 治理工具）并支持可选 <code>d-mcp</code> 实时控制。</p>
             </div>
-            <a class="btn" href="https://github.com/liuchong/d/blob/master/docs/frame.md">了解 frame 微内核设计</a>
+            <a class="btn" href="https://github.com/liuchong/d/blob/master/docs/frame.md">了解 d-frame 微内核设计</a>
         </div>
 
         <div class="arch-split">
             <div class="arch-list" role="tablist" aria-label="架构分层浏览">
                 <button class="arch-btn" type="button" role="tab" aria-selected="true" data-layer-btn="L0">
-                    <strong>Layer 0 · frame</strong>
+                    <strong>Layer 0 · d-frame</strong>
                     <span>纯 std 通用插件微内核</span>
                 </button>
                 <button class="arch-btn" type="button" role="tab" aria-selected="false" data-layer-btn="L1">
-                    <strong>Layer 1 · l4-transport &amp; l4-tls</strong>
+                    <strong>Layer 1 · d-l4-transport &amp; d-l4-tls</strong>
                     <span>多监听监管、SNI/ALPN 与原子热换证</span>
                 </button>
                 <button class="arch-btn" type="button" role="tab" aria-selected="false" data-layer-btn="L2">
-                    <strong>Layer 2 · proto-{http,ws,tcp}</strong>
+                    <strong>Layer 2 · d-proto-{http,ws,tcp}</strong>
                     <span>HTTP/1.1 · 纯 Rust WS · 原生 TCP</span>
                 </button>
                 <button class="arch-btn" type="button" role="tab" aria-selected="false" data-layer-btn="L3">
-                    <strong>Layer 3 · extensions</strong>
+                    <strong>Layer 3 · d-ext-* extensions</strong>
                     <span>反代 · 观测/限流/鉴权 · 开发套件</span>
                 </button>
                 <button class="arch-btn" type="button" role="tab" aria-selected="false" data-layer-btn="L4">
-                    <strong>Layer 4 · files &amp; viewers</strong>
+                    <strong>Layer 4 · d-app-files &amp; d-viewer-*</strong>
                     <span>多挂载文件沙箱、Markdown、代码与媒体页</span>
                 </button>
                 <button class="arch-btn" type="button" role="tab" aria-selected="false" data-layer-btn="entry">
@@ -274,11 +288,11 @@ d -r . -p 8080
                 </button>
             </div>
             <div class="arch-detail">
-                <h3 data-layer-title>第 0 层 · frame 插件微内核</h3>
+                <h3 data-layer-title>第 0 层 · d-frame 插件微内核</h3>
                 <div class="arch-meta">
                     <div class="arch-meta-row">
                         <span>包含包（Crates）</span>
-                        <code data-layer-crates>crates/frame（零外部依赖，纯 std）</code>
+                        <code data-layer-crates>d-frame (crates/frame · 零外部依赖，纯 std)</code>
                     </div>
                     <div class="arch-meta-row">
                         <span>依赖约束</span>
@@ -299,7 +313,7 @@ d -r . -p 8080
             <div>
                 <span class="section-kicker">Examples &amp; CLI</span>
                 <h2 class="section-title">内置示例目录与命令行速览</h2>
-                <p class="section-desc">仓库在 <code>examples/</code> 下内置五套即跑示例，命令行选项与 <code>D_*</code> 环境变量完整对应，详见 <a href="pages/usage.html">完整使用指南</a>。</p>
+                <p class="section-desc">仓库在 <code>examples/</code> 下内置六套即跑示例，命令行选项与 <code>D_*</code> 环境变量完整对应，详见 <a href="pages/usage.html">完整使用指南</a>。</p>
             </div>
         </div>
 
@@ -362,7 +376,7 @@ d -r . -p 8080
         <div class="roadmap">
             <article class="phase done">
                 <div class="phase-head">
-                    <h3>阶段 1 · 零外部依赖插件微内核（crates/frame）</h3>
+                    <h3>阶段 1 · 零外部依赖插件微内核（<code>d-frame</code>）</h3>
                     <span class="phase-badge">已完成 · F01–F16</span>
                 </div>
                 <p>纯 <code>std</code> 实现 ScopedService、父子 Fiber 树与同域继承、可选依赖与卸载快照、Context 元信息/拦截器、内置锁外事件与嵌套分组增量 Loader。</p>
@@ -372,28 +386,28 @@ d -r . -p 8080
                     <h3>阶段 2 · 五层重构、契约升级、双装配体与 MCP / Skill 体系</h3>
                     <span class="phase-badge">已完成 · d / d-minimal / d-mcp</span>
                 </div>
-                <p>落地纯 Virtual Workspace、自建 HTTP/1.1 引擎、零手工包装 <code>ScopedService</code> 接线、可互换 <code>doc-render-plain</code>、可选纯 Rust <code>d-mcp</code>、<code>skills/{d,d-dev}</code> 与 <code>xtask</code> 治理工具。</p>
+                <p>落地 31 个 <code>d-*</code> crates.io 可发布包、自建 HTTP/1.1 引擎、零手工包装 <code>ScopedService</code> 接线、可互换 <code>d-doc-render-plain</code>、可选纯 Rust <code>d-mcp</code>、<code>skills/{d,d-dev}</code> 与 <code>xtask</code> 治理工具。</p>
             </article>
             <article class="phase done">
                 <div class="phase-head">
                     <h3>阶段 3 · 纯内建 Markdown、词法高亮与极简白色界面</h3>
                     <span class="phase-badge">已完成 · 全栈闭环</span>
                 </div>
-                <p>交付零外部依赖 <code>doc-render</code>（含可选 <code>sanitize_html</code>）与 <code>viewer-*</code>，实现无冲突媒体/文档路由、全站纯白视觉规范与端到端 HTTP 验收闭环。</p>
+                <p>交付零外部依赖 <code>d-doc-render</code>（含严格白名单 <code>sanitize_html</code> 与 URI 实体解码）与 <code>d-viewer-*</code>，实现无冲突媒体/文档路由、全站纯白视觉规范与端到端 HTTP 验收闭环。</p>
             </article>
             <article class="phase done">
                 <div class="phase-head">
                     <h3>阶段 4 · 声明式配置热重载、治理扩展与开发套件</h3>
                     <span class="phase-badge">已完成 · -c / SIGHUP</span>
                 </div>
-                <p>交付纯 <code>std</code> <code>-c/--config</code> 与 <code>SIGHUP</code> 增量热重载（不中断无关 SSE/WS 长流）、三大纯 <code>std</code> 治理组件（<code>ext-observability</code>/<code>ext-ratelimit</code>/<code>ext-auth</code>）与 <code>ext-dev-kit</code>。</p>
+                <p>交付纯 <code>std</code> <code>-c/--config</code> 与 <code>SIGHUP</code> 增量热重载（不中断无关 SSE/WS 长流）、三大纯 <code>std</code> 治理组件（<code>d-ext-observability</code>/<code>d-ext-ratelimit</code>/<code>d-ext-auth</code>）与 <code>d-ext-dev-kit</code>。</p>
             </article>
             <article class="phase done">
                 <div class="phase-head">
-                    <h3>阶段 5 · 纯 Rust TLS、WebSocket / TCP 与通用反向代理</h3>
-                    <span class="phase-badge">已完成 · GA01–GA28</span>
+                    <h3>阶段 5 · 纯 Rust TLS、WebSocket / TCP、通用反代与 v0.1.1 发版就绪</h3>
+                    <span class="phase-badge">已完成 · GA01–GA28 / v0.1.1</span>
                 </div>
-                <p>交付 <code>l4-tls</code>（SNI/ALPN/原子热换证）、纯 Rust RFC 6455 <code>proto-ws</code>、<code>proto-tcp</code> 与 L7/L4 <code>ext-proxy</code>（Keep-Alive 池/LB/主被动健康检查/SSE 与 WS 隧道）。</p>
+                <p>交付 <code>d-l4-tls</code>（SNI/ALPN/原子热换证，零 <code>cargo audit</code> 警告）、纯 Rust RFC 6455 <code>d-proto-ws</code>、<code>d-proto-tcp</code> 与 L7/L4 <code>d-ext-proxy</code>，完成全平台 CI 绿灯、干净重建与 <code>v0.1.1</code> 打包校验。</p>
             </article>
         </div>
     </div>

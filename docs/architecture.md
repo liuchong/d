@@ -44,7 +44,7 @@
 |  第 1 层 · 守护进程与传输核心层（L4 Core）                              |
 |  Listener 监管 · TLS / SNI / ALPN · 连接跟踪与优雅排空 · 热加载协调器   |
 +=======================================================================+
-|  第 0 层 · 框架层（独立通用插件微内核包，命名待定）                      |
+|  第 0 层 · 框架层（独立通用插件微内核包 `d-frame`，`crates/frame`）      |
 |  Context · Scope · Service · Fiber · Effect · Event · Loader · Inspect |
 +-----------------------------------------------------------------------+
 ```
@@ -227,7 +227,7 @@ workspace/                          # 32 个 Workspace 包（其中 19 个零外
   - 为各级标题自动生成稳定唯一的锚点标识（兼容中英文与标点），支持页内 `#anchor` 直接跳转。
 - **原生支持嵌入式 HTML**：
   - 停止对 Markdown 原文做整体转义后交给脚本解析的做法；在解析事件流中直接保留块级与行内嵌入式 HTML（如 `<details>`、`<summary>`、`<figure>`、`<figcaption>`、`<img>`、`<table>`、`<video>`、`<audio>`、`<kbd>`、`<div>`、内联排版属性等），使工程文档常见的图文混排、折叠说明、多栏表格能够完整渲染。
-  - 默认策略面向本地与可信根目录完整透传嵌入式 HTML；同时在渲染契约中预留可选的内容净化（Sanitization）钩子，以便未来在开放公网或非可信内容托管模式下按需启用安全过滤。
+  - 默认策略面向本地与可信根目录完整透传嵌入式 HTML；开启 `sanitize_html: true` 时启用纯 Rust 内建严格白名单净化（标签与属性白名单、引号感知扫描、URI HTML 实体解码与危险标签未闭合截断），同时保留 `MarkdownOptions::sanitizer` 自定义钩子。
 - **图片显示与相对路径保障**：
   - 支持标准相对路径图片（`./img.png`、`assets/diagram.svg`、`../shared/pic.webp`）、根相对路径图片（`/assets/logo.png`）、外链图片以及嵌入式 HTML `<img>` 标签。
   - 配合目录路径末尾 `/` 自动规范化重定向，彻底杜绝无尾斜杠访问目录或文档时相对图片路径基准错位的问题；图片默认采用自适应宽度展示（`max-width: 100%; height: auto;`），保证大图不撑破版面，并支持点击直达原始图片。
@@ -299,5 +299,6 @@ workspace/                          # 32 个 Workspace 包（其中 19 个零外
 4. **阶段 4：声明式配置驱动、热重载、治理三件套与开发工作流提效扩展（已落地）**
    - 落地 `-c/--config`（`D_CONFIG`）纯 `std` JSON 清单解析、`SIGHUP` 全量预检增量热重载与 `/readyz` 探针，实测无关长连接（SSE/WS）热重载不断流；
    - 交付零外依治理三件套（`ext-observability`、`ext-ratelimit`、`ext-auth`）、开发工作流提效套件（`ext-dev-kit`）、`app-files` 多前缀/多 Host 挂载及 `doc-render` `sanitize_html`。
-5. **阶段 5：纯 Rust TLS、WebSocket / 原生 TCP 与通用反向代理闭环（已落地）**
-   - 交付 `tls-api` + `l4-tls`（SNI/ALPN/原子热换证）、`ws-api` + 纯 Rust RFC 6455 `proto-ws`、`proto-tcp` 与 `proxy-api` + `ext-proxy`（Keep-Alive 池、三种 LB、主被动健康检查、SSE 穿透与 WS 隧道），通过 32 包工作区全量验收与独立干净重建。
+5. **阶段 5：纯 Rust TLS、WebSocket / 原生 TCP、通用反向代理与 `d-*` crates.io 命名空间发版就绪（已落地）**
+   - 交付 `d-tls-api` + `d-l4-tls`（SNI/ALPN/原子热换证，零 `cargo audit` 警告）、`d-ws-api` + 纯 Rust RFC 6455 `d-proto-ws`、`d-proto-tcp` 与 `d-proxy-api` + `d-ext-proxy`（Keep-Alive 池、三种 LB、主被动健康检查、RFC 7239 `Forwarded`、SSE 穿透与 WS 隧道）；
+   - 将非 `d-*` 前缀的 26 个子包统一规范为 `d-*` 命名空间并升版至 `0.1.1`（全部 31 个待发布包 + `xtask` 设为 `publish = false`），通过跨平台 CI（Linux/macOS/Windows）、32 包架构检查与独立干净重建。
