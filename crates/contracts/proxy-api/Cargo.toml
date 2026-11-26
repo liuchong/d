@@ -1,0 +1,10 @@
+[package]
+name = "proxy-api"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license-file = "../../../LICENSE"
+description = "Zero-dependency Layer 3 reverse proxy, load balancing, and health check contracts for d"
+
+[dependencies]
+frame = { path = "../../frame" }

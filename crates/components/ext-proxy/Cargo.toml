@@ -1,0 +1,22 @@
+[package]
+name = "ext-proxy"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license-file = "../../../LICENSE"
+description = "Layer 3 L7/L4 reverse proxy, keep-alive connection pool, load balancer, and health checks for d"
+
+[dependencies]
+frame = { path = "../../frame" }
+net-api = { path = "../../contracts/net-api" }
+tls-api = { path = "../../contracts/tls-api" }
+http-api = { path = "../../contracts/http-api" }
+proxy-api = { path = "../../contracts/proxy-api" }
+tokio = { version = "1", features = ["net", "io-util", "sync", "time", "rt", "macros"] }
+
+[dev-dependencies]
+l4-transport = { path = "../l4-transport" }
+proto-http = { path = "../proto-http" }
+proto-ws = { path = "../proto-ws" }
+ws-api = { path = "../../contracts/ws-api" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }
