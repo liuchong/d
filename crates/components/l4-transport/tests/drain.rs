@@ -3,7 +3,7 @@
 use frame::{Context, FrameOptions};
 use l4_transport::{TokioSpawner, TransportConfig, TransportPlugin};
 use net_api::{
-    BoxStreamIo, ConnectionHandler, ConnectionMeta, DrainSignal,
+    BoxStreamIo, ConnectionHandler, ConnectionMeta, DrainSignal, ListenOptions,
     TransportService,
 };
 use std::future::poll_fn;
@@ -178,6 +178,7 @@ async fn drain_timeout_recovers_stalled_long_lived_connection() {
         TransportPlugin::new(TransportConfig {
             short_drain_timeout: Duration::from_millis(50),
             long_drain_timeout: Duration::from_millis(80),
+            max_connections: None,
         }),
         frame::ConfigValue::Null,
     )
@@ -264,5 +265,80 @@ async fn caller_fiber_disposal_stops_scoped_listener_and_validates_config() {
         "listener must close automatically when caller fiber disposes"
     );
 
+    ctx.dispose().await.expect("ctx dispose");
+}
+
+#[tokio::test]
+async fn max_connections_caps_active_streams_and_multi_listeners_coexist() {
+    let ctx = Context::new(FrameOptions::new(Arc::new(TokioSpawner)));
+    ctx.plugin(
+        TransportPlugin::new(TransportConfig {
+            short_drain_timeout: Duration::from_millis(40),
+            long_drain_timeout: Duration::from_millis(40),
+            max_connections: None,
+        }),
+        frame::ConfigValue::Null,
+    )
+    .expect("transport");
+    ctx.settle().await;
+    let transport = ctx.get::<TransportService>().expect("transport svc");
+
+    let ready1 = Arc::new(Notify::new());
+    let (addr1, h1) = transport
+        .listen_with_options(
+            &ctx,
+            ListenOptions {
+                addr: "127.0.0.1:0".parse().unwrap(),
+                max_connections: Some(2),
+                tls_listener_id: None,
+            },
+            Arc::new(StalledHandler {
+                ready: Arc::clone(&ready1),
+            }),
+        )
+        .await
+        .expect("listen 1");
+
+    let ready2 = Arc::new(Notify::new());
+    let (addr2, h2) = transport
+        .listen_with_options(
+            &ctx,
+            ListenOptions {
+                addr: "127.0.0.1:0".parse().unwrap(),
+                max_connections: None,
+                tls_listener_id: None,
+            },
+            Arc::new(StalledHandler {
+                ready: Arc::clone(&ready2),
+            }),
+        )
+        .await
+        .expect("listen 2");
+
+    let _c1 = TcpStream::connect(addr1).await.expect("c1");
+    ready1.notified().await;
+    let _c2 = TcpStream::connect(addr1).await.expect("c2");
+    ready1.notified().await;
+
+    // Third concurrent connection on addr1 hits max_connections=2 and is dropped.
+    let mut c3 = TcpStream::connect(addr1).await.expect("tcp connect");
+    let mut byte = [0u8; 1];
+    let n = c3.read(&mut byte).await.expect("c3 eof read");
+    assert_eq!(n, 0, "3rd connection over limit must be closed immediately");
+
+    // Second listener operates independently without interference.
+    let _c4 = TcpStream::connect(addr2).await.expect("c4 on addr2");
+    ready2.notified().await;
+
+    let stats = transport.stats();
+    assert_eq!(stats.active_connections, 3);
+    assert!(stats.total_accepted >= 3);
+    assert!(stats.rejected_over_limit >= 1);
+
+    drop(_c1);
+    drop(_c2);
+    drop(_c4);
+    drop(h1);
+    drop(h2);
     ctx.dispose().await.expect("ctx dispose");
 }

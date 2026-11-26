@@ -9,4 +9,5 @@ description = "Layer 1 TCP transport listener and two-phase graceful drain for d
 [dependencies]
 frame = { path = "../../frame" }
 net-api = { path = "../../contracts/net-api" }
+tls-api = { path = "../../contracts/tls-api" }
 tokio = { version = "1", features = ["net", "io-util", "sync", "time", "rt", "macros"] }

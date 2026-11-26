@@ -7,7 +7,8 @@ use frame::{
 };
 use net_api::{
     AsyncByteIo, BoxStreamIo, ConnectionHandler, ConnectionKind,
-    ConnectionMeta, DrainSignal, Transport, TransportService,
+    ConnectionMeta, DrainSignal, ListenOptions, Transport, TransportService,
+    TransportStatsSnapshot,
 };
 use std::collections::HashMap;
 use std::io;
@@ -17,6 +18,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context as TaskContext, Poll};
 use std::time::Duration;
+use tls_api::TlsAcceptorService;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{oneshot, watch};
@@ -28,6 +30,8 @@ pub struct TransportConfig {
     pub short_drain_timeout: Duration,
     /// Grace window for Phase 2 waiting after notifying long-lived connections.
     pub long_drain_timeout: Duration,
+    /// Optional default process-wide active connection cap.
+    pub max_connections: Option<usize>,
 }
 
 impl Default for TransportConfig {
@@ -35,6 +39,7 @@ impl Default for TransportConfig {
         Self {
             short_drain_timeout: Duration::from_secs(5),
             long_drain_timeout: Duration::from_secs(5),
+            max_connections: None,
         }
     }
 }
@@ -149,6 +154,10 @@ impl Ledger {
         }
     }
 
+    fn total_count(&self) -> usize {
+        self.conns.lock().unwrap_or_else(|e| e.into_inner()).len()
+    }
+
     async fn wait_short_drained(&self, timeout: Duration) {
         let mut rx = self.counts_tx.subscribe();
         let _ = tokio::time::timeout(
@@ -205,8 +214,11 @@ impl DrainSignal for ConnectionDrainSignal {
 /// Layer 1 [`Transport`] service implementation.
 pub struct DefaultTransportService {
     config: TransportConfig,
+    runtime_ctx: Option<Context>,
     next_conn_id: Arc<AtomicU64>,
     global_active: Arc<AtomicUsize>,
+    total_accepted: Arc<AtomicU64>,
+    rejected_over_limit: Arc<AtomicU64>,
 }
 
 impl DefaultTransportService {
@@ -214,44 +226,72 @@ impl DefaultTransportService {
     pub fn new(config: TransportConfig) -> Arc<Self> {
         Arc::new(Self {
             config,
+            runtime_ctx: None,
             next_conn_id: Arc::new(AtomicU64::new(1)),
             global_active: Arc::new(AtomicUsize::new(0)),
+            total_accepted: Arc::new(AtomicU64::new(0)),
+            rejected_over_limit: Arc::new(AtomicU64::new(0)),
+        })
+    }
+
+    /// Construct a transport service bound to a runtime [`Context`] for optional TLS lookup.
+    pub fn with_context(
+        config: TransportConfig,
+        runtime_ctx: Context,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            config,
+            runtime_ctx: Some(runtime_ctx),
+            next_conn_id: Arc::new(AtomicU64::new(1)),
+            global_active: Arc::new(AtomicUsize::new(0)),
+            total_accepted: Arc::new(AtomicU64::new(0)),
+            rejected_over_limit: Arc::new(AtomicU64::new(0)),
         })
     }
 }
 
 impl Transport for DefaultTransportService {
-    fn listen(
+    fn listen_with_options(
         &self,
         caller: &Context,
-        addr: SocketAddr,
+        opts: ListenOptions,
         handler: Arc<dyn ConnectionHandler>,
     ) -> BoxFuture<'static, Result<(SocketAddr, EffectHandle), FrameError>>
     {
         let ctx = caller.clone();
+        let runtime_ctx = self.runtime_ctx.clone();
         let config = self.config.clone();
         let next_conn_id = Arc::clone(&self.next_conn_id);
         let global_active = Arc::clone(&self.global_active);
+        let total_accepted = Arc::clone(&self.total_accepted);
+        let rejected_over_limit = Arc::clone(&self.rejected_over_limit);
 
         Box::pin(async move {
-            let listener = TcpListener::bind(addr).await.map_err(|e| {
+            let listener = TcpListener::bind(opts.addr).await.map_err(|e| {
                 FrameError::new(
                     ErrorKind::ActivationFailed,
-                    format!("failed to bind {addr}: {e}"),
+                    format!("failed to bind {}: {e}", opts.addr),
                 )
             })?;
             let local_addr = listener.local_addr().map_err(|e| {
                 FrameError::new(
                     ErrorKind::ActivationFailed,
-                    format!("failed to inspect local address for {addr}: {e}"),
+                    format!(
+                        "failed to inspect local address for {}: {e}",
+                        opts.addr
+                    ),
                 )
             })?;
 
-            let ledger = Ledger::new(global_active);
+            let ledger = Ledger::new(Arc::clone(&global_active));
             let (stop_tx, mut stop_rx) = watch::channel(false);
             let (stopped_tx, stopped_rx) = oneshot::channel::<()>();
 
             let accept_ledger = Arc::clone(&ledger);
+            let listener_cap = opts.max_connections;
+            let global_cap = config.max_connections;
+            let tls_listener_id = opts.tls_listener_id.clone();
+
             tokio::spawn(async move {
                 loop {
                     tokio::select! {
@@ -263,13 +303,19 @@ impl Transport for DefaultTransportService {
                         accepted = listener.accept() => {
                             match accepted {
                                 Ok((stream, remote_addr)) => {
+                                    let over_listener_cap = listener_cap
+                                        .is_some_and(|cap| accept_ledger.total_count() >= cap);
+                                    let over_global_cap = global_cap
+                                        .is_some_and(|cap| global_active.load(Ordering::Acquire) >= cap);
+                                    if over_listener_cap || over_global_cap {
+                                        rejected_over_limit.fetch_add(1, Ordering::Relaxed);
+                                        drop(stream);
+                                        continue;
+                                    }
+
                                     let _ = stream.set_nodelay(true);
                                     let id = next_conn_id.fetch_add(1, Ordering::Relaxed);
-                                    let meta = ConnectionMeta {
-                                        id,
-                                        remote_addr,
-                                        kind: ConnectionKind::ShortLived,
-                                    };
+                                    total_accepted.fetch_add(1, Ordering::Relaxed);
                                     accept_ledger.insert(id, ConnectionKind::ShortLived);
                                     let guard = ConnGuard {
                                         id,
@@ -280,9 +326,38 @@ impl Transport for DefaultTransportService {
                                         ledger: Arc::clone(&accept_ledger),
                                     });
                                     let h = Arc::clone(&handler);
-                                    let io: BoxStreamIo = Box::new(TcpStreamIo(stream));
+                                    let raw_io: BoxStreamIo = Box::new(TcpStreamIo(stream));
+                                    let tls_id = tls_listener_id.clone();
+                                    let tls_ctx = runtime_ctx.clone();
                                     tokio::spawn(async move {
                                         let _guard = guard;
+                                        let mut meta = ConnectionMeta {
+                                            id,
+                                            remote_addr,
+                                            kind: ConnectionKind::ShortLived,
+                                            tls: false,
+                                            alpn: None,
+                                        };
+                                        let io = if let Some(tid) = tls_id {
+                                            let Some(svc) = tls_ctx
+                                                .as_ref()
+                                                .and_then(|c| c.get::<TlsAcceptorService>())
+                                            else {
+                                                return;
+                                            };
+                                            match svc.wrap_inbound(&tid, raw_io).await {
+                                                Ok(neg) => {
+                                                    meta.tls = true;
+                                                    meta.alpn = neg
+                                                        .alpn
+                                                        .and_then(|b| String::from_utf8(b).ok());
+                                                    neg.stream
+                                                }
+                                                Err(_) => return,
+                                            }
+                                        } else {
+                                            raw_io
+                                        };
                                         h.handle(io, meta, drain).await;
                                     });
                                 }
@@ -327,6 +402,16 @@ impl Transport for DefaultTransportService {
 
     fn active_connections(&self) -> usize {
         self.global_active.load(Ordering::Acquire)
+    }
+
+    fn stats(&self) -> TransportStatsSnapshot {
+        TransportStatsSnapshot {
+            active_connections: self.global_active.load(Ordering::Acquire),
+            total_accepted: self.total_accepted.load(Ordering::Acquire),
+            rejected_over_limit: self
+                .rejected_over_limit
+                .load(Ordering::Acquire),
+        }
     }
 }
 
@@ -375,6 +460,18 @@ fn resolve_transport_config(
                             path: k.clone(),
                             message:
                                 "long_drain_ms must be a non-negative integer"
+                                    .to_string(),
+                        }),
+                    },
+                    "max_connections" => match v {
+                        ConfigValue::Null => cfg.max_connections = None,
+                        ConfigValue::Int(n) if *n > 0 => {
+                            cfg.max_connections = Some(*n as usize);
+                        }
+                        _ => issues.push(ValidationIssue {
+                            path: k.clone(),
+                            message:
+                                "max_connections must be a positive integer or null"
                                     .to_string(),
                         }),
                     },
@@ -430,6 +527,19 @@ impl Plugin for TransportPlugin {
                 self.config.long_drain_timeout.as_millis() as i64,
             )),
         )
+        .field(
+            ConfigFieldSchema::new(
+                "max_connections",
+                ConfigFieldType::Int,
+                "Optional process-wide concurrent connection limit (null for unlimited)",
+            )
+            .nullable()
+            .with_default(
+                self.config
+                    .max_connections
+                    .map_or(ConfigValue::Null, |n| ConfigValue::Int(n as i64)),
+            ),
+        )
     }
 
     fn validate_config(
@@ -449,7 +559,7 @@ impl Plugin for TransportPlugin {
         Box::pin(async move {
             let merged = ctx.resolve_intercept::<TransportService>(config);
             let cfg = resolve_transport_config(&base, &merged)?;
-            let svc = DefaultTransportService::new(cfg);
+            let svc = DefaultTransportService::with_context(cfg, ctx.clone());
             let _handle =
                 ctx.provide(Arc::new(TransportService::new(svc))).await?;
             Ok(())

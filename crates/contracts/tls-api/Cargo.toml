@@ -1,0 +1,11 @@
+[package]
+name = "tls-api"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license-file = "../../../LICENSE"
+description = "Zero-dependency Layer 1 TLS acceptor and connector contracts for d"
+
+[dependencies]
+frame = { path = "../../frame" }
+net-api = { path = "../net-api" }

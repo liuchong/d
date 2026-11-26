@@ -58,6 +58,35 @@ pub struct ConnectionMeta {
     pub id: u64,
     pub remote_addr: SocketAddr,
     pub kind: ConnectionKind,
+    pub tls: bool,
+    pub alpn: Option<String>,
+}
+
+/// Configuration options for binding a Layer 1 listener.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListenOptions {
+    pub addr: SocketAddr,
+    pub max_connections: Option<usize>,
+    pub tls_listener_id: Option<String>,
+}
+
+impl ListenOptions {
+    /// Construct plain TCP listener options on `addr` with no connection cap.
+    pub fn new(addr: SocketAddr) -> Self {
+        Self {
+            addr,
+            max_connections: None,
+            tls_listener_id: None,
+        }
+    }
+}
+
+/// Cumulative Layer 1 transport connection counters.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TransportStatsSnapshot {
+    pub active_connections: usize,
+    pub total_accepted: u64,
+    pub rejected_over_limit: u64,
 }
 
 /// Per-connection coordination handle exposed by Layer 1 to Layer 2 engines.
@@ -91,6 +120,14 @@ pub trait ConnectionHandler: Send + Sync + 'static {
 
 /// Layer 1 listener and connection management contract trait.
 pub trait Transport: Send + Sync + 'static {
+    /// Bind a listener with explicit [`ListenOptions`] owned by `caller`.
+    fn listen_with_options(
+        &self,
+        caller: &FrameContext,
+        opts: ListenOptions,
+        handler: Arc<dyn ConnectionHandler>,
+    ) -> BoxFuture<'static, Result<(SocketAddr, EffectHandle), FrameError>>;
+
     /// Bind a listener on `addr` owned by `caller`, forwarding accepted streams
     /// to `handler`. Disposing `caller` (or the returned [`EffectHandle`])
     /// stops accepting new connections and performs two-phase graceful drain.
@@ -99,10 +136,16 @@ pub trait Transport: Send + Sync + 'static {
         caller: &FrameContext,
         addr: SocketAddr,
         handler: Arc<dyn ConnectionHandler>,
-    ) -> BoxFuture<'static, Result<(SocketAddr, EffectHandle), FrameError>>;
+    ) -> BoxFuture<'static, Result<(SocketAddr, EffectHandle), FrameError>>
+    {
+        self.listen_with_options(caller, ListenOptions::new(addr), handler)
+    }
 
     /// Return the current number of tracked active connections.
     fn active_connections(&self) -> usize;
+
+    /// Return cumulative transport connection statistics.
+    fn stats(&self) -> TransportStatsSnapshot;
 }
 
 /// Frame service handle wrapping any [`Transport`] implementation.
@@ -113,6 +156,17 @@ impl TransportService {
     /// Wrap a [`Transport`] implementation as a registered service handle.
     pub fn new(inner: Arc<dyn Transport>) -> Self {
         Self(inner)
+    }
+
+    /// Delegate [`Transport::listen_with_options`] explicitly binding effects to `caller`.
+    pub fn listen_with_options(
+        &self,
+        caller: &FrameContext,
+        opts: ListenOptions,
+        handler: Arc<dyn ConnectionHandler>,
+    ) -> BoxFuture<'static, Result<(SocketAddr, EffectHandle), FrameError>>
+    {
+        self.0.listen_with_options(caller, opts, handler)
     }
 
     /// Delegate [`Transport::listen`] explicitly binding effects to `caller`.
@@ -130,6 +184,11 @@ impl TransportService {
     pub fn active_connections(&self) -> usize {
         self.0.active_connections()
     }
+
+    /// Delegate [`Transport::stats`].
+    pub fn stats(&self) -> TransportStatsSnapshot {
+        self.0.stats()
+    }
 }
 
 /// Caller-bound [`TransportService`] view obtained via `ctx.use_service::<TransportService>()`.
@@ -140,6 +199,16 @@ pub struct ScopedTransport {
 }
 
 impl ScopedTransport {
+    /// Bind a listener with explicit [`ListenOptions`] owned by the caller fiber.
+    pub fn listen_with_options(
+        &self,
+        opts: ListenOptions,
+        handler: Arc<dyn ConnectionHandler>,
+    ) -> BoxFuture<'static, Result<(SocketAddr, EffectHandle), FrameError>>
+    {
+        self.inner.listen_with_options(&self.caller, opts, handler)
+    }
+
     /// Bind a listener whose lifetime is owned by the caller fiber.
     pub fn listen(
         &self,
@@ -153,6 +222,11 @@ impl ScopedTransport {
     /// Return the current number of tracked active connections.
     pub fn active_connections(&self) -> usize {
         self.inner.active_connections()
+    }
+
+    /// Return cumulative transport connection statistics.
+    pub fn stats(&self) -> TransportStatsSnapshot {
+        self.inner.stats()
     }
 }
 
