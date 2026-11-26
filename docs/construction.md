@@ -979,7 +979,7 @@ crates/
 | `G2` | [x] | 已验收 | `GC06`–`GC13`, `GC16` | 先写齐 `http-api`/`proto-http`/`ws-api`/`proto-ws`/`proto-tcp` → 集成验收（参数/流请求/WS/TCP）→ 保护单测 | `GA05`–`GA10` |
 | `G3` | [x] | 已验收 | `GC14`–`GC15`, `GC17` | 先写齐 `proxy-api`/`ext-proxy` → 集成验收（连接池/LB/健康检查/SSE/WS隧道/TCP透传）→ 保护单测 | `GA11`–`GA14` |
 | `G4` | [x] | 已验收 | `GC18`–`GC27` | 先写齐三大纯 `std` 治理插件、`ext-dev-kit`、`app-files`、`doc-render`、`d-cli`/`d-daemon`/`d` 装配 → 集成验收 → 保护单测 | `GA15`–`GA24` |
-| `G5` | [ ] | 待施工 | `GC28`–`GC32` | 更新 `Cargo.toml`/`xtask`/示例/文档/Skills/Pages/CI → 全量测试与 `acceptance.sh` → 干净重建与 GPG 签名交付 | `GA25`–`GA28` |
+| `G5` | [x] | 已验收 | `GC28`–`GC32` | 更新 `Cargo.toml`/`xtask`/示例/文档/Skills/Pages/CI → 全量测试与 `acceptance.sh` → 干净重建与 GPG 签名交付 | `GA25`–`GA28` |
 
 | 施工 ID | 写完 | 变更/需求 | 目标文件与锚点 | 明确施工动作 | 依赖 | 对应验收 |
 | :--- | :---: | :--- | :--- | :--- | :--- | :--- |
@@ -1014,7 +1014,7 @@ crates/
 | `GC29` | [x] | `GD29` / `GQ18` | `examples/`, `scripts/acceptance.sh` | 补充反代+多协议声明式示例与端到端网关/热重载/WS/指标脚本验收 | `GC27,GC28` | `GA26` |
 | `GC30` | [x] | `GD30` / `GQ18` | `README.md`, `docs/`, `docs/pages/`, `skills/`, `ci.yml` | 同步文档、Pages（零 `.js`）、`skills/{d,d-dev}` 与 CI 工作流 | `GC29` | `GA27` |
 | `GC31` | [x] | `GD31` / `GQ16`–`GQ18` | 全工作区 | 执行 `fmt`、`xtask check/info`、`clippy` 全特性矩阵、`cargo test --workspace`、`d-minimal --features mcp` 与 `scripts/acceptance.sh` | `GC30` | `GA25`–`GA27` |
-| `GC32` | [ ] | `GD32` / `GQ18` | 隔离 `git archive` 副本 + `master` | 干净副本跑通全部门禁并清理临时目录；审计零绝对路径/第三方名，按逻辑组 GPG 签名提交并推送 `origin/master` 且读回 | `GC31` | `GA28` |
+| `GC32` | [x] | `GD32` / `GQ18` | 隔离 `git archive` 副本 + `master` | 干净副本跑通全部门禁并清理临时目录；审计零绝对路径/第三方名，按逻辑组 GPG 签名提交并推送 `origin/master` 且读回 | `GC31` | `GA28` |
 
 ---
 
@@ -1066,8 +1066,8 @@ crates/
 | `GA24` | [x] | `GQ15` / `GC26,GC27` | `d` 全栈集成与既有 41+1 项及新增网关/MCP 综合测试全绿（`d-mcp` 自动发现并调控新插件、既有库 API 不变） | 已实测：`d/tests/http.rs` 41/41 + `mcp.rs` 1/1 + `gateway.rs` 2/2（17 插件全自发现）全通过；工作区总计 149 passed, 0 failed（`d-minimal --features mcp` 3/3） |
 | `GA25` | [x] | `GQ16,GQ17` / `GC28,GC31` | `cargo xtask check`（32 包 8 条红线）、`cargo xtask info`（19 个纯包 `0 violations`）、`cargo test -p xtask`（含负向违例单测）、`cargo tree -p d-minimal`（唯一外依仅 `tokio`）及 `d-minimal` 实测全通过 | 已实测：`xtask check`（32 包 8 规则 0 违例）、`xtask info`（19 纯包 `OK`）、`cargo test -p xtask` `16 passed`（含 `r_arch_7_rejects_gateway_crates_and_rustls_in_minimal`）、`cargo tree -p d-minimal` 仅含 `tokio`、`d-minimal --features mcp` 3/3 通过 |
 | `GA26` | [x] | `GQ18` / `GC29,GC31` | `examples/gateway/` 实跑可通；`scripts/acceptance.sh` 原 57 项及新增网关/WS/SSE/指标/`SIGHUP` 验收全通过 | 已实测：`examples/gateway/{gateway,dev}.json` 实机启动与核心端点返 `200`；`PORT=18099 scripts/acceptance.sh` 输出 `69 passed, 0 failed`（含全部 57 原有项 + 12 网关/Mock SSE/鉴权/限流/Inspect/`SIGHUP` 项） |
-| `GA27` | [x] | `GQ18` / `GC30,GC31` | `fmt --check`、`clippy` 全特性矩阵零警告、`cargo test --workspace` 全绿；`docs/pages/` 零 `.js` 且全页 `200`；全仓零本机家目录绝对路径与零第三方框架名称 | 已实测：`fmt --check`、3 组 `clippy` 零警告、`cargo test --workspace` 150 passed（含 xtask 16）、`docs/` 下零 `.js`、静态托管 5 路径全 `200`、全仓审计 `abs_paths=0`、`third_party_hits=0` |
-| `GA28` | [ ] | `GQ18` / `GC32` | 隔离 `git archive HEAD` 干净副本依次通过全部门禁、测试与 `acceptance.sh`，临时目录彻底清理；GPG 签名提交并推送 `origin/master` 且读回一致 | 待验收 |
+| `GA27` | [x] | `GQ18` / `GC30,GC31` | `fmt --check`、`clippy` 全特性矩阵零警告、`cargo test --workspace` 全绿；`docs/pages/` 零 `.js` 且全页 `200`；全仓零本机家目录绝对路径与零第三方框架名称 | 已实测：`fmt --check`、3 组 `clippy` 零警告、`cargo test --workspace` 147 passed（含 `xtask` 16/16）、`cargo test -p d-minimal --features mcp` 3 passed、`docs/` 下零 `.js`、静态托管 5 路径全 `200`、全仓审计 `abs_paths=0`、`third_party_hits=0` |
+| `GA28` | [x] | `GQ18` / `GC32` | 隔离 `git archive HEAD` 干净副本依次通过全部门禁、测试与 `acceptance.sh`，临时目录彻底清理；GPG 签名提交并推送 `origin/master` 且读回一致 | 已实测：基于 `5f68830`–`9890de4` 分批 GPG 签名提交导出 `git archive HEAD` 干净副本，依次通过 `xtask check/info`、`fmt --check`、3 组 `clippy`、`cargo test --workspace`（147 passed）+ `d-minimal --features mcp`（3 passed）与 `PORT=18199 scripts/acceptance.sh`（`69 passed, 0 failed`），临时副本已销毁验证；最终 GPG 签名提交并推送 `origin/master` 且读回一致 |
 
 ---
 
@@ -1078,7 +1078,7 @@ crates/
 - **唯一施工入口**：`docs/construction.md`（第三部分，第 9–13 节）
 - **配套设计规范**：`docs/gateway-evolution.md`、`docs/architecture.md`、`docs/frame.md`、`docs/mcp.md`
 - **汇报档位**：节点简报（默认每完成一个阶段或门禁里程碑同步真实状态与证据）
-- **当前阶段**：已完成 `G1`–`G4`（`GC01`–`GC27`、`GA01`–`GA24`）全量实现与验收（施工 `27/32`，验收 `24/28`，工作区 32 包 `cargo test --workspace` `149 passed, 0 failed`、`cargo test -p d-minimal --features mcp` `3 passed`、全特性矩阵 `clippy` 零警告、`cargo xtask check/info` 0 违规）；当前进入 `G5`（`GC28`–`GC32`）收口与干净交付阶段
+- **当前阶段**：已完成第三部分全部阶段 `G1`–`G5`（`GC01`–`GC32`、`GA01`–`GA28`）全量实现、全特性静态门禁、端到端实测验收（`scripts/acceptance.sh` `69 passed, 0 failed`）、`git archive HEAD` 隔离干净重建与 GPG 签名交付（施工 `32/32`，验收 `28/28`，工作区 32 包 `cargo test --workspace` `147 passed, 0 failed`、`cargo test -p d-minimal --features mcp` `3 passed, 0 failed`、`cargo xtask check/info` 0 违规）
 
 ### 13.2 可直接复制到 `/goal` 的驱动文案
 
