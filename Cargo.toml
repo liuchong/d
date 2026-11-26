@@ -3,11 +3,22 @@ resolver = "2"
 members = [
     "crates/frame",
     "crates/contracts/net-api",
+    "crates/contracts/tls-api",
     "crates/contracts/http-api",
+    "crates/contracts/ws-api",
+    "crates/contracts/proxy-api",
     "crates/contracts/files-api",
     "crates/contracts/render-api",
     "crates/components/l4-transport",
+    "crates/components/l4-tls",
     "crates/components/proto-http",
+    "crates/components/proto-ws",
+    "crates/components/proto-tcp",
+    "crates/components/ext-proxy",
+    "crates/components/ext-observability",
+    "crates/components/ext-ratelimit",
+    "crates/components/ext-auth",
+    "crates/components/ext-dev-kit",
     "crates/components/ext-compression",
     "crates/components/ext-cors",
     "crates/components/app-files",
@@ -26,11 +37,22 @@ members = [
 default-members = [
     "crates/frame",
     "crates/contracts/net-api",
+    "crates/contracts/tls-api",
     "crates/contracts/http-api",
+    "crates/contracts/ws-api",
+    "crates/contracts/proxy-api",
     "crates/contracts/files-api",
     "crates/contracts/render-api",
     "crates/components/l4-transport",
+    "crates/components/l4-tls",
     "crates/components/proto-http",
+    "crates/components/proto-ws",
+    "crates/components/proto-tcp",
+    "crates/components/ext-proxy",
+    "crates/components/ext-observability",
+    "crates/components/ext-ratelimit",
+    "crates/components/ext-auth",
+    "crates/components/ext-dev-kit",
     "crates/components/ext-compression",
     "crates/components/ext-cors",
     "crates/components/app-files",
@@ -47,10 +69,18 @@ default-members = [
 
 [workspace.metadata.architecture]
 kernel = ["frame"]
-contracts = ["net-api", "http-api", "files-api", "render-api"]
+contracts = ["net-api", "tls-api", "http-api", "ws-api", "proxy-api", "files-api", "render-api"]
 components = [
     "l4-transport",
+    "l4-tls",
     "proto-http",
+    "proto-ws",
+    "proto-tcp",
+    "ext-proxy",
+    "ext-observability",
+    "ext-ratelimit",
+    "ext-auth",
+    "ext-dev-kit",
     "ext-compression",
     "ext-cors",
     "app-files",
@@ -66,9 +96,15 @@ tools = ["xtask"]
 zero_external_deps = [
     "frame",
     "net-api",
+    "tls-api",
     "http-api",
+    "ws-api",
+    "proxy-api",
     "files-api",
     "render-api",
+    "ext-observability",
+    "ext-ratelimit",
+    "ext-auth",
     "ext-cors",
     "doc-render",
     "doc-render-plain",
@@ -80,6 +116,14 @@ zero_external_deps = [
 ]
 minimal_assembly = "d-minimal"
 minimal_forbidden = [
+    "l4-tls",
+    "proto-ws",
+    "proto-tcp",
+    "ext-proxy",
+    "ext-observability",
+    "ext-ratelimit",
+    "ext-auth",
+    "ext-dev-kit",
     "ext-compression",
     "doc-render",
     "viewer-markdown",
@@ -87,6 +131,8 @@ minimal_forbidden = [
     "viewer-media",
     "brotli",
     "flate2",
+    "rustls",
+    "tokio-rustls",
 ]
 multi_impl_contracts = ["render-api"]
 

@@ -1,3 +1,5 @@
+#![cfg(feature = "mcp")]
+
 use d::{Options, build_runtime};
 use d_mcp::json::{JsonValue, parse};
 use d_mcp::{McpServer, McpServerPolicy};

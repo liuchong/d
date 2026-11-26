@@ -3,6 +3,9 @@
 //! Coordinates Layer 0 (`frame`), contract crates, CLI parsing, and signal
 //! lifecycle without depending directly on any concrete plugin components.
 
+pub mod config_json;
+
+pub use config_json::{load_entries_from_json_file, parse_entries_from_json};
 use d_cli::{LogLevel, McpCliConfig, ParseOutcome};
 use frame::{
     BoxFuture, Context, ErrorKind, FrameError, FrameOptions, FrameSnapshot,
@@ -101,6 +104,16 @@ impl RuntimeControlService {
     /// Check whether graceful shutdown has already been requested.
     pub fn shutdown_requested(&self) -> bool {
         *self.shutdown_tx.borrow()
+    }
+
+    /// Return `true` when all active fibers are healthy (zero `Failed` fibers).
+    pub fn readiness_ok(&self) -> bool {
+        !self
+            .ctx
+            .inspect()
+            .fibers
+            .iter()
+            .any(|f| matches!(f.state, frame::FiberState::Failed))
     }
 }
 
@@ -279,12 +292,7 @@ pub async fn start_from_spec<F>(
     ));
     let _ = std::io::stdout().flush();
 
-    tokio::select! {
-        _ = wait_for_shutdown_signal() => {}
-        _ = app.wait_for_control_shutdown() => {
-            d_cli::log_info("Received control shutdown request, shutting down");
-        }
-    }
+    run_signal_loop(&mut app, None).await;
     let _ = std::io::stdout().flush();
     let _ = std::io::stderr().flush();
 
@@ -373,7 +381,7 @@ pub async fn run_cli_daemon_with_control<F, M, Fut>(
     }
 
     let bind_addr = if cfg.no_http { None } else { Some(cfg.addr) };
-    let spec = build_spec(
+    let mut spec = build_spec(
         cfg.root.clone(),
         DaemonOptions {
             allow_hidden: cfg.allow_hidden,
@@ -381,9 +389,27 @@ pub async fn run_cli_daemon_with_control<F, M, Fut>(
         },
         bind_addr,
     );
+    let mut expect_listener = !cfg.no_http;
+    if let Some(ref cfg_path) = cfg.config_file {
+        match load_entries_from_json_file(cfg_path) {
+            Ok(entries) => {
+                spec.entries = entries;
+                expect_listener = false;
+                d_cli::log_info(&format!("  Config: {}", cfg_path.display()));
+            }
+            Err(e) => {
+                d_cli::log_error(&format!(
+                    "Failed loading config manifest `{}`: {e}",
+                    cfg_path.display()
+                ));
+                exit(1);
+            }
+        }
+    }
 
     let mut app =
-        match build_from_spec_named(assembly_name, spec, !cfg.no_http).await {
+        match build_from_spec_named(assembly_name, spec, expect_listener).await
+        {
             Ok(app) => app,
             Err(e) => {
                 d_cli::log_error(&format!("Failed to start daemon: {e}"));
@@ -404,16 +430,16 @@ pub async fn run_cli_daemon_with_control<F, M, Fut>(
             "Server started successfully on http://{bound}"
         ));
     }
-    d_cli::log_info(&format!("Serving root directory: {}", cfg.root.display()));
+    if cfg.config_file.is_none() {
+        d_cli::log_info(&format!(
+            "Serving root directory: {}",
+            cfg.root.display()
+        ));
+    }
     let _ = std::io::stdout().flush();
     let _ = std::io::stderr().flush();
 
-    tokio::select! {
-        _ = wait_for_shutdown_signal() => {}
-        _ = app.wait_for_control_shutdown() => {
-            d_cli::log_info("Received control shutdown request, shutting down");
-        }
-    }
+    run_signal_loop(&mut app, cfg.config_file.as_deref()).await;
     let _ = std::io::stdout().flush();
     let _ = std::io::stderr().flush();
 
@@ -424,47 +450,102 @@ pub async fn run_cli_daemon_with_control<F, M, Fut>(
     }
 }
 
-async fn wait_for_shutdown_signal() {
+async fn reload_config_manifest(app: &AppHandle, path: &std::path::Path) {
+    let entries = match load_entries_from_json_file(path) {
+        Ok(e) => e,
+        Err(err) => {
+            d_cli::log_error(&format!(
+                "SIGHUP reload rejected while reading `{}`: {err}",
+                path.display()
+            ));
+            return;
+        }
+    };
+    if let Err(err) = app.loader().validate_entries(&entries) {
+        d_cli::log_error(&format!(
+            "SIGHUP reload rejected during preflight validation (`{}`): {err}",
+            path.display()
+        ));
+        return;
+    }
+    match app.loader().apply(entries).await {
+        Ok(_applied) => {
+            app.context().settle().await;
+            d_cli::log_info(&format!(
+                "Reloaded config manifest from `{}` cleanly",
+                path.display()
+            ));
+        }
+        Err(err) => {
+            d_cli::log_error(&format!(
+                "SIGHUP reload failed while applying `{}`: {err}",
+                path.display()
+            ));
+        }
+    }
+}
+
+async fn run_signal_loop(
+    app: &mut AppHandle,
+    config_file: Option<&std::path::Path>,
+) {
     #[cfg(unix)]
     {
         use tokio::signal::unix::{SignalKind, signal};
-        let sigterm = signal(SignalKind::terminate());
-        match sigterm {
-            Ok(mut term_stream) => {
-                tokio::select! {
-                    res = tokio::signal::ctrl_c() => {
-                        match res {
-                            Ok(()) => d_cli::log_info("Received SIGINT (Ctrl+C), shutting down"),
-                            Err(e) => d_cli::log_error(&format!("Failed listening for Ctrl+C: {e}")),
-                        }
+        let mut term = signal(SignalKind::terminate()).ok();
+        let mut hup = signal(SignalKind::hangup()).ok();
+        loop {
+            tokio::select! {
+                res = tokio::signal::ctrl_c() => {
+                    match res {
+                        Ok(()) => d_cli::log_info("Received SIGINT (Ctrl+C), shutting down"),
+                        Err(e) => d_cli::log_error(&format!("Failed listening for Ctrl+C: {e}")),
                     }
-                    _ = term_stream.recv() => {
-                        d_cli::log_info("Received SIGTERM, shutting down");
+                    break;
+                }
+                _ = async {
+                    if let Some(ref mut s) = term {
+                        s.recv().await;
+                    } else {
+                        std::future::pending::<()>().await;
+                    }
+                } => {
+                    d_cli::log_info("Received SIGTERM, shutting down");
+                    break;
+                }
+                _ = async {
+                    if let Some(ref mut s) = hup {
+                        s.recv().await;
+                    } else {
+                        std::future::pending::<()>().await;
+                    }
+                } => {
+                    if let Some(path) = config_file {
+                        reload_config_manifest(app, path).await;
+                    } else {
+                        d_cli::log_warn("Received SIGHUP without --config manifest; ignoring reload");
                     }
                 }
-            }
-            Err(e) => {
-                d_cli::log_error(&format!(
-                    "Failed registering SIGTERM handler: {e}"
-                ));
-                let _ = tokio::signal::ctrl_c().await;
-                d_cli::log_info("Received SIGINT (Ctrl+C), shutting down");
+                _ = app.wait_for_control_shutdown() => {
+                    d_cli::log_info("Received control shutdown request, shutting down");
+                    break;
+                }
             }
         }
     }
 
     #[cfg(not(unix))]
     {
-        match tokio::signal::ctrl_c().await {
-            Ok(()) => {
-                d_cli::log_info(
-                    "Received shutdown signal (Ctrl+C), shutting down",
-                );
+        let _ = config_file;
+        tokio::select! {
+            res = tokio::signal::ctrl_c() => {
+                match res {
+                    Ok(()) => d_cli::log_info("Received shutdown signal (Ctrl+C), shutting down"),
+                    Err(e) => d_cli::log_error(&format!("Failed to listen for shutdown signal: {e}")),
+                }
             }
-            Err(e) => {
-                d_cli::log_error(&format!(
-                    "Failed to listen for shutdown signal: {e}"
-                ));
+            _ = app.wait_for_control_shutdown() => {
+                d_cli::log_info("Received control shutdown request, shutting down");
             }
         }
     }

@@ -35,16 +35,34 @@ use viewer::{DefaultViewerRegistry, FallbackTextViewer};
 const MAX_VIEWER_TEXT_BYTES: u64 = 4 * 1024 * 1024;
 
 /// Configuration for [`FilesAppPlugin`].
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct FilesConfig {
     pub root: PathBuf,
     pub allow_hidden: bool,
+    pub mount_prefix: String,
+    pub host: Option<String>,
+}
+
+impl Default for FilesConfig {
+    fn default() -> Self {
+        Self {
+            root: PathBuf::new(),
+            allow_hidden: false,
+            mount_prefix: "/".to_string(),
+            host: None,
+        }
+    }
 }
 
 impl FilesConfig {
     /// Construct a file application config for canonical directory `root`.
     pub fn new(root: PathBuf, allow_hidden: bool) -> Self {
-        Self { root, allow_hidden }
+        Self {
+            root,
+            allow_hidden,
+            mount_prefix: "/".to_string(),
+            host: None,
+        }
     }
 }
 
@@ -87,6 +105,34 @@ fn resolve_files_config(
                         _ => issues.push(ValidationIssue {
                             path: k.clone(),
                             message: "allow_hidden must be a boolean"
+                                .to_string(),
+                        }),
+                    },
+                    "mount_prefix" => match v {
+                        ConfigValue::Str(s) if s.trim().starts_with('/') => {
+                            let trimmed = s.trim();
+                            let norm = if trimmed == "/" {
+                                "/".to_string()
+                            } else {
+                                trimmed.trim_end_matches('/').to_string()
+                            };
+                            cfg.mount_prefix = norm;
+                        }
+                        _ => issues.push(ValidationIssue {
+                            path: k.clone(),
+                            message:
+                                "mount_prefix must be a path starting with `/`"
+                                    .to_string(),
+                        }),
+                    },
+                    "host" => match v {
+                        ConfigValue::Null => cfg.host = None,
+                        ConfigValue::Str(s) if !s.trim().is_empty() => {
+                            cfg.host = Some(s.trim().to_string());
+                        }
+                        _ => issues.push(ValidationIssue {
+                            path: k.clone(),
+                            message: "host must be a non-empty string or null"
                                 .to_string(),
                         }),
                     },
@@ -164,6 +210,22 @@ impl Plugin for FilesAppPlugin {
             )
             .with_default(ConfigValue::Bool(self.config.allow_hidden)),
         )
+        .field(
+            ConfigFieldSchema::new(
+                "mount_prefix",
+                ConfigFieldType::Str,
+                "URL mount path prefix for this file root (`/` mounts as CatchAll fallback)",
+            )
+            .with_default(ConfigValue::Str(self.config.mount_prefix.clone())),
+        )
+        .field(
+            ConfigFieldSchema::new(
+                "host",
+                ConfigFieldType::Str,
+                "Optional HTTP Host filter scoping this file application",
+            )
+            .nullable(),
+        )
     }
 
     fn validate_config(
@@ -182,26 +244,46 @@ impl Plugin for FilesAppPlugin {
         let base = self.config.clone();
         Box::pin(async move {
             let config = resolve_files_config(&base, &config)?;
-            let registry = DefaultViewerRegistry::new();
-            let fallback: Arc<dyn FileViewer> = Arc::new(FallbackTextViewer);
-            let _fallback_handle = registry.register(&ctx, fallback)?;
-            let registry_svc = Arc::new(ViewerRegistryService::new(
-                Arc::clone(&registry) as Arc<dyn ViewerRegistry>,
-            ));
-            ctx.provide(Arc::clone(&registry_svc)).await?;
+            let registry_svc =
+                if let Some(existing) = ctx.get::<ViewerRegistryService>() {
+                    existing
+                } else {
+                    let registry = DefaultViewerRegistry::new();
+                    let fallback: Arc<dyn FileViewer> =
+                        Arc::new(FallbackTextViewer);
+                    let _fallback_handle = registry.register(&ctx, fallback)?;
+                    let svc = Arc::new(ViewerRegistryService::new(Arc::clone(
+                        &registry,
+                    )
+                        as Arc<dyn ViewerRegistry>));
+                    ctx.provide(Arc::clone(&svc)).await?;
+                    svc
+                };
 
             let router = ctx.use_service::<RouterService>()?;
+            let matcher = if config.mount_prefix == "/" {
+                RouteMatch::CatchAll
+            } else {
+                RouteMatch::Prefix(config.mount_prefix.clone())
+            };
+            let priority = if config.mount_prefix == "/" {
+                -100
+            } else {
+                -50
+            };
+            let route_id = format!("app-files:{}", config.mount_prefix);
+            let host = config.host.clone();
             let handler: Arc<dyn HttpHandler> = Arc::new(FilesHandler {
                 config,
                 registry: registry_svc,
             });
             let _route_handle = router.mount_route(
                 RouteSpec {
-                    id: "app-files-catchall".to_string(),
-                    host: None,
-                    matcher: RouteMatch::CatchAll,
+                    id: route_id,
+                    host,
+                    matcher,
                     methods: Some(vec![Method::Get, Method::Head]),
-                    priority: -100,
+                    priority,
                 },
                 handler,
             )?;
@@ -234,13 +316,29 @@ async fn handle_request(
         return HttpResponse::text(StatusCode::BAD_REQUEST, "Invalid encoding");
     };
 
-    if decoded == "/favicon.ico" {
+    if decoded == "/favicon.ico" && config.mount_prefix == "/" {
         return HttpResponse::empty(StatusCode::NOT_FOUND);
     }
 
+    let rel_decoded = if config.mount_prefix == "/" {
+        decoded.clone()
+    } else if decoded == config.mount_prefix {
+        let loc = match &req.query {
+            Some(q) if !q.is_empty() => format!("{}/?{q}", config.mount_prefix),
+            _ => format!("{}/", config.mount_prefix),
+        };
+        return HttpResponse::redirect_moved(loc);
+    } else if let Some(rest) = decoded.strip_prefix(&config.mount_prefix)
+        && rest.starts_with('/')
+    {
+        rest.to_string()
+    } else {
+        return HttpResponse::text(StatusCode::NOT_FOUND, "Not Found");
+    };
+
     let is_head = req.method == Method::Head;
 
-    let full_path = match resolve_path(&config.root, &decoded).await {
+    let full_path = match resolve_path(&config.root, &rel_decoded).await {
         PathResolution::Resolved(p) => p,
         PathResolution::Invalid | PathResolution::NotFound => {
             return HttpResponse::text(StatusCode::NOT_FOUND, "Not Found");

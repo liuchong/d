@@ -14,6 +14,8 @@ pub struct MarkdownOptions {
     pub allow_raw_html: bool,
     /// Generate unique slug `id` attributes and anchor links for headings.
     pub heading_anchors: bool,
+    /// Apply built-in whitelist HTML sanitization over rendered output when `true`.
+    pub sanitize_html: bool,
     /// Optional sanitizer applied to rendered HTML before returning.
     pub sanitizer: Option<HtmlSanitizer>,
 }
@@ -23,6 +25,7 @@ impl Default for MarkdownOptions {
         Self {
             allow_raw_html: true,
             heading_anchors: true,
+            sanitize_html: false,
             sanitizer: None,
         }
     }
@@ -33,6 +36,7 @@ impl fmt::Debug for MarkdownOptions {
         f.debug_struct("MarkdownOptions")
             .field("allow_raw_html", &self.allow_raw_html)
             .field("heading_anchors", &self.heading_anchors)
+            .field("sanitize_html", &self.sanitize_html)
             .field("sanitizer", &self.sanitizer.as_ref().map(|_| ".."))
             .finish()
     }

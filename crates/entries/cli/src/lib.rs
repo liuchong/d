@@ -150,6 +150,7 @@ pub struct CliConfig {
     pub allow_hidden: bool,
     pub cors: bool,
     pub no_http: bool,
+    pub config_file: Option<PathBuf>,
     pub mcp: McpCliConfig,
     pub addr: SocketAddr,
 }
@@ -170,6 +171,7 @@ fn help_text() -> String {
              -H, --host <HOST>           Set listening host [env: D_HOST] [default: {DEFAULT_HOST}]\n\
              -p, --port <PORT>           Set listening port [env: D_PORT] [default: {DEFAULT_PORT}]\n\
              -r, --root <PATH>           Set root directory to serve [env: D_ROOT] [default: .]\n\
+             -c, --config <PATH>         Load declarative JSON plugin manifest (supports SIGHUP reload) [env: D_CONFIG]\n\
              -l, --log <LEVEL>           Set log level (trace, debug, info, warn, error) [env: RUST_LOG] [default: info]\n\
                  --hidden                Show hidden files [env: D_SHOW_HIDDEN]\n\
                  --cors                  Enable permissive CORS [env: D_CORS]\n\
@@ -243,6 +245,9 @@ where
         env_fn("D_SHOW_HIDDEN").is_some_and(|v| parse_bool_env(&v));
     let mut cors = env_fn("D_CORS").is_some_and(|v| parse_bool_env(&v));
     let mut no_http = env_fn("D_NO_HTTP").is_some_and(|v| parse_bool_env(&v));
+    let mut config_file = env_fn("D_CONFIG")
+        .filter(|s| !s.trim().is_empty())
+        .map(PathBuf::from);
     let mut mcp = McpCliConfig {
         stdio: env_fn("D_MCP_STDIO").is_some_and(|v| parse_bool_env(&v)),
         http_addr: match env_fn("D_MCP_HTTP").filter(|s| !s.trim().is_empty()) {
@@ -308,6 +313,20 @@ where
                 };
                 root_raw = val.as_ref().to_string();
             }
+            "-c" | "--config" => {
+                let Some(val) = iter.next() else {
+                    return ParseOutcome::ExitErr(format!(
+                        "Missing value for {s}"
+                    ));
+                };
+                let p = val.as_ref().trim();
+                if p.is_empty() {
+                    return ParseOutcome::ExitErr(
+                        "Invalid empty --config path".to_string(),
+                    );
+                }
+                config_file = Some(PathBuf::from(p));
+            }
             "-l" | "--log" => {
                 let Some(val) = iter.next() else {
                     return ParseOutcome::ExitErr(format!(
@@ -365,6 +384,15 @@ where
             }
             _ if s.starts_with("--root=") => {
                 root_raw = s["--root=".len()..].to_string();
+            }
+            _ if s.starts_with("--config=") => {
+                let p = s["--config=".len()..].trim();
+                if p.is_empty() {
+                    return ParseOutcome::ExitErr(
+                        "Invalid empty --config path".to_string(),
+                    );
+                }
+                config_file = Some(PathBuf::from(p));
             }
             _ if s.starts_with("--log=") => {
                 log_raw = s["--log=".len()..].to_string();
@@ -427,6 +455,7 @@ where
         allow_hidden,
         cors,
         no_http,
+        config_file,
         mcp,
         addr,
     })
@@ -530,5 +559,32 @@ mod tests {
             parse_args(["d", "--mcp-path", "no-leading-slash"], |_| None),
             ParseOutcome::ExitErr(msg) if msg.contains("must start with '/'")
         ));
+    }
+
+    #[test]
+    fn parses_config_manifest_flag_and_env() {
+        use std::path::Path;
+        let out_short = parse_args(["d", "-c", "gw.json"], |_| None);
+        let ParseOutcome::Run(cfg1) = out_short else {
+            panic!("expected Run, got: {out_short:?}");
+        };
+        assert_eq!(cfg1.config_file.as_deref(), Some(Path::new("gw.json")));
+
+        let out_eq = parse_args(["d", "--config=/etc/d/gw.json"], |_| None);
+        let ParseOutcome::Run(cfg2) = out_eq else {
+            panic!("expected Run, got: {out_eq:?}");
+        };
+        assert_eq!(
+            cfg2.config_file.as_deref(),
+            Some(Path::new("/etc/d/gw.json"))
+        );
+
+        let out_env = parse_args(["d"], |k| {
+            (k == "D_CONFIG").then(|| "env-gw.json".to_string())
+        });
+        let ParseOutcome::Run(cfg3) = out_env else {
+            panic!("expected Run, got: {out_env:?}");
+        };
+        assert_eq!(cfg3.config_file.as_deref(), Some(Path::new("env-gw.json")));
     }
 }

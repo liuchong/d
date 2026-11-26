@@ -1,0 +1,13 @@
+[package]
+name = "ext-observability"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license-file = "../../../LICENSE"
+description = "Zero-dependency Layer 3 structured access logging, OpenMetrics /metrics, and /healthz /readyz probes for d"
+
+[dependencies]
+frame = { path = "../../frame" }
+net-api = { path = "../../contracts/net-api" }
+http-api = { path = "../../contracts/http-api" }
+proxy-api = { path = "../../contracts/proxy-api" }

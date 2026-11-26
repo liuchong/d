@@ -22,7 +22,15 @@ http-api = { path = "../../contracts/http-api" }
 files-api = { path = "../../contracts/files-api" }
 render-api = { path = "../../contracts/render-api" }
 l4-transport = { path = "../../components/l4-transport" }
+l4-tls = { path = "../../components/l4-tls" }
 proto-http = { path = "../../components/proto-http" }
+proto-ws = { path = "../../components/proto-ws" }
+proto-tcp = { path = "../../components/proto-tcp" }
+ext-proxy = { path = "../../components/ext-proxy" }
+ext-observability = { path = "../../components/ext-observability" }
+ext-ratelimit = { path = "../../components/ext-ratelimit" }
+ext-auth = { path = "../../components/ext-auth" }
+ext-dev-kit = { path = "../../components/ext-dev-kit" }
 ext-compression = { path = "../../components/ext-compression" }
 ext-cors = { path = "../../components/ext-cors" }
 app-files = { path = "../../components/app-files" }
@@ -36,4 +44,8 @@ d-mcp = { path = "../../entries/mcp", optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net"] }
 
 [dev-dependencies]
+tls-api = { path = "../../contracts/tls-api" }
+ws-api = { path = "../../contracts/ws-api" }
+proxy-api = { path = "../../contracts/proxy-api" }
+rcgen = "0.14"
 tempfile = "3"

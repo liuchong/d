@@ -1,0 +1,11 @@
+[package]
+name = "ext-auth"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license-file = "../../../LICENSE"
+description = "Zero-dependency Layer 3 Bearer, Basic, and IP CIDR authentication filter for d"
+
+[dependencies]
+frame = { path = "../../frame" }
+http-api = { path = "../../contracts/http-api" }

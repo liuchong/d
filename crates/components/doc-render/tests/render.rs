@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 #[test]
 fn markdown_commonmark_gfm_tables_tasks_footnotes_and_cjk_anchors() {
-    let renderer = DefaultRenderer;
+    let renderer = DefaultRenderer::default();
     let src = "\
 # 架构 Overview
 
@@ -83,7 +83,7 @@ fn main() {
 
 #[test]
 fn markdown_native_embedded_html_passthrough_and_sanitizer() {
-    let renderer = DefaultRenderer;
+    let renderer = DefaultRenderer::default();
     let src = "\
 <details>
 <summary>展开说明</summary>
@@ -123,6 +123,7 @@ fn markdown_native_embedded_html_passthrough_and_sanitizer() {
         &MarkdownOptions {
             allow_raw_html: true,
             heading_anchors: true,
+            sanitize_html: false,
             sanitizer: Some(Arc::new(|raw| {
                 raw.replace("<details>", "<section>")
             })),
@@ -134,7 +135,7 @@ fn markdown_native_embedded_html_passthrough_and_sanitizer() {
 
 #[test]
 fn lexical_highlighter_covers_core_languages_and_light_css() {
-    let renderer = DefaultRenderer;
+    let renderer = DefaultRenderer::default();
 
     let rust_html = renderer.highlight_code(
         "rust",

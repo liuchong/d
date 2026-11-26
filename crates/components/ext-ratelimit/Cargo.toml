@@ -1,0 +1,11 @@
+[package]
+name = "ext-ratelimit"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license-file = "../../../LICENSE"
+description = "Zero-dependency Layer 3 token-bucket rate limiting filter for d"
+
+[dependencies]
+frame = { path = "../../frame" }
+http-api = { path = "../../contracts/http-api" }

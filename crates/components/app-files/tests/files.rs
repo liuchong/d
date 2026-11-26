@@ -264,3 +264,98 @@ async fn index_html_listing_sort_and_hidden_toggle() {
 
     ctx.dispose().await.expect("dispose");
 }
+
+#[tokio::test]
+async fn multi_mount_prefix_and_host_isolation() {
+    let docs_dir = TempDir::new().unwrap();
+    let assets_dir = TempDir::new().unwrap();
+    std::fs::write(docs_dir.path().join("guide.txt"), "guide-body").unwrap();
+    std::fs::create_dir(docs_dir.path().join("sub")).unwrap();
+    std::fs::write(docs_dir.path().join("sub/note.txt"), "note-body").unwrap();
+    std::fs::write(assets_dir.path().join("logo.txt"), "logo-body").unwrap();
+
+    let ctx = Context::new(FrameOptions::new(Arc::new(TokioTestSpawner)));
+    ctx.plugin(HttpEnginePlugin::default(), ConfigValue::Null)
+        .expect("http engine");
+    ctx.plugin(
+        FilesAppPlugin::new(FilesConfig {
+            root: docs_dir.path().canonicalize().unwrap(),
+            allow_hidden: false,
+            mount_prefix: "/docs".to_string(),
+            host: Some("docs.local".to_string()),
+        }),
+        ConfigValue::Null,
+    )
+    .expect("docs mount");
+    ctx.plugin(
+        FilesAppPlugin::new(FilesConfig {
+            root: assets_dir.path().canonicalize().unwrap(),
+            allow_hidden: false,
+            mount_prefix: "/assets".to_string(),
+            host: None,
+        }),
+        ConfigValue::Null,
+    )
+    .expect("assets mount");
+    ctx.settle().await;
+    let router = ctx.get::<RouterService>().expect("router");
+
+    // Wrong Host on host-scoped mount -> 404.
+    let wrong_host = router
+        .dispatch(
+            HttpRequest::new(Method::Get, "/docs/guide.txt")
+                .with_header("Host", "other.local"),
+        )
+        .await;
+    assert_eq!(wrong_host.status, StatusCode::NOT_FOUND);
+
+    // Matching Host (even with port) serves /docs/* (raw bytes via ?view=raw, viewer HTML on bare .txt).
+    let viewer_docs = router
+        .dispatch(
+            HttpRequest::new(Method::Get, "/docs/guide.txt")
+                .with_header("Host", "docs.local:8080"),
+        )
+        .await;
+    assert_eq!(viewer_docs.status, StatusCode::OK);
+    let viewer_html =
+        String::from_utf8(viewer_docs.body.into_bytes().await.unwrap())
+            .unwrap();
+    assert!(viewer_html.contains("guide-body"));
+
+    let ok_docs = router
+        .dispatch(
+            HttpRequest::new(Method::Get, "/docs/guide.txt?view=raw")
+                .with_header("Host", "docs.local:8080"),
+        )
+        .await;
+    assert_eq!(ok_docs.status, StatusCode::OK);
+    assert_eq!(ok_docs.body.into_bytes().await.unwrap(), b"guide-body");
+
+    // Prefix root and subdirectory canonicalize with 301 trailing slash.
+    let root_redirect = router
+        .dispatch(
+            HttpRequest::new(Method::Get, "/docs")
+                .with_header("Host", "docs.local"),
+        )
+        .await;
+    assert_eq!(root_redirect.status, StatusCode::MOVED_PERMANENTLY);
+    assert_eq!(root_redirect.header("location"), Some("/docs/"));
+
+    let sub_redirect = router
+        .dispatch(
+            HttpRequest::new(Method::Get, "/docs/sub")
+                .with_header("Host", "docs.local"),
+        )
+        .await;
+    assert_eq!(sub_redirect.status, StatusCode::MOVED_PERMANENTLY);
+    assert_eq!(sub_redirect.header("location"), Some("/docs/sub/"));
+
+    // Second mount on /assets works without host restriction.
+    let ok_assets = router
+        .dispatch(HttpRequest::new(Method::Get, "/assets/logo.txt?view=raw"))
+        .await;
+    assert_eq!(ok_assets.status, StatusCode::OK);
+    assert_eq!(ok_assets.body.into_bytes().await.unwrap(), b"logo-body");
+
+    ctx.dispose().await.expect("dispose");
+}

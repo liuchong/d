@@ -5,13 +5,21 @@
 use app_files::FilesAppPlugin;
 pub use d_daemon::{AppHandle, AssemblySpec, DaemonOptions as Options};
 use doc_render::DocRenderPlugin;
+use ext_auth::AuthPlugin;
 use ext_compression::CompressionPlugin;
 use ext_cors::CorsPlugin;
+use ext_dev_kit::DevKitPlugin;
+use ext_observability::ObservabilityPlugin;
+use ext_proxy::ProxyPlugin;
+use ext_ratelimit::RateLimitPlugin;
 use frame::{
     ConfigValue, EntryTarget, FrameError, PluginEntry, StaticResolver,
 };
+use l4_tls::TlsPlugin;
 use l4_transport::TransportPlugin;
 use proto_http::HttpEnginePlugin;
+use proto_tcp::TcpEnginePlugin;
+use proto_ws::WsEnginePlugin;
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -40,7 +48,15 @@ pub fn build_spec(
     let resolver = Arc::new(
         StaticResolver::new()
             .register("l4-transport", TransportPlugin::default())
+            .register("l4-tls", TlsPlugin::default())
             .register("proto-http", HttpEnginePlugin::default())
+            .register("proto-ws", WsEnginePlugin::default())
+            .register("proto-tcp", TcpEnginePlugin::default())
+            .register("ext-proxy", ProxyPlugin::default())
+            .register("ext-observability", ObservabilityPlugin::default())
+            .register("ext-ratelimit", RateLimitPlugin::default())
+            .register("ext-auth", AuthPlugin::default())
+            .register("ext-dev-kit", DevKitPlugin::default())
             .register("ext-compression", CompressionPlugin::default())
             .register("ext-cors", CorsPlugin)
             .register("app-files", FilesAppPlugin::default())
